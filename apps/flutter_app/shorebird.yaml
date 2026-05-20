@@ -1,0 +1,11 @@
+# Shorebird OTA update configuration
+app_id: YOUR_APP_ID_HERE
+
+# Flavors for different environments
+flavors:
+  development:
+    app_id: YOUR_DEV_APP_ID
+  staging:
+    app_id: YOUR_STAGING_APP_ID
+  production:
+    app_id: YOUR_PROD_APP_ID

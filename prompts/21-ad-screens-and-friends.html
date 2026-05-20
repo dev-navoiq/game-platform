@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Platform — Ad Placements & Friends Activity Mockups</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --feltDark: #122e1d;
+  --feltMid: #1d4a2e;
+  --feltLight: #2a6641;
+  --accent: #C47B2B;
+  --accentSoft: #E8A84F;
+  --accentGlow: rgba(196,123,43,0.22);
+  --glass: rgba(255,255,255,0.52);
+  --glassBorder: rgba(255,255,255,0.72);
+  --textDark: #241810;
+  --textMuted: #9c7d62;
+  --textOnFelt: rgba(255,255,255,0.92);
+  --textFeltMuted: rgba(255,255,255,0.50);
+  --success: #27ae60;
+  --danger: #e74c3c;
+  --cardRed: #c0392b;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #0a0e0c;
+  color: #fff;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* === Navigation Header === */
+.nav-header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,14,12,0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 14px 32px;
+  display: flex; align-items: center; gap: 24px;
+  flex-wrap: wrap;
+}
+.nav-header h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 18px; font-weight: 400;
+  color: var(--accentSoft);
+  white-space: nowrap;
+}
+.nav-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.nav-tab {
+  padding: 7px 16px; border-radius: 100px;
+  font-size: 12px; font-weight: 600;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.5);
+  cursor: pointer; transition: all 0.25s;
+  white-space: nowrap;
+}
+.nav-tab:hover { background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.8); }
+.nav-tab.active {
+  background: var(--accent);
+  border-color: var(--accentSoft);
+  color: #fff;
+}
+
+/* === Screen Container === */
+.screen-section {
+  display: none; padding: 32px;
+}
+.screen-section.active { display: block; }
+.screen-section h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px; font-weight: 400;
+  color: var(--textOnFelt); margin-bottom: 6px;
+}
+.screen-section .subtitle {
+  font-size: 13px; color: var(--textFeltMuted);
+  margin-bottom: 28px; line-height: 1.5;
+}
+
+/* === Device Frame === */
+.devices-row {
+  display: flex; gap: 40px; flex-wrap: wrap;
+  justify-content: center; align-items: flex-start;
+}
+.device-container { text-align: center; }
+.device-container .label {
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 1.5px;
+  margin-bottom: 12px;
+}
+.device-container .desc {
+  font-size: 11px; color: var(--textFeltMuted);
+  max-width: 320px; margin: 10px auto 0; line-height: 1.5;
+}
+.device {
+  width: 320px; height: 694px;
+  border-radius: 42px;
+  border: 8px solid #111;
+  box-shadow: 0 0 0 1px #333, 0 30px 60px rgba(0,0,0,0.6);
+  position: relative; overflow: hidden;
+  background: var(--feltDark);
+}
+.device::before {
+  content: '';
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 100px; height: 28px;
+  background: #111; border-radius: 0 0 18px 18px; z-index: 50;
+}
+.device::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(42,102,65,0.25) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(42,102,65,0.15) 0%, transparent 50%);
+  pointer-events: none; z-index: 0;
+}
+.screen-content {
+  position: relative; z-index: 1;
+  width: 100%; height: 100%;
+  padding: 38px 0 0;
+  overflow-y: auto; overflow-x: hidden;
+}
+.screen-content::-webkit-scrollbar { width: 0; }
+
+/* === Shared Components === */
+.status-bar {
+  height: 38px; display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: absolute; top: 0; left: 0; right: 0;
+  z-index: 10;
+  font-size: 10px; font-weight: 600;
+  color: rgba(255,255,255,0.6);
+}
+
+.glass-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 100px;
+  background: var(--glass);
+  border: 1px solid var(--glassBorder);
+  backdrop-filter: blur(18px);
+  font-size: 11px; font-weight: 600;
+  color: var(--textDark);
+}
+
+.glass-panel {
+  background: var(--glass);
+  border: 1px solid var(--glassBorder);
+  backdrop-filter: blur(18px);
+  border-radius: 18px;
+  box-shadow: 0 4px 20px rgba(60,40,20,0.10);
+}
+
+.accent-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 18px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accentSoft));
+  color: #fff; font-size: 11px; font-weight: 700;
+  border: none; cursor: pointer;
+  box-shadow: 0 2px 8px var(--accentGlow);
+}
+
+/* === AD INDICATORS === */
+.ad-badge {
+  position: absolute;
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 8px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  z-index: 20;
+}
+.ad-badge.banner { background: #e74c3c; color: #fff; top: 4px; right: 4px; }
+.ad-badge.native { background: #3498db; color: #fff; top: 4px; right: 4px; }
+.ad-badge.rewarded { background: #27ae60; color: #fff; top: 4px; right: 4px; }
+.ad-badge.interstitial { background: #9b59b6; color: #fff; top: 4px; right: 4px; }
+.ad-badge.brand { background: var(--accent); color: #fff; top: 4px; right: 4px; }
+
+/* ========================================
+   SCREEN 1: LOBBY WITH BANNER AD
+   ======================================== */
+.lobby-header {
+  padding: 10px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.lobby-header h3 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 20px; font-weight: 400;
+}
+.lobby-search {
+  margin: 0 16px 12px;
+  padding: 8px 14px; border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: rgba(255,255,255,0.35);
+}
+.room-card {
+  margin: 0 16px 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; gap: 12px;
+}
+.room-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  background: linear-gradient(135deg, var(--accent), var(--accentSoft));
+}
+.room-info { flex: 1; }
+.room-info .name { font-size: 13px; font-weight: 600; }
+.room-info .meta { font-size: 10px; color: var(--textFeltMuted); margin-top: 2px; }
+.room-join {
+  padding: 6px 14px; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 700;
+}
+
+/* Banner Ad */
+.banner-ad {
+  margin: 8px 16px;
+  height: 52px; border-radius: 10px;
+  background: linear-gradient(90deg, #1a1a2e, #16213e);
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.banner-ad-content {
+  display: flex; align-items: center; gap: 10px;
+}
+.banner-ad-logo {
+  width: 30px; height: 30px; border-radius: 6px;
+  background: #e74c3c; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; color: #fff;
+}
+.banner-ad-text {
+  font-size: 11px; color: rgba(255,255,255,0.7);
+}
+.banner-ad-text strong { color: #fff; }
+.banner-ad-cta {
+  padding: 4px 10px; border-radius: 6px;
+  background: #e74c3c; color: #fff;
+  font-size: 9px; font-weight: 700;
+  margin-left: 8px;
+}
+
+/* Native Ad Card */
+.native-ad-card {
+  margin: 0 16px 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(52,152,219,0.08), rgba(52,152,219,0.02));
+  border: 1px solid rgba(52,152,219,0.15);
+  display: flex; align-items: center; gap: 12px;
+  position: relative;
+}
+.native-ad-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.native-ad-info { flex: 1; }
+.native-ad-info .name { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.85); }
+.native-ad-info .meta { font-size: 10px; color: rgba(52,152,219,0.7); margin-top: 2px; }
+.native-ad-label {
+  font-size: 8px; font-weight: 700; color: rgba(52,152,219,0.6);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ========================================
+   SCREEN 2: GAME END WITH INTERSTITIAL
+   ======================================== */
+.game-end-screen {
+  padding: 20px 16px;
+  text-align: center;
+}
+.game-end-trophy {
+  font-size: 52px; margin: 10px 0 6px;
+}
+.game-end-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+}
+.game-end-subtitle {
+  font-size: 12px; color: var(--textFeltMuted);
+  margin: 4px 0 16px;
+}
+
+.results-table {
+  margin: 0 auto 16px;
+  width: 100%;
+}
+.result-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 10px;
+  margin-bottom: 4px;
+}
+.result-row.winner { background: rgba(39,174,96,0.12); border: 1px solid rgba(39,174,96,0.2); }
+.result-row.you { background: rgba(196,123,43,0.10); border: 1px solid rgba(196,123,43,0.2); }
+.result-row .rank {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800;
+  background: rgba(255,255,255,0.1);
+}
+.result-row.winner .rank { background: var(--success); color: #fff; }
+.result-row .avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg, #f0e8da, #e5d4bc);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.result-row .pname { flex: 1; font-size: 12px; font-weight: 600; text-align: left; }
+.result-row .score { font-size: 12px; font-weight: 700; color: var(--accentSoft); }
+
+/* Rewards earned */
+.rewards-earned {
+  display: flex; gap: 12px; justify-content: center;
+  margin: 12px 0 16px;
+}
+.reward-chip {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 12px; border-radius: 100px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 11px; font-weight: 600;
+}
+
+/* Game-end native ad */
+.game-end-ad {
+  margin: 12px 0; padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(26,26,46,0.9), rgba(22,33,62,0.9));
+  border: 1px solid rgba(255,255,255,0.08);
+  position: relative;
+  text-align: left;
+}
+.game-end-ad .ad-inner {
+  display: flex; align-items: center; gap: 12px;
+}
+.game-end-ad .ad-img {
+  width: 60px; height: 60px; border-radius: 12px;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
+.game-end-ad .ad-text { flex: 1; }
+.game-end-ad .ad-text h4 { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.game-end-ad .ad-text p { font-size: 10px; color: rgba(255,255,255,0.5); }
+.game-end-ad .ad-cta {
+  padding: 6px 14px; border-radius: 8px;
+  background: #3498db; color: #fff;
+  font-size: 10px; font-weight: 700;
+  margin-top: 8px; display: inline-block;
+}
+
+/* ========================================
+   SCREEN 3: REWARDED VIDEO PROMPT
+   ======================================== */
+.rewarded-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 30;
+}
+.rewarded-modal {
+  width: 260px; padding: 24px 20px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.52);
+  border: 1px solid rgba(255,255,255,0.72);
+  backdrop-filter: blur(20px);
+  text-align: center;
+}
+.rewarded-modal .coin-icon {
+  font-size: 42px; margin-bottom: 10px;
+}
+.rewarded-modal h3 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 18px; color: var(--textDark);
+  margin-bottom: 4px;
+}
+.rewarded-modal p {
+  font-size: 12px; color: var(--textMuted);
+  margin-bottom: 16px; line-height: 1.4;
+}
+.rewarded-modal .watch-btn {
+  width: 100%; padding: 12px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, var(--accent), var(--accentSoft));
+  color: #fff; font-size: 13px; font-weight: 700;
+  border: none; cursor: pointer;
+  box-shadow: 0 4px 12px var(--accentGlow);
+  margin-bottom: 8px;
+}
+.rewarded-modal .skip-btn {
+  font-size: 11px; color: var(--textMuted);
+  background: none; border: none; cursor: pointer;
+}
+
+/* ========================================
+   SCREEN 4: FRIENDS ACTIVITY
+   ======================================== */
+.friends-strip-label {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; margin-bottom: 10px;
+}
+.friends-strip-label h4 {
+  font-size: 13px; font-weight: 700; color: var(--textOnFelt);
+}
+.friends-strip-label .see-all {
+  font-size: 10px; color: var(--accent); font-weight: 600;
+}
+.friends-strip {
+  display: flex; gap: 10px;
+  padding: 0 16px; overflow-x: auto;
+  margin-bottom: 20px;
+}
+.friends-strip::-webkit-scrollbar { height: 0; }
+.friend-card {
+  flex-shrink: 0; width: 110px;
+  padding: 12px 10px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+  transition: all 0.2s;
+}
+.friend-card:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.12);
+}
+.friend-card .avatar-wrap {
+  position: relative; display: inline-block; margin-bottom: 6px;
+}
+.friend-card .avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(135deg, #f0e8da, #e5d4bc);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.friend-card .status-dot {
+  position: absolute; bottom: 0; right: 0;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--feltDark);
+}
+.status-dot.online { background: #2ecc71; }
+.status-dot.in-game { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
+.status-dot.lobby { background: #f1c40f; }
+.status-dot.offline { background: #555; }
+.friend-card .fname {
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.friend-card .fstatus {
+  font-size: 9px; color: var(--textFeltMuted);
+  margin: 2px 0 6px;
+}
+.friend-card .fstatus.playing { color: #2ecc71; }
+.friend-card .fstatus.waiting { color: #f1c40f; }
+.friend-card .faction {
+  padding: 4px 10px; border-radius: 6px;
+  font-size: 9px; font-weight: 700;
+  cursor: pointer;
+}
+.faction.join { background: var(--accent); color: #fff; }
+.faction.watch { background: rgba(255,255,255,0.08); color: var(--accentSoft); border: 1px solid rgba(255,255,255,0.12); }
+.faction.invite { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); border: 1px solid rgba(255,255,255,0.08); }
+
+.friend-card-invite {
+  flex-shrink: 0; width: 110px;
+  padding: 12px 10px;
+  border-radius: 16px;
+  background: rgba(196,123,43,0.06);
+  border: 1px dashed rgba(196,123,43,0.3);
+  text-align: center;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.friend-card-invite .plus {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(196,123,43,0.15);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: var(--accent);
+}
+.friend-card-invite span {
+  font-size: 10px; font-weight: 600; color: var(--accent);
+}
+
+/* ========================================
+   SCREEN 5: BRAND SKIN IN-GAME
+   ======================================== */
+.brand-game-screen {
+  padding-top: 10px;
+  position: relative;
+  height: 100%;
+}
+.brand-felt {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, #0a1628 0%, #0f2035 50%, #0a1628 100%);
+  z-index: 0;
+}
+.brand-watermark {
+  position: absolute;
+  bottom: 200px; right: 20px;
+  opacity: 0.08; z-index: 1;
+  font-size: 48px; font-weight: 900;
+  color: #fff;
+  transform: rotate(-15deg);
+  letter-spacing: 4px;
+}
+.brand-logo-corner {
+  position: absolute; top: 42px; right: 12px;
+  width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: rgba(255,255,255,0.4);
+  z-index: 10;
+}
+.brand-card-back {
+  width: 50px; height: 72px; border-radius: 7px;
+  background: linear-gradient(135deg, #1a3a5c, #0d2137);
+  border: 1px solid rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; font-weight: 800; color: rgba(255,255,255,0.25);
+  letter-spacing: 0.5px;
+}
+
+/* ========================================
+   SCREEN 6: INTERSTITIAL AD
+   ======================================== */
+.interstitial-screen {
+  position: absolute; inset: 0;
+  background: #0a0a0f;
+  z-index: 40;
+  display: flex; flex-direction: column;
+}
+.interstitial-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 42px 16px 8px;
+}
+.interstitial-timer {
+  font-size: 11px; color: rgba(255,255,255,0.4);
+}
+.interstitial-close {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: rgba(255,255,255,0.5);
+  cursor: pointer;
+}
+.interstitial-body {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.interstitial-visual {
+  width: 240px; height: 240px; border-radius: 20px;
+  background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 60px;
+  margin-bottom: 20px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+}
+.interstitial-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 20px; margin-bottom: 6px;
+}
+.interstitial-desc {
+  font-size: 12px; color: rgba(255,255,255,0.5);
+  text-align: center; margin-bottom: 20px; line-height: 1.5;
+}
+.interstitial-cta {
+  padding: 12px 40px; border-radius: 12px;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: #fff; font-size: 13px; font-weight: 700;
+  border: none; cursor: pointer;
+}
+.interstitial-footer {
+  text-align: center; padding: 12px;
+  font-size: 9px; color: rgba(255,255,255,0.25);
+}
+
+/* ========================================
+   SCREEN 7: SUBSCRIPTION UPSELL
+   ======================================== */
+.sub-screen { padding: 10px 16px; }
+.sub-header {
+  text-align: center; margin-bottom: 16px;
+}
+.sub-header .crown { font-size: 36px; margin-bottom: 6px; }
+.sub-header h3 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 18px;
+}
+.sub-header p { font-size: 11px; color: var(--textFeltMuted); margin-top: 2px; }
+
+.tier-card {
+  padding: 14px;
+  border-radius: 16px;
+  margin-bottom: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.tier-card.recommended {
+  background: rgba(196,123,43,0.06);
+  border-color: rgba(196,123,43,0.25);
+}
+.tier-card .tier-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.tier-card .tier-name {
+  font-size: 14px; font-weight: 700;
+}
+.tier-card .tier-price {
+  font-size: 13px; font-weight: 700; color: var(--accentSoft);
+}
+.tier-card .tier-annual {
+  font-size: 9px; color: var(--textFeltMuted);
+  text-align: right; margin-top: -4px; margin-bottom: 8px;
+}
+.tier-card .tier-features {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.tier-card .tf {
+  font-size: 10px; color: rgba(255,255,255,0.6);
+  display: flex; align-items: center; gap: 6px;
+}
+.tier-card .tf .check { color: var(--success); font-size: 12px; }
+.tier-card .tier-btn {
+  margin-top: 10px; width: 100%;
+  padding: 9px; border-radius: 10px;
+  font-size: 11px; font-weight: 700;
+  border: none; cursor: pointer;
+}
+.tier-card .tier-btn.current {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.35);
+}
+.tier-card .tier-btn.upgrade {
+  background: linear-gradient(135deg, var(--accent), var(--accentSoft));
+  color: #fff;
+  box-shadow: 0 2px 8px var(--accentGlow);
+}
+
+/* === Legend === */
+.legend {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  margin-top: 24px; padding: 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; color: rgba(255,255,255,0.5);
+}
+.legend-dot {
+  width: 10px; height: 10px; border-radius: 3px;
+}
+
+/* Quick-join notification toast */
+.join-toast {
+  position: absolute; top: 46px; left: 16px; right: 16px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(39,174,96,0.15);
+  border: 1px solid rgba(39,174,96,0.3);
+  display: flex; align-items: center; gap: 10px;
+  z-index: 30;
+  animation: slideDown 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.join-toast .jt-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: linear-gradient(135deg, #f0e8da, #e5d4bc);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.join-toast .jt-text { flex: 1; }
+.join-toast .jt-text .jt-name { font-size: 12px; font-weight: 700; }
+.join-toast .jt-text .jt-msg { font-size: 10px; color: rgba(255,255,255,0.5); }
+.join-toast .jt-actions { display: flex; gap: 6px; }
+.join-toast .jt-btn {
+  padding: 5px 12px; border-radius: 8px;
+  font-size: 10px; font-weight: 700;
+  border: none; cursor: pointer;
+}
+.jt-btn.accept { background: var(--success); color: #fff; }
+.jt-btn.decline { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); }
+
+/* Home content under friends */
+.home-section-label {
+  padding: 0 16px; margin-bottom: 10px;
+  font-size: 13px; font-weight: 700;
+}
+.game-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; padding: 0 16px; margin-bottom: 16px;
+}
+.game-tile {
+  padding: 16px 12px; border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+}
+.game-tile .g-icon { font-size: 28px; margin-bottom: 6px; }
+.game-tile .g-name { font-size: 12px; font-weight: 600; }
+.game-tile .g-players { font-size: 9px; color: var(--textFeltMuted); margin-top: 2px; }
+
+/* Bottom nav */
+.bottom-nav {
+  position: sticky; bottom: 0;
+  display: flex; justify-content: space-around;
+  padding: 8px 0 12px;
+  background: linear-gradient(to top, var(--feltDark) 60%, transparent);
+}
+.bottom-nav .nav-item {
+  text-align: center; font-size: 9px;
+  color: rgba(255,255,255,0.35);
+}
+.bottom-nav .nav-item.active { color: var(--accent); }
+.bottom-nav .nav-icon { font-size: 18px; margin-bottom: 2px; }
+
+/* Section dividers */
+.section-note {
+  margin: 20px 0; padding: 16px 20px;
+  border-radius: 14px;
+  background: rgba(196,123,43,0.06);
+  border-left: 3px solid var(--accent);
+}
+.section-note h4 {
+  font-size: 13px; font-weight: 700; color: var(--accentSoft);
+  margin-bottom: 4px;
+}
+.section-note p {
+  font-size: 11px; color: rgba(255,255,255,0.5);
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<div class="nav-header">
+  <h1>Game Platform Mockups</h1>
+  <div class="nav-tabs">
+    <div class="nav-tab active" data-screen="lobby">Lobby + Banner Ad</div>
+    <div class="nav-tab" data-screen="friends">Friends Activity</div>
+    <div class="nav-tab" data-screen="gameend">Game End + Native Ad</div>
+    <div class="nav-tab" data-screen="rewarded">Rewarded Video</div>
+    <div class="nav-tab" data-screen="interstitial">Interstitial Ad</div>
+    <div class="nav-tab" data-screen="brand">Brand Skin In-Game</div>
+    <div class="nav-tab" data-screen="subscription">Subscription Tiers</div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 1: LOBBY + BANNER AD ============ -->
+<div class="screen-section active" id="screen-lobby">
+  <h2>Lobby Screen — Banner & Native Ad Placements</h2>
+  <p class="subtitle">Free users see a subtle banner ad at the bottom of the lobby and native ad cards mixed into the room list. Banner ads are 320x50 format. Native ads blend with room cards but have a subtle blue tint and "Sponsored" label. Pro and Max users see no ads here.</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Free User View</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div class="lobby-header">
+            <h3>Game Rooms</h3>
+            <div class="glass-pill">🪙 1,240</div>
+          </div>
+          <div class="lobby-search">🔍 Search rooms or players...</div>
+
+          <!-- Room cards -->
+          <div class="room-card">
+            <div class="room-icon">♠️</div>
+            <div class="room-info">
+              <div class="name">Raj's Spades Room</div>
+              <div class="meta">3/4 players · Casual</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">♥️</div>
+            <div class="room-info">
+              <div class="name">Hearts Championship</div>
+              <div class="meta">2/4 players · Ranked</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <!-- Native Ad Card -->
+          <div class="native-ad-card">
+            <div class="ad-badge native">AD</div>
+            <div class="native-ad-icon">🎮</div>
+            <div class="native-ad-info">
+              <div class="name">Try Puzzle Quest 3</div>
+              <div class="meta">Match-3 RPG • Free to play</div>
+            </div>
+            <div class="native-ad-label">Sponsored</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">♦️</div>
+            <div class="room-info">
+              <div class="name">Oh Hell Masters</div>
+              <div class="meta">5/6 players · Pro Room</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">♟️</div>
+            <div class="room-info">
+              <div class="name">Quick Chess 5+3</div>
+              <div class="meta">1/2 players · Blitz</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">🎲</div>
+            <div class="room-info">
+              <div class="name">Ludo Party</div>
+              <div class="meta">2/4 players · Casual</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <!-- Banner Ad at bottom -->
+          <div class="banner-ad">
+            <div class="ad-badge banner">AD</div>
+            <div class="banner-ad-content">
+              <div class="banner-ad-logo">F</div>
+              <div class="banner-ad-text"><strong>Fantasy League</strong> — Draft today!</div>
+              <div class="banner-ad-cta">Play Now</div>
+            </div>
+          </div>
+
+          <div style="height: 60px"></div>
+          <div class="bottom-nav">
+            <div class="nav-item active"><div class="nav-icon">🏠</div>Home</div>
+            <div class="nav-item"><div class="nav-icon">🎮</div>Games</div>
+            <div class="nav-item"><div class="nav-icon">🏆</div>Tourneys</div>
+            <div class="nav-item"><div class="nav-icon">👤</div>Profile</div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Banner ad sits at the bottom of the room list. Native ad card blends with room list every 5th card. Both clearly labelled.</div>
+    </div>
+
+    <div class="device-container">
+      <div class="label">Pro User View (No Ads)</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div class="lobby-header">
+            <h3>Game Rooms</h3>
+            <div class="glass-pill" style="color: var(--accent);">⭐ Pro · 🪙 3,820</div>
+          </div>
+          <div class="lobby-search">🔍 Search rooms or players...</div>
+
+          <div class="room-card">
+            <div class="room-icon">♠️</div>
+            <div class="room-info">
+              <div class="name">Raj's Spades Room</div>
+              <div class="meta">3/4 players · Casual</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">♥️</div>
+            <div class="room-info">
+              <div class="name">Hearts Championship</div>
+              <div class="meta">2/4 players · Ranked</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">♦️</div>
+            <div class="room-info">
+              <div class="name">Oh Hell Masters</div>
+              <div class="meta">5/6 players · Pro Room</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">♟️</div>
+            <div class="room-info">
+              <div class="name">Quick Chess 5+3</div>
+              <div class="meta">1/2 players · Blitz</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">🎲</div>
+            <div class="room-info">
+              <div class="name">Ludo Party</div>
+              <div class="meta">2/4 players · Casual</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div class="room-card">
+            <div class="room-icon">🃏</div>
+            <div class="room-info">
+              <div class="name">Rummy Masters</div>
+              <div class="meta">3/4 players · Ranked</div>
+            </div>
+            <div class="room-join">Join</div>
+          </div>
+
+          <div style="height: 60px"></div>
+          <div class="bottom-nav">
+            <div class="nav-item active"><div class="nav-icon">🏠</div>Home</div>
+            <div class="nav-item"><div class="nav-icon">🎮</div>Games</div>
+            <div class="nav-item"><div class="nav-icon">🏆</div>Tourneys</div>
+            <div class="nav-item"><div class="nav-icon">👤</div>Profile</div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Pro users see a clean lobby with no banner or native ads. More room cards visible. Pro badge in the header coin display.</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div>Banner Ad (320x50)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3498db"></div>Native Ad Card</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div>No Ads (Pro/Max)</div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 2: FRIENDS ACTIVITY ============ -->
+<div class="screen-section" id="screen-friends">
+  <h2>Friends Activity Feed + Quick Join</h2>
+  <p class="subtitle">The home screen features a live "Friends Playing" strip showing real-time status of friends. Green dots = in-game, yellow = in lobby, blue = online. One-tap Join or Watch buttons enable instant social play. Incoming game invites appear as toast notifications.</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Home Screen with Friends Strip</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div class="lobby-header">
+            <h3 style="font-size: 18px">Good evening, Ambar</h3>
+            <div class="glass-pill">🪙 1,240 💎 45</div>
+          </div>
+
+          <!-- Friends Activity Strip -->
+          <div class="friends-strip-label">
+            <h4>Friends Playing</h4>
+            <span class="see-all">See All →</span>
+          </div>
+          <div class="friends-strip">
+            <div class="friend-card">
+              <div class="avatar-wrap">
+                <div class="avatar">👨</div>
+                <div class="status-dot in-game"></div>
+              </div>
+              <div class="fname">Raj</div>
+              <div class="fstatus playing">Oh Hell · Rd 3</div>
+              <div class="faction watch">Watch</div>
+            </div>
+            <div class="friend-card">
+              <div class="avatar-wrap">
+                <div class="avatar">👩</div>
+                <div class="status-dot lobby"></div>
+              </div>
+              <div class="fname">Sara</div>
+              <div class="fstatus waiting">Hearts · Waiting</div>
+              <div class="faction join">Join</div>
+            </div>
+            <div class="friend-card">
+              <div class="avatar-wrap">
+                <div class="avatar">🧑</div>
+                <div class="status-dot in-game"></div>
+              </div>
+              <div class="fname">Mike</div>
+              <div class="fstatus playing">Chess · Move 12</div>
+              <div class="faction watch">Watch</div>
+            </div>
+            <div class="friend-card">
+              <div class="avatar-wrap">
+                <div class="avatar">👧</div>
+                <div class="status-dot online"></div>
+              </div>
+              <div class="fname">Priya</div>
+              <div class="fstatus">Online</div>
+              <div class="faction invite">Invite</div>
+            </div>
+            <div class="friend-card-invite">
+              <div class="plus">+</div>
+              <span>Invite Friends</span>
+            </div>
+          </div>
+
+          <!-- Quick Play -->
+          <div class="home-section-label">Quick Play</div>
+          <div class="game-grid">
+            <div class="game-tile"><div class="g-icon">♠️</div><div class="g-name">Spades</div><div class="g-players">142 playing</div></div>
+            <div class="game-tile"><div class="g-icon">♥️</div><div class="g-name">Hearts</div><div class="g-players">98 playing</div></div>
+            <div class="game-tile"><div class="g-icon">♦️</div><div class="g-name">Oh Hell</div><div class="g-players">76 playing</div></div>
+            <div class="game-tile"><div class="g-icon">♟️</div><div class="g-name">Chess</div><div class="g-players">234 playing</div></div>
+          </div>
+
+          <div class="home-section-label">Daily Challenges</div>
+          <div class="room-card">
+            <div class="room-icon" style="background: linear-gradient(135deg, var(--success), #219a52); font-size: 14px;">✓</div>
+            <div class="room-info">
+              <div class="name">Win 2 games of any type</div>
+              <div class="meta">1/2 completed · 25 coins</div>
+            </div>
+            <div style="font-size: 11px; color: var(--accentSoft); font-weight: 700;">50%</div>
+          </div>
+          <div class="room-card">
+            <div class="room-icon" style="background: rgba(255,255,255,0.06); font-size: 14px;">○</div>
+            <div class="room-info">
+              <div class="name">Play 3 rounds of Oh Hell</div>
+              <div class="meta">0/3 completed · 30 coins</div>
+            </div>
+            <div style="font-size: 11px; color: var(--textFeltMuted);">0%</div>
+          </div>
+
+          <div style="height: 60px"></div>
+          <div class="bottom-nav">
+            <div class="nav-item active"><div class="nav-icon">🏠</div>Home</div>
+            <div class="nav-item"><div class="nav-icon">🎮</div>Games</div>
+            <div class="nav-item"><div class="nav-icon">🏆</div>Tourneys</div>
+            <div class="nav-item"><div class="nav-icon">👤</div>Profile</div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Friends strip scrolls horizontally. Coloured dots indicate status. One-tap actions: Join (open lobby), Watch (spectator), or Invite (game picker).</div>
+    </div>
+
+    <div class="device-container">
+      <div class="label">Incoming Game Invite Toast</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <!-- Toast notification -->
+          <div class="join-toast">
+            <div class="jt-avatar">👩</div>
+            <div class="jt-text">
+              <div class="jt-name">Sara invited you to play Hearts!</div>
+              <div class="jt-msg">Private room · 2/4 players</div>
+            </div>
+            <div class="jt-actions">
+              <div class="jt-btn accept">Join</div>
+              <div class="jt-btn decline">✕</div>
+            </div>
+          </div>
+
+          <div class="lobby-header" style="margin-top: 24px">
+            <h3 style="font-size: 18px">Good evening, Ambar</h3>
+            <div class="glass-pill">🪙 1,240 💎 45</div>
+          </div>
+
+          <div class="friends-strip-label">
+            <h4>Friends Playing</h4>
+            <span class="see-all">See All →</span>
+          </div>
+          <div class="friends-strip">
+            <div class="friend-card" style="border-color: rgba(39,174,96,0.3); background: rgba(39,174,96,0.06);">
+              <div class="avatar-wrap">
+                <div class="avatar">👩</div>
+                <div class="status-dot lobby" style="box-shadow: 0 0 8px #f1c40f;"></div>
+              </div>
+              <div class="fname">Sara</div>
+              <div class="fstatus waiting">Hearts · Invited you!</div>
+              <div class="faction join">Join</div>
+            </div>
+            <div class="friend-card">
+              <div class="avatar-wrap">
+                <div class="avatar">👨</div>
+                <div class="status-dot in-game"></div>
+              </div>
+              <div class="fname">Raj</div>
+              <div class="fstatus playing">Oh Hell · Rd 3</div>
+              <div class="faction watch">Watch</div>
+            </div>
+            <div class="friend-card">
+              <div class="avatar-wrap">
+                <div class="avatar">🧑</div>
+                <div class="status-dot in-game"></div>
+              </div>
+              <div class="fname">Mike</div>
+              <div class="fstatus playing">Chess · Move 12</div>
+              <div class="faction watch">Watch</div>
+            </div>
+            <div class="friend-card-invite">
+              <div class="plus">+</div>
+              <span>Invite Friends</span>
+            </div>
+          </div>
+
+          <div class="home-section-label">Quick Play</div>
+          <div class="game-grid">
+            <div class="game-tile"><div class="g-icon">♠️</div><div class="g-name">Spades</div><div class="g-players">142 playing</div></div>
+            <div class="game-tile"><div class="g-icon">♥️</div><div class="g-name">Hearts</div><div class="g-players">98 playing</div></div>
+            <div class="game-tile"><div class="g-icon">♦️</div><div class="g-name">Oh Hell</div><div class="g-players">76 playing</div></div>
+            <div class="game-tile"><div class="g-icon">♟️</div><div class="g-name">Chess</div><div class="g-players">234 playing</div></div>
+          </div>
+
+          <div style="height: 60px"></div>
+          <div class="bottom-nav">
+            <div class="nav-item active"><div class="nav-icon">🏠</div>Home</div>
+            <div class="nav-item"><div class="nav-icon">🎮</div>Games</div>
+            <div class="nav-item"><div class="nav-icon">🏆</div>Tourneys</div>
+            <div class="nav-item"><div class="nav-icon">👤</div>Profile</div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Game invite arrives as a toast notification at the top. Sara's friend card is highlighted with a green glow. Accept/decline with one tap.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 3: GAME END + NATIVE AD ============ -->
+<div class="screen-section" id="screen-gameend">
+  <h2>Game End Screen — Results + Native Ad</h2>
+  <p class="subtitle">After a game ends, players see results, rewards earned, and a rewarded-ad prompt. The native ad sits below the rewards, styled to match the results screen. A "Watch ad for 30 bonus coins" button appears for all tiers (opt-in).</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Post-Game Results (Free User)</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div class="game-end-screen">
+            <div class="game-end-trophy">🏆</div>
+            <div class="game-end-title">You Won!</div>
+            <div class="game-end-subtitle">Oh Hell · 7 rounds · 12 min</div>
+
+            <div class="results-table">
+              <div class="result-row winner you">
+                <div class="rank">1</div>
+                <div class="avatar">😎</div>
+                <div class="pname">You</div>
+                <div class="score">42 pts</div>
+              </div>
+              <div class="result-row">
+                <div class="rank">2</div>
+                <div class="avatar">👨</div>
+                <div class="pname">Raj</div>
+                <div class="score">38 pts</div>
+              </div>
+              <div class="result-row">
+                <div class="rank">3</div>
+                <div class="avatar">👩</div>
+                <div class="pname">Sara</div>
+                <div class="score">31 pts</div>
+              </div>
+              <div class="result-row">
+                <div class="rank">4</div>
+                <div class="avatar">🤖</div>
+                <div class="pname">Bot (Hard)</div>
+                <div class="score">27 pts</div>
+              </div>
+            </div>
+
+            <div class="rewards-earned">
+              <div class="reward-chip">🪙 +20 coins</div>
+              <div class="reward-chip">⭐ +150 XP</div>
+              <div class="reward-chip">📊 +12 Elo</div>
+            </div>
+
+            <!-- Rewarded ad prompt -->
+            <div style="margin: 12px 0; padding: 12px; border-radius: 14px; background: rgba(39,174,96,0.08); border: 1px solid rgba(39,174,96,0.15); text-align: center; position: relative;">
+              <div class="ad-badge rewarded">REWARD</div>
+              <div style="font-size: 24px; margin-bottom: 4px;">🎬</div>
+              <div style="font-size: 12px; font-weight: 600;">Watch a short video for +30 bonus coins</div>
+              <div style="font-size: 10px; color: var(--textFeltMuted); margin: 2px 0 8px;">15-30 seconds · completely optional</div>
+              <button class="accent-btn" style="width: 100%;">▶ Watch & Earn 30 Coins</button>
+            </div>
+
+            <!-- Native ad -->
+            <div class="game-end-ad">
+              <div class="ad-badge native">AD</div>
+              <div class="ad-inner">
+                <div class="ad-img">🎯</div>
+                <div class="ad-text">
+                  <h4>Word Wizard Pro</h4>
+                  <p>The #1 word game. 5M+ players.</p>
+                  <div class="ad-cta">Install Free</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+              <button class="accent-btn" style="flex: 1;">Play Again</button>
+              <button style="flex: 1; padding: 8px 18px; border-radius: 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); font-size: 11px; font-weight: 700; cursor: pointer;">Lobby</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Results + rewards shown first. Rewarded ad prompt is clearly optional. Native ad at bottom matches the card style. Play Again is prominent.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 4: REWARDED VIDEO MODAL ============ -->
+<div class="screen-section" id="screen-rewarded">
+  <h2>Rewarded Video — Opt-In Modal</h2>
+  <p class="subtitle">Rewarded ads appear as a glass modal overlay. The player always has a clear choice: watch for coins or skip. Available to all tiers (even Pro/Max can opt in for bonus coins). Max 5/day with 20-minute cooldown between watches.</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Rewarded Ad Prompt</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content" style="opacity: 0.3;">
+          <div class="lobby-header">
+            <h3 style="font-size: 18px">Home</h3>
+          </div>
+          <div class="game-grid" style="padding-top: 10px;">
+            <div class="game-tile"><div class="g-icon">♠️</div><div class="g-name">Spades</div></div>
+            <div class="game-tile"><div class="g-icon">♥️</div><div class="g-name">Hearts</div></div>
+          </div>
+        </div>
+        <!-- Overlay -->
+        <div class="rewarded-overlay">
+          <div class="rewarded-modal">
+            <div class="coin-icon">🪙</div>
+            <h3>Earn 30 Coins</h3>
+            <p>Watch a short video (15-30 sec) to earn bonus coins. Completely optional!</p>
+            <button class="watch-btn">▶ Watch Video</button>
+            <button class="skip-btn">No thanks</button>
+            <div style="margin-top: 10px; font-size: 9px; color: var(--textMuted);">4 of 5 watches remaining today</div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Glass morphism modal sits over dimmed content. Clear "No thanks" option. Counter shows remaining watches for transparency.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 5: INTERSTITIAL AD ============ -->
+<div class="screen-section" id="screen-interstitial">
+  <h2>Interstitial Ad — Between Game Sessions</h2>
+  <p class="subtitle">Shown to free users when navigating back to lobby after a game. Always has a close/skip button after 5 seconds. Max 2 per session with 5-minute cooldown. Never shown during gameplay. Pro and Max users never see these.</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Interstitial (Free Users Only)</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div class="interstitial-screen">
+            <div class="interstitial-header">
+              <div class="interstitial-timer">Skip in 3s</div>
+              <div class="interstitial-close" style="opacity: 0.3;">✕</div>
+            </div>
+            <div class="interstitial-body">
+              <div class="interstitial-visual">🏎️</div>
+              <div class="interstitial-title">Racing Champions</div>
+              <div class="interstitial-desc">The ultimate mobile racing experience. Drive 50+ supercars on 30 tracks worldwide.</div>
+              <button class="interstitial-cta">Learn More</button>
+            </div>
+            <div class="interstitial-footer">Ad · Closes automatically · 1 of 2 today</div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">5-sec skip timer (here shown at 3s). Close button activates after timer. Footer shows "1 of 2 today" for transparency. Never during gameplay.</div>
+    </div>
+
+    <div class="device-container">
+      <div class="label">Upgrade Upsell After Ad</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div style="padding: 20px 16px; text-align: center;">
+            <div style="font-size: 36px; margin: 20px 0 10px;">✨</div>
+            <div style="font-family: 'DM Serif Display', serif; font-size: 18px; margin-bottom: 4px;">Tired of ads?</div>
+            <div style="font-size: 12px; color: var(--textFeltMuted); margin-bottom: 20px; line-height: 1.5;">Upgrade to Pro for just $3.99/mo and enjoy an ad-free experience plus voice chat, exclusive skins, and more.</div>
+
+            <div style="padding: 14px; border-radius: 16px; background: rgba(196,123,43,0.08); border: 1px solid rgba(196,123,43,0.2); margin-bottom: 12px; text-align: left;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <div style="font-size: 11px; font-weight: 700;">⭐ Pro — $3.99/mo</div>
+                <div style="padding: 2px 8px; border-radius: 100px; background: var(--accent); font-size: 8px; font-weight: 700; color: #fff;">RECOMMENDED</div>
+              </div>
+              <div style="font-size: 10px; color: rgba(255,255,255,0.5); line-height: 1.6;">
+                ✓ No banner or interstitial ads<br>
+                ✓ Unlimited voice chat<br>
+                ✓ 800 coins + 80 gems monthly<br>
+                ✓ 6 exclusive card skins<br>
+                ✓ Season Pass premium track
+              </div>
+              <button class="accent-btn" style="width: 100%; margin-top: 10px;">Upgrade to Pro</button>
+            </div>
+
+            <button style="padding: 10px 24px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.35); font-size: 11px; cursor: pointer;">Maybe Later</button>
+          </div>
+        </div>
+      </div>
+      <div class="desc">After closing an interstitial, show a soft Pro upsell every 3rd ad close. Non-aggressive: single card with clear "Maybe Later" dismiss.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 6: BRAND SKIN IN-GAME ============ -->
+<div class="screen-section" id="screen-brand">
+  <h2>Brand Skin — Sponsored In-Game Theme</h2>
+  <p class="subtitle">Brands can sponsor room themes and card backs. Players opt-in by equipping the brand skin (often free or earned via challenge). The brand gets subtle watermark + corner logo. This is cosmetic advertising — it never interrupts gameplay.</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Brand Room Theme Active</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content" style="padding-top: 0;">
+          <div class="brand-game-screen">
+            <div class="brand-felt"></div>
+            <div class="brand-watermark">ACME</div>
+            <div class="brand-logo-corner">
+              <div class="ad-badge brand" style="position: static;">BRAND</div>
+            </div>
+
+            <!-- Simplified game HUD -->
+            <div style="position: relative; z-index: 5; padding: 42px 12px 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="glass-pill" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8);">🎴 Oh Hell</div>
+                <div class="glass-pill" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8);">Round 3 · ♦️ · 5 cards</div>
+                <div style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 14px;">⋯</div>
+              </div>
+
+              <!-- Opponent nodes -->
+              <div style="display: flex; justify-content: center; gap: 40px; margin-top: 20px;">
+                <div style="text-align: center;">
+                  <div style="width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #f0e8da, #e5d4bc); display: flex; align-items: center; justify-content: center; font-size: 18px; margin: 0 auto;">👨</div>
+                  <div style="font-size: 9px; color: rgba(255,255,255,0.4); margin-top: 3px;">Raj</div>
+                  <div style="font-size: 8px; padding: 2px 8px; border-radius: 100px; background: rgba(39,174,96,0.2); color: #27ae60; margin-top: 2px;">2/2</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #f0e8da, #e5d4bc); display: flex; align-items: center; justify-content: center; font-size: 18px; margin: 0 auto; border: 2px solid var(--accent); box-shadow: 0 0 12px var(--accentGlow);">👩</div>
+                  <div style="font-size: 9px; color: rgba(255,255,255,0.4); margin-top: 3px;">Sara</div>
+                  <div style="font-size: 8px; padding: 2px 8px; border-radius: 100px; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); margin-top: 2px;">1/3</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #f0e8da, #e5d4bc); display: flex; align-items: center; justify-content: center; font-size: 18px; margin: 0 auto;">🤖</div>
+                  <div style="font-size: 9px; color: rgba(255,255,255,0.4); margin-top: 3px;">Bot</div>
+                  <div style="font-size: 8px; padding: 2px 8px; border-radius: 100px; background: rgba(231,76,60,0.2); color: #e74c3c; margin-top: 2px;">3/1</div>
+                </div>
+              </div>
+
+              <!-- Trick zone with brand card backs -->
+              <div style="display: flex; justify-content: center; gap: 8px; margin-top: 30px;">
+                <div style="width: 50px; height: 72px; border-radius: 7px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">
+                  <div style="font-family: 'DM Serif Display', serif; font-size: 15px; color: #c0392b;">K</div>
+                  <div style="font-size: 10px; color: #c0392b;">♥</div>
+                </div>
+                <div style="width: 50px; height: 72px; border-radius: 7px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2px solid var(--accent); box-shadow: 0 0 10px var(--accentGlow);">
+                  <div style="font-family: 'DM Serif Display', serif; font-size: 15px; color: #1a1a2a;">A</div>
+                  <div style="font-size: 10px; color: #1a1a2a;">♠</div>
+                </div>
+                <div class="brand-card-back">ACME</div>
+              </div>
+
+              <!-- Hand area -->
+              <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                  <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f0e8da, #e5d4bc); display: flex; align-items: center; justify-content: center; font-size: 16px;">😎</div>
+                  <div>
+                    <div style="font-size: 10px; font-weight: 600;">You</div>
+                    <div style="font-size: 9px; color: var(--accentSoft);">1 / 2 bid</div>
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: center; gap: -5px;">
+                  <div style="width: 52px; height: 76px; border-radius: 7px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-6deg);">
+                    <div style="font-family: 'DM Serif Display'; font-size: 14px; color: #c0392b;">Q</div>
+                    <div style="font-size: 9px; color: #c0392b;">♦</div>
+                  </div>
+                  <div style="width: 52px; height: 76px; border-radius: 7px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-2deg); margin-left: -8px;">
+                    <div style="font-family: 'DM Serif Display'; font-size: 14px; color: #1a1a2a;">J</div>
+                    <div style="font-size: 9px; color: #1a1a2a;">♣</div>
+                  </div>
+                  <div style="width: 52px; height: 76px; border-radius: 7px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(2deg) translateY(-16px); margin-left: -8px; border: 2px solid var(--accent); box-shadow: 0 0 12px var(--accentGlow);">
+                    <div style="font-family: 'DM Serif Display'; font-size: 14px; color: #c0392b;">9</div>
+                    <div style="font-size: 9px; color: #c0392b;">♥</div>
+                  </div>
+                  <div style="width: 52px; height: 76px; border-radius: 7px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(6deg); margin-left: -8px; opacity: 0.42;">
+                    <div style="font-family: 'DM Serif Display'; font-size: 14px; color: #1a1a2a;">4</div>
+                    <div style="font-size: 9px; color: #1a1a2a;">♠</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Brand theme changes felt colour to navy (ACME brand). Subtle watermark at 8% opacity. Brand logo in corner. Card backs show brand name. All cosmetic — no gameplay interruption.</div>
+    </div>
+  </div>
+
+  <div class="section-note">
+    <h4>Brand Advertising Revenue Model</h4>
+    <p>Brands pay per-impression (CPM) for room themes and card backs. Players earn the brand skin free via a short challenge ("Play 3 games in ACME room"). Brand gets 1,000-10,000 impressions per campaign. Estimated CPM: $15-25 (US), $3-8 (India). Premium positioning because it's opt-in and non-interruptive.</p>
+  </div>
+</div>
+
+<!-- ============ SCREEN 7: SUBSCRIPTION TIERS ============ -->
+<div class="screen-section" id="screen-subscription">
+  <h2>Subscription Comparison Screen</h2>
+  <p class="subtitle">Redesigned subscription screen with clear value proposition. Pro is recommended. Annual pricing shown as savings. Free tier highlights what you're missing. Appears from Settings or after interstitial upsell.</p>
+
+  <div class="devices-row">
+    <div class="device-container">
+      <div class="label">Subscription Picker</div>
+      <div class="device">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●● WiFi 🔋</span>
+        </div>
+        <div class="screen-content">
+          <div class="sub-screen">
+            <div class="sub-header">
+              <div class="crown">👑</div>
+              <h3>Upgrade Your Experience</h3>
+              <p>Play without interruptions. Unlock everything.</p>
+            </div>
+
+            <!-- Free -->
+            <div class="tier-card">
+              <div class="tier-header">
+                <div class="tier-name">Free</div>
+                <div class="tier-price">$0</div>
+              </div>
+              <div class="tier-features">
+                <div class="tf"><span class="check">✓</span> All games playable</div>
+                <div class="tf"><span class="check">✓</span> 200 coins/month</div>
+                <div class="tf"><span class="check" style="color: var(--danger);">✕</span> Banner + interstitial ads</div>
+                <div class="tf"><span class="check" style="color: var(--danger);">✕</span> 2 min voice chat limit</div>
+              </div>
+              <button class="tier-btn current">Current Plan</button>
+            </div>
+
+            <!-- Pro -->
+            <div class="tier-card recommended">
+              <div style="display: flex; justify-content: center; margin-bottom: 6px;">
+                <div style="padding: 2px 12px; border-radius: 100px; background: var(--accent); font-size: 9px; font-weight: 700; color: #fff;">MOST POPULAR</div>
+              </div>
+              <div class="tier-header">
+                <div class="tier-name">⭐ Pro</div>
+                <div class="tier-price">$3.99/mo</div>
+              </div>
+              <div class="tier-annual">or $38.99/year (save 19%)</div>
+              <div class="tier-features">
+                <div class="tf"><span class="check">✓</span> No banner or interstitial ads</div>
+                <div class="tf"><span class="check">✓</span> Unlimited voice chat</div>
+                <div class="tf"><span class="check">✓</span> 800 coins + 80 gems/month</div>
+                <div class="tf"><span class="check">✓</span> 6 exclusive card skins</div>
+                <div class="tf"><span class="check">✓</span> Season Pass premium track</div>
+                <div class="tf"><span class="check">✓</span> Priority matchmaking</div>
+                <div class="tf"><span class="check">✓</span> Unlimited private rooms</div>
+              </div>
+              <button class="tier-btn upgrade">Upgrade to Pro</button>
+            </div>
+
+            <!-- Max -->
+            <div class="tier-card">
+              <div class="tier-header">
+                <div class="tier-name">💎 Max</div>
+                <div class="tier-price">$7.99/mo</div>
+              </div>
+              <div class="tier-annual">or $74.99/year (save 22%)</div>
+              <div class="tier-features">
+                <div class="tf"><span class="check">✓</span> Completely ad-free (zero ads)</div>
+                <div class="tf"><span class="check">✓</span> Everything in Pro, plus:</div>
+                <div class="tf"><span class="check">✓</span> 2,500 coins + 300 gems/month</div>
+                <div class="tf"><span class="check">✓</span> ALL skins (current + future)</div>
+                <div class="tf"><span class="check">✓</span> 20% bonus Season XP</div>
+                <div class="tf"><span class="check">✓</span> 25% tournament discount</div>
+                <div class="tf"><span class="check">✓</span> Gold animated leaderboard frame</div>
+                <div class="tf"><span class="check">✓</span> Full analytics + CSV export</div>
+              </div>
+              <button class="tier-btn upgrade" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa);">Upgrade to Max</button>
+            </div>
+
+            <div style="text-align: center; margin-top: 8px;">
+              <div style="font-size: 10px; color: var(--textFeltMuted); cursor: pointer;">Restore Purchases</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="desc">Pro tier is highlighted with "Most Popular" badge and amber border. Free tier shows what you're missing (red X). Clear pricing with annual savings.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Tab navigation
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.screen-section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('screen-' + tab.dataset.screen).classList.add('active');
+  });
+});
+</script>
+
+</body>
+</html>

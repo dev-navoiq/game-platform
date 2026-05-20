@@ -1,0 +1,19 @@
+name: game_spades
+description: Spades card game implementation.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  game_core:
+    path: ../game_core
+  equatable: ^2.0.5
+  collection: ^1.18.0
+  meta: ^1.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.3

@@ -1,0 +1,255 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.24.0'
+  NODE_VERSION: '20'
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ── 1. Package unit tests (game_core, game_twenty_nine, bot_strategies, …) ──
+  unit-tests:
+    name: Unit Tests (packages)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap monorepo
+        run: melos bootstrap
+
+      - name: Run unit tests (all packages)
+        run: melos run test:packages
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unit
+        continue-on-error: true  # Don't fail the build if codecov is down
+
+  # ── 2. Flutter app unit tests ─────────────────────────────────────────────
+  app-unit-tests:
+    name: Unit Tests (flutter_app)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap monorepo
+        run: melos bootstrap
+
+      - name: Run app unit tests
+        run: melos run test:unit
+
+      - name: Run app widget tests
+        run: melos run test:widget
+
+  # ── 3. Golden tests ───────────────────────────────────────────────────────
+  golden-tests:
+    name: Golden Tests (visual regression)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap monorepo
+        run: melos bootstrap
+
+      - name: Run golden comparison tests
+        run: melos run test:golden:compare
+
+      - name: Upload golden failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-failures-${{ github.run_number }}
+          path: '**/failures/*.png'
+          retention-days: 14
+
+  # ── 4. Flutter integration tests (on-device via emulator) ────────────────
+  integration-tests:
+    name: Integration Tests (Flutter)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+          sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap monorepo
+        run: melos bootstrap
+
+      - name: Run Android emulator and integration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          profile: pixel_5
+          script: |
+            cd apps/flutter_app
+            flutter test integration_test/app_test.dart \
+              --device-id=emulator-5554 \
+              --timeout 120s
+
+  # ── 5. E2E Playwright tests ───────────────────────────────────────────────
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/flutter_app/e2e/playwright/package.json
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap monorepo
+        run: melos bootstrap
+
+      - name: Install Playwright + browsers
+        working-directory: apps/flutter_app/e2e/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Build Flutter Web
+        working-directory: apps/flutter_app
+        run: flutter build web --release
+
+      - name: Serve Flutter Web
+        working-directory: apps/flutter_app
+        run: |
+          npx serve build/web --listen 3000 &
+          # Wait for server to be ready
+          until curl -s http://localhost:3000; do sleep 1; done
+
+      - name: Run Playwright E2E tests
+        working-directory: apps/flutter_app/e2e/playwright
+        env:
+          BASE_URL: 'http://localhost:3000'
+          CI: 'true'
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_number }}
+          path: apps/flutter_app/e2e/playwright/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ github.run_number }}
+          path: apps/flutter_app/e2e/playwright/test-results.json
+          retention-days: 30
+
+  # ── 6. Static analysis ────────────────────────────────────────────────────
+  analyze:
+    name: Flutter Analyze
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap monorepo
+        run: melos bootstrap
+
+      - name: Analyze all packages
+        run: melos run analyze
+
+      - name: Check formatting
+        run: melos run format -- --set-exit-if-changed
+
+  # ── Summary gate ─────────────────────────────────────────────────────────
+  all-tests-pass:
+    name: All Tests Pass
+    needs: [unit-tests, app-unit-tests, golden-tests, analyze]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check if all required jobs passed
+        run: |
+          if [[ "${{ needs.unit-tests.result }}" != "success" || \
+                "${{ needs.app-unit-tests.result }}" != "success" || \
+                "${{ needs.analyze.result }}" != "success" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required jobs passed"

@@ -1,0 +1,32 @@
+name: bot_strategies
+description: AI players (easy/medium/hard/expert) for all games. Runs fully client-side for offline play.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  game_core:
+    path: ../game_core
+  game_twenty_nine:
+    path: ../game_twenty_nine
+  game_oh_hell:
+    path: ../game_oh_hell
+  game_hearts:
+    path: ../game_hearts
+  game_spades:
+    path: ../game_spades
+  game_chess:
+    path: ../game_chess
+  game_ludo:
+    path: ../game_ludo
+  game_sequence:
+    path: ../game_sequence
+  equatable: ^2.0.5
+  collection: ^1.18.0
+  meta: ^1.11.0
+
+dev_dependencies:
+  test: ^1.24.0
+  mocktail: ^1.0.3

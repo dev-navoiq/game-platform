@@ -1,0 +1,301 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../di/providers.dart';
+import '../theme/colors.dart';
+import 'routes.dart';
+import '../../shared/widgets/felt_background.dart';
+import '../../shared/widgets/glass_nav_bar.dart';
+import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/register_screen.dart';
+import '../../features/auth/presentation/onboarding_screen.dart';
+import '../../features/home/presentation/home_screen.dart';
+import '../../features/lobby/screens/lobby_screen.dart';
+import '../../features/lobby/presentation/room_screen.dart';
+import '../../features/game/screens/game_screen.dart';
+import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/profile/presentation/settings_screen.dart';
+import '../../features/shop/presentation/shop_screen.dart';
+import '../../features/leaderboard/presentation/leaderboard_screen.dart';
+import '../../features/challenges/presentation/challenges_screen.dart';
+import '../../features/season_pass/presentation/season_pass_screen.dart';
+import '../../features/referral/presentation/referral_screen.dart';
+import '../../features/friends/presentation/friends_screen.dart';
+import '../../features/history/presentation/history_screen.dart';
+import '../../features/history/presentation/replay_screen.dart';
+import '../../features/social/presentation/notification_settings_screen.dart';
+import '../../features/shop/presentation/subscription_screen.dart';
+import '../../features/tournaments/presentation/screens/tournaments_screen.dart';
+import '../../features/tournaments/presentation/screens/tournament_detail_screen.dart';
+
+final routerProvider = Provider<GoRouter>((ref) {
+  return GoRouter(
+    initialLocation: AppRoutes.splash,
+    debugLogDiagnostics: true,
+
+    redirect: (context, state) {
+      final isLoggedIn = ref.read(isLoggedInProvider);
+      final isAuthRoute = state.matchedLocation == AppRoutes.login ||
+          state.matchedLocation == AppRoutes.register;
+
+      if (state.matchedLocation == AppRoutes.splash) {
+        return isLoggedIn ? AppRoutes.home : AppRoutes.login;
+      }
+
+      if (!isLoggedIn && !isAuthRoute) {
+        return AppRoutes.login;
+      }
+
+      if (isLoggedIn && isAuthRoute) {
+        return AppRoutes.home;
+      }
+
+      return null;
+    },
+
+    routes: [
+      // Splash
+      GoRoute(
+        path: AppRoutes.splash,
+        builder: (context, state) => const _SplashScreen(),
+      ),
+
+      // Auth
+      GoRoute(
+        path: AppRoutes.login,
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.register,
+        builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.onboarding,
+        builder: (context, state) => const OnboardingScreen(),
+      ),
+
+      // Main shell with bottom nav
+      ShellRoute(
+        builder: (context, state, child) => _MainShell(child: child),
+        routes: [
+          GoRoute(
+            path: AppRoutes.home,
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: HomeScreen(),
+            ),
+          ),
+          GoRoute(
+            path: AppRoutes.shop,
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: ShopScreen(),
+            ),
+          ),
+          GoRoute(
+            path: AppRoutes.leaderboard,
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: LeaderboardScreen(),
+            ),
+          ),
+          GoRoute(
+            path: AppRoutes.profile,
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: ProfileScreen(),
+            ),
+          ),
+        ],
+      ),
+
+      // Lobby & Room (full screen)
+      GoRoute(
+        path: AppRoutes.lobby,
+        builder: (context, state) => LobbyScreen(
+          gameType: state.pathParameters['gameType'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.room,
+        builder: (context, state) => RoomScreen(
+          roomId: state.pathParameters['roomId'] ?? '',
+        ),
+      ),
+
+      // Game (full screen)
+      GoRoute(
+        path: AppRoutes.game,
+        builder: (context, state) => GameScreen(
+          roomId: state.pathParameters['gameId'] ?? '',
+        ),
+      ),
+
+      // Settings
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.notificationSettings,
+        builder: (context, state) => const NotificationSettingsScreen(),
+      ),
+
+      // Subscription
+      GoRoute(
+        path: AppRoutes.subscription,
+        builder: (context, state) => const SubscriptionScreen(),
+      ),
+
+      // Feature screens
+      GoRoute(
+        path: AppRoutes.challenges,
+        builder: (context, state) => const ChallengesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.seasonPass,
+        builder: (context, state) => const SeasonPassScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.referral,
+        builder: (context, state) => const ReferralScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.friends,
+        builder: (context, state) => const FriendsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.history,
+        builder: (context, state) => const HistoryScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.replay,
+        builder: (context, state) => ReplayScreen(
+          roomId: state.pathParameters['roomId'] ?? '',
+        ),
+      ),
+
+      // Tournaments
+      GoRoute(
+        path: AppRoutes.tournaments,
+        builder: (context, state) => const TournamentsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.tournament,
+        builder: (context, state) => TournamentDetailScreen(
+          tournamentId: state.pathParameters['tournamentId'] ?? '',
+        ),
+      ),
+    ],
+
+    errorBuilder: (context, state) => _ErrorScreen(error: state.error),
+  );
+});
+
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+class _MainShell extends StatelessWidget {
+  final Widget child;
+
+  const _MainShell({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.feltDark,
+      extendBody: true,
+      body: child,
+      bottomNavigationBar: const _MainBottomNav(),
+    );
+  }
+}
+
+class _MainBottomNav extends ConsumerWidget {
+  const _MainBottomNav();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final location = GoRouterState.of(context).matchedLocation;
+
+    int currentIndex = 0;
+    if (location.startsWith('/shop')) currentIndex = 1;
+    if (location.startsWith('/leaderboard')) currentIndex = 2;
+    if (location.startsWith('/profile')) currentIndex = 3;
+
+    return GlassNavBar(
+      currentIndex: currentIndex,
+      onTap: (index) {
+        switch (index) {
+          case 0:
+            context.go(AppRoutes.home);
+          case 1:
+            context.go(AppRoutes.shop);
+          case 2:
+            context.go(AppRoutes.leaderboard);
+          case 3:
+            context.go(AppRoutes.profile);
+        }
+      },
+      items: const [
+        GlassNavBarItem(
+          icon: Icons.home_outlined,
+          activeIcon: Icons.home,
+          label: 'Home',
+        ),
+        GlassNavBarItem(
+          icon: Icons.store_outlined,
+          activeIcon: Icons.store,
+          label: 'Shop',
+        ),
+        GlassNavBarItem(
+          icon: Icons.leaderboard_outlined,
+          activeIcon: Icons.leaderboard,
+          label: 'Ranks',
+        ),
+        GlassNavBarItem(
+          icon: Icons.person_outlined,
+          activeIcon: Icons.person,
+          label: 'Profile',
+        ),
+      ],
+    );
+  }
+}
+
+class _ErrorScreen extends StatelessWidget {
+  final Exception? error;
+
+  const _ErrorScreen({this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(
+              'Oops! Something went wrong',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(error?.toString() ?? 'Unknown error'),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => context.go(AppRoutes.home),
+              child: const Text('Go Home'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

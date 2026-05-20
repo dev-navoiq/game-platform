@@ -1,0 +1,28 @@
+# melos_managed_dependency_overrides: bot_strategies,game_bridge,game_chess,game_core,game_hearts,game_ludo,game_oh_hell,game_rummy,game_sequence,game_spades,game_twenty_nine,monetization,social_core
+dependency_overrides:
+  bot_strategies:
+    path: ../../packages/bot_strategies
+  game_bridge:
+    path: ../../packages/game_bridge
+  game_chess:
+    path: ../../packages/game_chess
+  game_core:
+    path: ../../packages/game_core
+  game_hearts:
+    path: ../../packages/game_hearts
+  game_ludo:
+    path: ../../packages/game_ludo
+  game_oh_hell:
+    path: ../../packages/game_oh_hell
+  game_rummy:
+    path: ../../packages/game_rummy
+  game_sequence:
+    path: ../../packages/game_sequence
+  game_spades:
+    path: ../../packages/game_spades
+  game_twenty_nine:
+    path: ../../packages/game_twenty_nine
+  monetization:
+    path: ../../packages/monetization
+  social_core:
+    path: ../../packages/social_core

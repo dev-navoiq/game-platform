@@ -1,0 +1,116 @@
+name: game_platform
+repository: https://github.com/yourusername/game-platform
+
+packages:
+  - apps/*
+  - packages/*
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+
+scripts:
+  analyze:
+    run: melos exec -- flutter analyze
+    description: Analyze all packages
+
+  format:
+    run: melos exec -- dart format .
+    description: Format all packages
+
+  test:
+    run: melos exec -- flutter test
+    description: Run tests in all packages
+    packageFilters:
+      dirExists: test
+
+  build_runner:
+    run: melos exec -- flutter pub run build_runner build --delete-conflicting-outputs
+    description: Run build_runner in all packages
+    packageFilters:
+      dependsOn: build_runner
+
+  clean:
+    run: melos exec -- flutter clean
+    description: Clean all packages
+
+  get:
+    run: melos exec -- flutter pub get
+    description: Get dependencies for all packages
+
+  # ── Testing ────────────────────────────────────────────────
+  test:unit:
+    run: melos exec -- flutter test test/unit
+    description: Run unit tests in all packages
+    packageFilters:
+      dirExists: test/unit
+
+  test:widget:
+    run: melos exec -- flutter test test/widget
+    description: Run widget tests
+    packageFilters:
+      dirExists: test/widget
+
+  test:golden:
+    run: melos exec -- flutter test --update-goldens test/widget/goldens
+    description: Update golden image baselines
+    packageFilters:
+      dirExists: test/widget/goldens
+
+  test:golden:compare:
+    run: melos exec -- flutter test test/widget/goldens
+    description: Compare against golden image baselines
+    packageFilters:
+      dirExists: test/widget/goldens
+
+  test:integration:
+    run: melos exec -- flutter test integration_test
+    description: Run Flutter integration tests
+    packageFilters:
+      dirExists: integration_test
+
+  test:packages:
+    run: melos exec -- flutter test
+    description: Run all tests in every package
+    packageFilters:
+      dirExists: test
+
+  test:all:
+    run: >
+      melos run test:unit &&
+      melos run test:widget &&
+      melos run test:packages
+    description: Run unit + widget + package tests
+
+  test:e2e:
+    run: |
+      cd apps/flutter_app/e2e/playwright
+      npm ci
+      npx playwright test
+    description: Run Playwright E2E tests (all projects)
+
+  test:e2e:mobile:
+    run: |
+      cd apps/flutter_app/e2e/playwright
+      npx playwright test --project="Mobile Chrome" --project="Mobile Safari" --project="Mobile Safari Mini"
+    description: Run E2E tests on mobile device profiles only
+
+  test:e2e:desktop:
+    run: |
+      cd apps/flutter_app/e2e/playwright
+      npx playwright test --project="chromium" --project="firefox" --project="webkit"
+    description: Run E2E tests on desktop browsers only
+
+  test:e2e:report:
+    run: |
+      cd apps/flutter_app/e2e/playwright
+      npx playwright show-report
+    description: Open last Playwright HTML report
+
+  test:coverage:
+    run: |
+      melos exec --scope="flutter_app" -- flutter test --coverage
+      melos exec --scope="game_core" -- flutter test --coverage
+      melos exec --scope="game_twenty_nine" -- flutter test --coverage
+    description: Generate lcov coverage for key packages
+sdkPath: .fvm/flutter_sdk

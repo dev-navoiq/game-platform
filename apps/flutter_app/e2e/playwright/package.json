@@ -1,0 +1,23 @@
+{
+  "name": "game-platform-e2e",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for the Game Platform Flutter Web app",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:mobile": "playwright test --project='Mobile Chrome' --project='Mobile Safari' --project='Mobile Safari Mini'",
+    "test:desktop": "playwright test --project='chromium' --project='firefox' --project='webkit'",
+    "test:tablets": "playwright test --project='iPad' --project='iPad Landscape'",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen http://localhost:3000",
+    "install-browsers": "playwright install --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "@axe-core/playwright": "^4.9.0",
+    "typescript": "^5.4.0"
+  }
+}
