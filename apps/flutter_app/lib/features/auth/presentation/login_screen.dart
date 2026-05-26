@@ -52,6 +52,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ref.read(isLoggedInProvider.notifier).state = true;
         context.go(AppRoutes.home);
       }
+    } catch (e) {
+      _showError('Guest sign-in failed', e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -71,9 +73,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ref.read(isLoggedInProvider.notifier).state = true;
         context.go(AppRoutes.home);
       }
+    } catch (e) {
+      _showError('Email sign-in failed', e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showError(String label, Object error) {
+    debugPrint('$label: $error');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label: $error'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ),
+    );
   }
 
   @override
