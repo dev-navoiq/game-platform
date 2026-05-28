@@ -1,0 +1,4 @@
+git_url("https://github.com/dev-navoiq/ios-certs")
+storage_mode("git")
+type("appstore")
+app_identifier(["app.navoiq.gameplatform"])

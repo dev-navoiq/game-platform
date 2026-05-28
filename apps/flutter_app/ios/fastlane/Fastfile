@@ -1,0 +1,58 @@
+# Fastfile for app.navoiq.gameplatform — iOS distribution to TestFlight.
+# Match passphrase is pulled from macOS keychain; App Store Connect API
+# key is read via fastlane's app_store_connect_api_key helper.
+#
+# Lanes:
+#   sync_certs  — populates the dev-navoiq/ios-certs repo with the App Store
+#                 distribution cert + provisioning profile (first-run setup).
+#   beta        — builds + uploads the latest IPA to TestFlight.
+
+default_platform(:ios)
+
+APP_STORE_CONNECT_KEY_ID    = "GZT6923N3L"
+APP_STORE_CONNECT_ISSUER_ID = "f29c17c7-d3cc-4177-8ea5-fb36283b5f56"
+APP_STORE_CONNECT_KEY_PATH  = File.expand_path("~/.appstoreonnect/AuthKey_GZT6923N3L.p8")
+
+platform :ios do
+  before_all do
+    ENV["MATCH_PASSWORD"] = `security find-generic-password -s "fastlane-match-passphrase" -w`.strip
+    raise "fastlane-match-passphrase missing in keychain" if ENV["MATCH_PASSWORD"].empty?
+  end
+
+  private_lane :api_key do
+    app_store_connect_api_key(
+      key_id: APP_STORE_CONNECT_KEY_ID,
+      issuer_id: APP_STORE_CONNECT_ISSUER_ID,
+      key_filepath: APP_STORE_CONNECT_KEY_PATH,
+      duration: 1200,
+      in_house: false,
+    )
+  end
+
+  desc "First-run: generate App Store distribution cert + provisioning profile, push encrypted to dev-navoiq/ios-certs"
+  lane :sync_certs do
+    match(
+      type: "appstore",
+      app_identifier: "app.navoiq.gameplatform",
+      readonly: false,
+      api_key: api_key,
+    )
+  end
+
+  desc "Build IPA + upload to TestFlight"
+  lane :beta do
+    match(
+      type: "appstore",
+      app_identifier: "app.navoiq.gameplatform",
+      readonly: true,
+      api_key: api_key,
+    )
+    # The IPA itself is built outside fastlane via `flutter build ipa --release`;
+    # this lane assumes build/ios/ipa/Runner.ipa exists.
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: "../build/ios/ipa/flutter_app.ipa",
+      skip_waiting_for_build_processing: true,
+    )
+  end
+end

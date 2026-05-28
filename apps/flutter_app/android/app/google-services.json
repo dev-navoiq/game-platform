@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "552391106337",
+    "project_id": "game-platform-staging",
+    "storage_bucket": "game-platform-staging.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:552391106337:android:caa57fba15b4709798e860",
+        "android_client_info": {
+          "package_name": "app.navoiq.gameplatform"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmWa4eHFRsHd1yKxzWuwDWGis9en0Dt6c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
