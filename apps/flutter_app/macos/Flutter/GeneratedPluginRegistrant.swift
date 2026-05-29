@@ -13,7 +13,6 @@ import flutter_webrtc
 import livekit_client
 import package_info_plus
 import path_provider_foundation
-import posthog_flutter
 import purchases_flutter
 import rive_common
 import sentry_flutter
@@ -31,7 +30,6 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   LiveKitPlugin.register(with: registry.registrar(forPlugin: "LiveKitPlugin"))
   FPPPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FPPPackageInfoPlusPlugin"))
   PathProviderPlugin.register(with: registry.registrar(forPlugin: "PathProviderPlugin"))
-  PosthogFlutterPlugin.register(with: registry.registrar(forPlugin: "PosthogFlutterPlugin"))
   PurchasesFlutterPlugin.register(with: registry.registrar(forPlugin: "PurchasesFlutterPlugin"))
   RivePlugin.register(with: registry.registrar(forPlugin: "RivePlugin"))
   SentryFlutterPlugin.register(with: registry.registrar(forPlugin: "SentryFlutterPlugin"))

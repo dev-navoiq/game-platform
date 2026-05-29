@@ -60,7 +60,10 @@ dependencies:
 
   # Analytics & Monitoring
   sentry_flutter: ^9.20.0
-  posthog_flutter: ^5.0.0
+  # posthog_flutter: temporarily removed — 5.x has a build-time bug
+  # (Unresolved reference 'postHogVersion' in PosthogFlutterPlugin.kt)
+  # on Android Gradle Plugin 8+ that prevents release builds.
+  # Re-add once upstream ships a fix.
 
   # Utils
   uuid: ^4.3.3
