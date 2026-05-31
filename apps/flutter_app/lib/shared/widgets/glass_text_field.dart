@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/colors.dart';
 import '../theme/glass_tokens.dart';
@@ -19,6 +20,8 @@ class GlassTextField extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final int maxLines;
   final bool enabled;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextCapitalization textCapitalization;
 
   const GlassTextField({
     super.key,
@@ -34,6 +37,8 @@ class GlassTextField extends StatefulWidget {
     this.onSubmitted,
     this.maxLines = 1,
     this.enabled = true,
+    this.inputFormatters,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   @override
@@ -117,6 +122,8 @@ class _GlassTextFieldState extends State<GlassTextField> {
                 onSubmitted: widget.onSubmitted,
                 maxLines: widget.maxLines,
                 enabled: widget.enabled,
+                inputFormatters: widget.inputFormatters,
+                textCapitalization: widget.textCapitalization,
                 style: TextStyle(
                   fontSize: 16,
                   color: AppColors.textDark,

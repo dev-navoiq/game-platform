@@ -12,6 +12,7 @@ import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/onboarding_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/lobby/screens/lobby_screen.dart';
+import '../../features/lobby/presentation/join_by_code_screen.dart';
 import '../../features/lobby/presentation/room_screen.dart';
 import '../../features/game/screens/game_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -110,6 +111,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.lobby,
         builder: (context, state) => LobbyScreen(
+          gameType: state.pathParameters['gameType'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.joinByCode,
+        builder: (context, state) => JoinByCodeScreen(
           gameType: state.pathParameters['gameType'] ?? '',
         ),
       ),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/routing/routes.dart';
 import '../../../core/theme/colors.dart';
@@ -28,6 +30,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   String _socialMode = 'full';
   bool _isReady = false;
   bool _isStarting = false;
+  String? _roomCode;
 
   @override
   void initState() {
@@ -38,7 +41,42 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         roomId: widget.roomId,
         onUpdate: (_) {},
       );
+      _loadRoomCode();
     });
+  }
+
+  Future<void> _loadRoomCode() async {
+    try {
+      final supabase = ref.read(supabaseServiceProvider);
+      final code = await supabase.getRoomCode(roomId: widget.roomId);
+      if (mounted) setState(() => _roomCode = code);
+    } catch (_) {
+      // Non-critical — code container will keep showing the loading placeholder.
+    }
+  }
+
+  void _copyRoomCode() {
+    final code = _roomCode;
+    if (code == null) return;
+    Clipboard.setData(ClipboardData(text: code));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Room code $code copied'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _shareRoomCode() async {
+    final code = _roomCode;
+    if (code == null) return;
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'Join my Game Platform room — code: $code',
+        subject: 'Join my room',
+      ),
+    );
   }
 
   Future<void> _addBot() async {
@@ -206,7 +244,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
           child: Column(
             children: [
-              // Room code display
+              // Room code display + Copy/Share actions
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -228,16 +266,39 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      widget.roomId.length > 8
-                          ? widget.roomId.substring(0, 8).toUpperCase()
-                          : widget.roomId.toUpperCase(),
+                      _roomCode ?? '------',
                       key: const Key('room-code'),
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: 28,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textOnFelt,
-                        letterSpacing: 3,
+                        letterSpacing: 4,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton.icon(
+                          key: const Key('room-code-copy'),
+                          onPressed: _roomCode == null ? null : _copyRoomCode,
+                          icon: const Icon(Icons.copy, size: 16),
+                          label: const Text('Copy'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.textOnFelt,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        TextButton.icon(
+                          key: const Key('room-code-share'),
+                          onPressed: _roomCode == null ? null : _shareRoomCode,
+                          icon: const Icon(Icons.share, size: 16),
+                          label: const Text('Share'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.textOnFelt,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

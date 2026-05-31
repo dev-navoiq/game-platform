@@ -88,6 +88,19 @@ class SupabaseService {
     });
   }
 
+  /// Fetch the shareable 6-character room code for a given room UUID.
+  /// Used after create-room (where the code is in the response anyway, but
+  /// we may not have plumbed it through) and after join-by-code where we
+  /// only know the code, not the UUID.
+  Future<String> getRoomCode({required String roomId}) async {
+    final row = await _client
+        .from('game_rooms')
+        .select('code')
+        .eq('id', roomId)
+        .single();
+    return row['code'] as String;
+  }
+
   /// Add a bot player to the room via server-side RPC.
   /// Inserts into room_players so the bot counts toward the player total.
   /// Returns the generated bot UUID.

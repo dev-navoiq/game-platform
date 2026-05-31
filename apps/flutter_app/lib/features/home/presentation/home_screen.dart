@@ -264,13 +264,16 @@ class _GameGrid extends StatelessWidget {
               iconColor: AppColors.cardBlack,
               onTap: () => context.push(AppRoutes.lobbyPath('spades')),
             ),
-            GameTileCard(
-              title: 'Chess',
-              subtitle: '2 players',
-              icon: Icons.castle,
-              iconColor: AppColors.primaryDark,
-              onTap: () => context.push(AppRoutes.lobbyPath('chess')),
-            ),
+            // Chess hidden until M4 (create-room form) ships — the beta's
+            // hardcoded max_players=4 would leave a 2-player game in a
+            // 4-seat room stuck in 'waiting'. See memory/multiplayer-room-flow-debt.
+            // GameTileCard(
+            //   title: 'Chess',
+            //   subtitle: '2 players',
+            //   icon: Icons.castle,
+            //   iconColor: AppColors.primaryDark,
+            //   onTap: () => context.push(AppRoutes.lobbyPath('chess')),
+            // ),
             GameTileCard(
               title: 'Ludo',
               subtitle: '2-4 players',

@@ -28,6 +28,7 @@ class AppRoutes {
 
   // Lobby
   static const lobby = '/lobby/:gameType';
+  static const joinByCode = '/lobby/:gameType/join';
   static const room = '/room/:roomId';
 
   // Game
@@ -42,6 +43,7 @@ class AppRoutes {
 
   // Helpers
   static String lobbyPath(String gameType) => '/lobby/$gameType';
+  static String joinByCodePath(String gameType) => '/lobby/$gameType/join';
   static String roomPath(String roomId) => '/room/$roomId';
   static String gamePath(String gameId) => '/game/$gameId';
   static String replayPath(String roomId) => '/replay/$roomId';

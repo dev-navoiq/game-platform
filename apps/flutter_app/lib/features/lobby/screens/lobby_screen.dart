@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/routing/routes.dart';
-import '../../../core/theme/colors.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
-import '../../../shared/widgets/glass_text_field.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
 import '../presentation/widgets/room_list_card.dart';
 
@@ -53,14 +51,19 @@ class LobbyScreen extends ConsumerWidget {
           ),
           child: Column(
             children: [
-              // Search bar
-              GlassTextField(
-                hint: 'Search rooms by code...',
-                prefixIcon: Icons.search,
+              // Join by Code button — opens the join screen
+              GlassButton(
+                label: 'Join by Code',
+                onPressed: () => context.push(AppRoutes.joinByCodePath(gameType)),
+                size: GlassButtonSize.large,
+                width: double.infinity,
+                variant: GlassButtonVariant.outlined,
+                icon: const Icon(Icons.vpn_key_outlined,
+                    color: Colors.white, size: 20),
               ),
               const SizedBox(height: 16),
 
-              // Room list
+              // Room list (placeholder — sample rooms until matchmaking is wired)
               Expanded(
                 child: _RoomList(gameType: gameType),
               ),
