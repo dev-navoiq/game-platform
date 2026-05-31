@@ -1,7 +1,7 @@
 name: flutter_app
 description: Multiplayer Game Platform
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.0+2
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -114,6 +114,33 @@ dev_dependencies:
   # Testing extras
   golden_toolkit: ^0.15.0
   network_image_mock: ^2.1.1
+  # Branding asset generators (run once per source-asset change via
+  # `dart run flutter_launcher_icons` and `dart run flutter_native_splash:create`).
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/branding/icon_source.png"
+  adaptive_icon_background: "#122e1d"
+  adaptive_icon_foreground: "assets/branding/icon_foreground.png"
+  min_sdk_android: 21
+
+flutter_native_splash:
+  color: "#122e1d"
+  color_dark: "#091c11"
+  image: "assets/branding/splash_logo.png"
+  image_dark: "assets/branding/splash_logo.png"
+  android_12:
+    color: "#122e1d"
+    color_dark: "#091c11"
+    image: "assets/branding/icon_foreground.png"
+    image_dark: "assets/branding/icon_foreground.png"
+  android: true
+  ios: true
+  fullscreen: false
 
 flutter:
   uses-material-design: true
