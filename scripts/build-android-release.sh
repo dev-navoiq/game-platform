@@ -19,10 +19,17 @@ fi
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$PROJECT_ROOT/apps/flutter_app"
 
-pwd_value="$(security find-generic-password -s "android-keystore-password" -w 2>/dev/null || true)"
-if [ -z "$pwd_value" ]; then
-  echo "✗ android-keystore-password not found in macOS keychain."
-  echo "  Add it with: security add-generic-password -a \"\$USER\" -s \"android-keystore-password\" -w"
+# Source the keystore password: env var wins (so CI can inject it), otherwise
+# fall back to macOS keychain (local dev convenience).
+if [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ]; then
+  pwd_value="$ANDROID_KEYSTORE_PASSWORD"
+elif [ "$(uname)" = "Darwin" ]; then
+  pwd_value="$(security find-generic-password -s "android-keystore-password" -w 2>/dev/null || true)"
+fi
+if [ -z "${pwd_value:-}" ]; then
+  echo "✗ Keystore password not found. Either:"
+  echo "  - Set the ANDROID_KEYSTORE_PASSWORD env var (CI), or"
+  echo "  - On macOS, add it to the keychain: security add-generic-password -a \"\$USER\" -s \"android-keystore-password\" -w"
   exit 1
 fi
 
