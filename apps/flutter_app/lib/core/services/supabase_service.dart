@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../features/lobby/models/room_member.dart';
 
 final supabaseServiceProvider = Provider<SupabaseService>((ref) {
   return SupabaseService(Supabase.instance.client);
@@ -137,6 +141,106 @@ class SupabaseService {
             onUpdate(data.first);
           }
         });
+  }
+
+  /// One-shot reconciliation: pulls room metadata + roster and stitches
+  /// humans (room_players) + bots (game_rooms.config.bots) into a single
+  /// ordered member list.
+  Future<RoomSnapshot> fetchRoomSnapshot({required String roomId}) async {
+    final room = await _client
+        .from('game_rooms')
+        .select('code, social_mode, status, created_by, config')
+        .eq('id', roomId)
+        .single();
+
+    final players = await _client
+        .from('room_players')
+        .select(
+          'user_id, seat_index, is_ready, is_spectator, '
+          'profiles(display_name, username)',
+        )
+        .eq('room_id', roomId)
+        .order('seat_index');
+
+    final hostId = room['created_by'] as String;
+    final currentUserId = _client.auth.currentUser?.id;
+    final config = room['config'] as Map<String, dynamic>?;
+    final bots = (config?['bots'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        const <Map<String, dynamic>>[];
+
+    final members = <RoomMember>[];
+
+    for (final p in players as List) {
+      final row = p as Map<String, dynamic>;
+      final userId = row['user_id'] as String;
+      final profile = row['profiles'] as Map<String, dynamic>?;
+      final name = (profile?['display_name'] as String?) ??
+          (profile?['username'] as String?) ??
+          'Player';
+      members.add(RoomMember(
+        id: userId,
+        displayName: name,
+        seatIndex: row['seat_index'] as int,
+        isHost: userId == hostId,
+        isBot: false,
+        isReady: (row['is_ready'] as bool?) ?? false,
+        isCurrentUser: userId == currentUserId,
+        isSpectator: (row['is_spectator'] as bool?) ?? false,
+      ));
+    }
+
+    for (final b in bots) {
+      members.add(RoomMember(
+        id: b['id'] as String,
+        displayName: 'Bot',
+        seatIndex: (b['seat_index'] as int?) ?? members.length,
+        isHost: false,
+        isBot: true,
+        isReady: true,
+        isCurrentUser: false,
+        botDifficulty: b['difficulty'] as String?,
+      ));
+    }
+
+    members.sort((a, b) => a.seatIndex.compareTo(b.seatIndex));
+
+    return RoomSnapshot(
+      roomCode: room['code'] as String,
+      socialMode: room['social_mode'] as String,
+      status: room['status'] as String,
+      members: members,
+    );
+  }
+
+  /// Streams realtime changes affecting the room roster. Fires the callback
+  /// whenever either `room_players` (humans joining/leaving/readying) or
+  /// `game_rooms` (host changing social mode, bot list updating, status
+  /// transitioning) changes for this room. The caller reloads the snapshot
+  /// inside the callback.
+  ///
+  /// Returns a dispose function that tears down both underlying subscriptions.
+  /// Must be invoked from the screen's `dispose()`.
+  void Function() subscribeToRoomMembership({
+    required String roomId,
+    required void Function() onChanged,
+  }) {
+    final playersSub = _client
+        .from('room_players')
+        .stream(primaryKey: ['id'])
+        .eq('room_id', roomId)
+        .listen((_) => onChanged());
+
+    final roomSub = _client
+        .from('game_rooms')
+        .stream(primaryKey: ['id'])
+        .eq('id', roomId)
+        .listen((_) => onChanged());
+
+    return () {
+      playersSub.cancel();
+      roomSub.cancel();
+    };
   }
 
   // ── Game ──────────────────────────────────────────────────────────────────

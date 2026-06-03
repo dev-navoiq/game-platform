@@ -14,6 +14,7 @@ import '../../../shared/widgets/glass_button.dart';
 import '../../game/providers/bot_move_controller.dart';
 import '../../game/providers/game_provider.dart';
 import '../../game/providers/game_session_providers.dart';
+import '../models/room_member.dart';
 import 'widgets/player_slot_widget.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
@@ -26,32 +27,44 @@ class RoomScreen extends ConsumerStatefulWidget {
 }
 
 class _RoomScreenState extends ConsumerState<RoomScreen> {
-  final List<String> _players = ['You'];
+  List<RoomMember> _members = const [];
   String _socialMode = 'full';
   bool _isReady = false;
   bool _isStarting = false;
   String? _roomCode;
+  void Function()? _disposeMembershipSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSnapshot();
       final supabase = ref.read(supabaseServiceProvider);
-      supabase.subscribeToRoom(
+      _disposeMembershipSub = supabase.subscribeToRoomMembership(
         roomId: widget.roomId,
-        onUpdate: (_) {},
+        onChanged: _loadSnapshot,
       );
-      _loadRoomCode();
     });
   }
 
-  Future<void> _loadRoomCode() async {
+  @override
+  void dispose() {
+    _disposeMembershipSub?.call();
+    super.dispose();
+  }
+
+  Future<void> _loadSnapshot() async {
     try {
       final supabase = ref.read(supabaseServiceProvider);
-      final code = await supabase.getRoomCode(roomId: widget.roomId);
-      if (mounted) setState(() => _roomCode = code);
-    } catch (_) {
-      // Non-critical — code container will keep showing the loading placeholder.
+      final snap = await supabase.fetchRoomSnapshot(roomId: widget.roomId);
+      if (!mounted) return;
+      setState(() {
+        _members = snap.members;
+        _socialMode = snap.socialMode;
+        _roomCode = snap.roomCode;
+      });
+    } catch (e) {
+      debugPrint('[RoomScreen] fetchRoomSnapshot failed: $e');
     }
   }
 
@@ -71,11 +84,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Future<void> _shareRoomCode() async {
     final code = _roomCode;
     if (code == null) return;
-    await SharePlus.instance.share(
-      ShareParams(
-        text: 'Join my Game Platform room — code: $code',
-        subject: 'Join my room',
-      ),
+    await Share.share(
+      'Join my Gathr room — code: $code',
+      subject: 'Join my room',
     );
   }
 
@@ -109,11 +120,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     if (difficulty != null) {
       final supabase = ref.read(supabaseServiceProvider);
-      final botId = await supabase.addBot(
+      await supabase.addBot(
         roomId: widget.roomId,
         difficulty: difficulty,
       );
-      setState(() => _players.add(botId));
+      // No local setState here — the game_rooms realtime subscription will
+      // fire and `_loadSnapshot` will pick up the new bot.
     }
   }
 
@@ -320,17 +332,21 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   itemCount: 4,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
-                    if (index < _players.length) {
-                      final player = _players[index];
-                      final isBot =
-                          player != 'You' && player.startsWith('bot_');
+                    if (index < _members.length) {
+                      final m = _members[index];
+                      final label = m.isBot
+                          ? (m.botDifficulty == null
+                              ? 'Bot'
+                              : 'Bot · ${m.botDifficulty}')
+                          : (m.isCurrentUser ? 'You' : m.displayName);
                       return PlayerSlotWidget(
                         key: const Key('player-slot'),
-                        playerName: player,
-                        isHost: index == 0,
-                        isBot: isBot,
-                        isReady: false,
-                        playerColor: playerColors[index % playerColors.length],
+                        playerName: label,
+                        isHost: m.isHost,
+                        isBot: m.isBot,
+                        isReady: m.isReady,
+                        playerColor:
+                            playerColors[m.seatIndex % playerColors.length],
                       );
                     }
                     return const PlayerSlotWidget(isEmpty: true);
@@ -367,7 +383,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                           child: GlassButton(
                             label: 'Start Game',
                             isLoading: _isStarting,
-                            onPressed: _players.length >= 2 ? _startGame : null,
+                            onPressed: _members.length >= 2 ? _startGame : null,
                             size: GlassButtonSize.large,
                           ),
                         ),
