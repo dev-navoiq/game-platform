@@ -14,7 +14,7 @@ class GamePlatformApp extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
-      title: 'Game Platform',
+      title: 'Gathr',
       debugShowCheckedModeBanner: false,
 
       // Routing

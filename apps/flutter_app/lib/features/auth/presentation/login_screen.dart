@@ -115,7 +115,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Game Platform',
+                      'Gathr',
                       style: Theme.of(context)
                           .textTheme
                           .headlineLarge
