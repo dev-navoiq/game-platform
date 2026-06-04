@@ -8,7 +8,7 @@
 #   scripts/build-android-release.sh apk        # release APK (for Firebase App Distribution)
 #   scripts/build-android-release.sh appbundle  # release AAB (for Google Play)
 
-set -uo pipefail
+set -euo pipefail
 
 ARTIFACT="${1:-apk}"
 if [ "$ARTIFACT" != "apk" ] && [ "$ARTIFACT" != "appbundle" ]; then
@@ -35,9 +35,23 @@ fi
 
 env_name="${ENV:-staging}"
 
+# Local dev pins Flutter via FVM; CI (subosito/flutter-action) puts plain
+# `flutter` on PATH. Use whichever is available so the same script powers
+# both. Explicit override via FLUTTER_CMD if needed.
+if [ -n "${FLUTTER_CMD:-}" ]; then
+  : # honour the override
+elif command -v fvm >/dev/null 2>&1; then
+  FLUTTER_CMD="fvm flutter"
+elif command -v flutter >/dev/null 2>&1; then
+  FLUTTER_CMD="flutter"
+else
+  echo "✗ Neither fvm nor flutter found on PATH."
+  exit 1
+fi
+
 cd "$APP_DIR"
 ANDROID_KEYSTORE_PASSWORD="$pwd_value" \
-  fvm flutter build "$ARTIFACT" --release --dart-define=ENV="$env_name"
+  $FLUTTER_CMD build "$ARTIFACT" --release --dart-define=ENV="$env_name"
 
 echo
 echo "✓ Built $ARTIFACT (env=$env_name)"
