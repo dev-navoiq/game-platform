@@ -12,7 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: '3.24.0'
+  # Match the FVM pin in .fvmrc — the toolchain the project is actually built
+  # against locally. 3.24.0 was stale and predates several plugin pins.
+  FLUTTER_VERSION: '3.41.9'
   NODE_VERSION: '20'
 
 # ── Jobs ─────────────────────────────────────────────────────────────────────
@@ -36,7 +38,12 @@ jobs:
         run: dart pub global activate melos
 
       - name: Bootstrap monorepo
-        run: melos bootstrap
+        # Strip the FVM-only sdkPath; CI uses subosito/flutter-action which
+        # puts Flutter on PATH at a different location. melos.yaml is left
+        # alone locally so the FVM workflow on the dev Mac keeps working.
+        run: |
+          sed -i '/^sdkPath:/d' melos.yaml
+          melos bootstrap
 
       - name: Run unit tests (all packages)
         run: melos run test:packages
@@ -66,7 +73,12 @@ jobs:
         run: dart pub global activate melos
 
       - name: Bootstrap monorepo
-        run: melos bootstrap
+        # Strip the FVM-only sdkPath; CI uses subosito/flutter-action which
+        # puts Flutter on PATH at a different location. melos.yaml is left
+        # alone locally so the FVM workflow on the dev Mac keeps working.
+        run: |
+          sed -i '/^sdkPath:/d' melos.yaml
+          melos bootstrap
 
       - name: Run app unit tests
         run: melos run test:unit
@@ -92,7 +104,12 @@ jobs:
         run: dart pub global activate melos
 
       - name: Bootstrap monorepo
-        run: melos bootstrap
+        # Strip the FVM-only sdkPath; CI uses subosito/flutter-action which
+        # puts Flutter on PATH at a different location. melos.yaml is left
+        # alone locally so the FVM workflow on the dev Mac keeps working.
+        run: |
+          sed -i '/^sdkPath:/d' melos.yaml
+          melos bootstrap
 
       - name: Run golden comparison tests
         run: melos run test:golden:compare
@@ -130,7 +147,12 @@ jobs:
         run: dart pub global activate melos
 
       - name: Bootstrap monorepo
-        run: melos bootstrap
+        # Strip the FVM-only sdkPath; CI uses subosito/flutter-action which
+        # puts Flutter on PATH at a different location. melos.yaml is left
+        # alone locally so the FVM workflow on the dev Mac keeps working.
+        run: |
+          sed -i '/^sdkPath:/d' melos.yaml
+          melos bootstrap
 
       - name: Run Android emulator and integration tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -169,7 +191,12 @@ jobs:
         run: dart pub global activate melos
 
       - name: Bootstrap monorepo
-        run: melos bootstrap
+        # Strip the FVM-only sdkPath; CI uses subosito/flutter-action which
+        # puts Flutter on PATH at a different location. melos.yaml is left
+        # alone locally so the FVM workflow on the dev Mac keeps working.
+        run: |
+          sed -i '/^sdkPath:/d' melos.yaml
+          melos bootstrap
 
       - name: Install Playwright + browsers
         working-directory: apps/flutter_app/e2e/playwright
@@ -229,7 +256,12 @@ jobs:
         run: dart pub global activate melos
 
       - name: Bootstrap monorepo
-        run: melos bootstrap
+        # Strip the FVM-only sdkPath; CI uses subosito/flutter-action which
+        # puts Flutter on PATH at a different location. melos.yaml is left
+        # alone locally so the FVM workflow on the dev Mac keeps working.
+        run: |
+          sed -i '/^sdkPath:/d' melos.yaml
+          melos bootstrap
 
       - name: Analyze all packages
         run: melos run analyze
