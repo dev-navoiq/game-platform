@@ -33,7 +33,12 @@ concurrency:
 jobs:
   distribute:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Cold first build (NDK + CMake install, ~60 pub deps + Gradle cold
+    # dep resolution + Kotlin/Java compile, no warm caches yet) measured
+    # at ~30 min and still going when the prior 30-min timeout fired.
+    # Warm runs after caches populate should finish in ~10–15 min — but
+    # 60 min keeps headroom for an unlucky cold rebuild later.
+    timeout-minutes: 60
     permissions:
       contents: read
 
