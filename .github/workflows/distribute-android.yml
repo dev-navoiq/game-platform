@@ -41,6 +41,11 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      # Required for Workload Identity Federation: the auth action exchanges
+      # this OIDC token for a short-lived GCP access token via the pool
+      # github-pool / provider github (provisioned 2026-06-07 against repo
+      # dev-navoiq/game-platform; see android-ci-secrets memory).
+      id-token: write
 
     steps:
       - name: Checkout
@@ -100,19 +105,17 @@ jobs:
           fi
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
 
-      # Firebase auth via a CI token (FIREBASE_TOKEN env var). Used instead
-      # of a service-account JSON because the GCP org policy here blocks
-      # long-lived SA key creation (iam.disableServiceAccountKeyCreation).
-      # Generate the token locally with `firebase login:ci`. Future upgrade
-      # path: Workload Identity Federation — see android-ci-secrets memory.
-      - name: Verify Firebase token present
-        env:
-          FB_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        run: |
-          if [ -z "$FB_TOKEN" ]; then
-            echo "::error::FIREBASE_TOKEN secret is empty"
-            exit 1
-          fi
+      # Firebase auth via Workload Identity Federation — no long-lived token
+      # to rotate. GitHub Actions' OIDC token is exchanged for a short-lived
+      # GCP access token tied to the `github-distribute` service account on
+      # the staging Firebase project. The action sets GOOGLE_APPLICATION_
+      # CREDENTIALS automatically; firebase CLI picks it up via ADC, so no
+      # explicit --token flag is needed downstream.
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/552391106337/locations/global/workloadIdentityPools/github-pool/providers/github'
+          service_account: 'github-distribute@game-platform-staging.iam.gserviceaccount.com'
 
       - name: Resolve env + release notes
         id: resolve
@@ -143,7 +146,6 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
         run: |
           bash scripts/distribute-android.sh \
