@@ -108,14 +108,20 @@ jobs:
       # Firebase auth via Workload Identity Federation — no long-lived token
       # to rotate. GitHub Actions' OIDC token is exchanged for a short-lived
       # GCP access token tied to the `github-distribute` service account on
-      # the staging Firebase project. The action sets GOOGLE_APPLICATION_
-      # CREDENTIALS automatically; firebase CLI picks it up via ADC, so no
-      # explicit --token flag is needed downstream.
+      # the staging Firebase project, scoped to this repo only.
+      #
+      # token_format: 'access_token' makes the action expose the minted
+      # OAuth2 access token as a step output. firebase-tools doesn't read
+      # GOOGLE_APPLICATION_CREDENTIALS for appdistribution:distribute, so
+      # we feed the access token into FIREBASE_TOKEN in the build step
+      # instead.
       - name: Authenticate to Google Cloud (WIF)
+        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: 'projects/552391106337/locations/global/workloadIdentityPools/github-pool/providers/github'
           service_account: 'github-distribute@game-platform-staging.iam.gserviceaccount.com'
+          token_format: 'access_token'
 
       - name: Resolve env + release notes
         id: resolve
@@ -147,6 +153,9 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+          # Short-lived OAuth2 access token minted by the WIF step above.
+          # Expires within an hour; only needs to outlive this job.
+          FIREBASE_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           bash scripts/distribute-android.sh \
             "${{ steps.resolve.outputs.env }}" \
