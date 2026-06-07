@@ -4,8 +4,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:flutter_app/main.dart' as app;
 import 'package:flutter_app/core/services/supabase_service.dart';
+import 'package:flutter_app/features/lobby/models/room_member.dart';
 
 class MockSupabaseService extends Mock implements SupabaseService {}
+
+RoomSnapshot _snapshotWith({required int memberCount, String code = 'ABC123'}) {
+  return RoomSnapshot(
+    roomCode: code,
+    socialMode: 'full',
+    status: 'waiting',
+    members: [
+      const RoomMember(
+        id: 'guest-uid',
+        displayName: 'You',
+        seatIndex: 0,
+        isHost: true,
+        isBot: false,
+        isReady: false,
+        isCurrentUser: true,
+      ),
+      if (memberCount >= 2)
+        const RoomMember(
+          id: 'bot-uid',
+          displayName: 'Bot',
+          seatIndex: 1,
+          isHost: false,
+          isBot: true,
+          isReady: true,
+          isCurrentUser: false,
+          botDifficulty: 'medium',
+        ),
+    ],
+  );
+}
 
 void main() {
   group('Room Creation Flow — Widget Integration', () {
@@ -18,6 +49,14 @@ void main() {
           .thenAnswer((_) async => 'guest-uid');
       when(() => mockSupabase.getProfile(userId: any(named: 'userId')))
           .thenAnswer((_) async => {'display_name': 'Guest', 'level': 1});
+      // Default room roster: just the host. Tests that need a different
+      // shape (e.g. after add-bot) override fetchRoomSnapshot below.
+      when(() => mockSupabase.fetchRoomSnapshot(roomId: any(named: 'roomId')))
+          .thenAnswer((_) async => _snapshotWith(memberCount: 1));
+      when(() => mockSupabase.subscribeToRoomMembership(
+            roomId: any(named: 'roomId'),
+            onChanged: any(named: 'onChanged'),
+          )).thenReturn(() {});
     });
 
     Future<void> loginAsGuest(WidgetTester tester) async {
@@ -66,10 +105,12 @@ void main() {
             roomId: any(named: 'roomId'),
             difficulty: any(named: 'difficulty'),
           )).thenAnswer((_) async => 'bot-uid');
-      when(() => mockSupabase.subscribeToRoom(
-            roomId: any(named: 'roomId'),
-            onUpdate: any(named: 'onUpdate'),
-          )).thenReturn(null);
+      // Override the setUp default — after add-bot we want fetchRoomSnapshot
+      // to report host + bot. The realtime subscription is stubbed no-op so
+      // the test doesn't depend on the onChanged() round-trip; we just need
+      // the screen's next pumpAndSettle to read the updated roster.
+      when(() => mockSupabase.fetchRoomSnapshot(roomId: any(named: 'roomId')))
+          .thenAnswer((_) async => _snapshotWith(memberCount: 2));
 
       await loginAsGuest(tester);
       await tester.tap(find.text('Twenty-Nine'));
