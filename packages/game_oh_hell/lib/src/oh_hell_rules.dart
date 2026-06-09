@@ -173,6 +173,35 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
     };
   }
 
+  /// Starts the next round in the sequence — used after the human confirms
+  /// the round-end overlay. Mirrors the server-side `applyNewRound` in
+  /// `supabase/functions/_shared/game_rules/oh_hell.ts`.
+  OhHellState applyNewRound(OhHellState state) {
+    if (state.phase != GamePhase.roundEnd && state.phase != GamePhase.gameEnd) {
+      return state;
+    }
+    final restarting = state.phase == GamePhase.gameEnd;
+    final sequence = OhHellConfig.roundSequence(state.playerOrder.length);
+    final nextIndex = restarting ? 0 : state.roundSequenceIndex;
+    final nextDealer = restarting
+        ? state.dealerIndex
+        : (state.dealerIndex + 1) % state.playerOrder.length;
+    return _startRound(
+      playerIds: state.playerOrder,
+      dealerIndex: nextDealer,
+      roundSequenceIndex: nextIndex,
+      roundSequence: sequence,
+      totalRounds: state.totalRounds,
+      scores: restarting
+          ? {for (final pid in state.playerOrder) pid: 0}
+          : state.scores,
+      roundNumber: restarting ? 1 : state.roundNumber,
+    ).copyWith(
+      roundHistory: restarting ? const [] : state.roundHistory,
+      socialMode: state.socialMode,
+    );
+  }
+
   MoveResult<OhHellState> _applyBid(
       OhHellState state, OhHellBidMove move) {
     final newBids = Map<String, int>.from(state.bids)
@@ -311,6 +340,8 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
       },
     ));
 
+    final newHistory = [...state.roundHistory, result.roundPoints];
+
     // All rounds complete → game over.
     final nextIndex = state.roundSequenceIndex + 1;
     if (nextIndex >= state.totalRounds) {
@@ -325,6 +356,7 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
           currentTrick: [],
           tricksWon: tricksWon,
           scores: result.updatedScores,
+          roundHistory: newHistory,
           roundNumber: state.roundNumber + 1,
           turnNumber: state.turnNumber + 1,
         ),
@@ -332,24 +364,20 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
       );
     }
 
-    // Start next round with rotated dealer.
-    final sequence = OhHellConfig.roundSequence(state.playerOrder.length);
-    final nextDealer =
-        (state.dealerIndex + 1) % state.playerOrder.length;
-    final nextState = _startRound(
-      playerIds: state.playerOrder,
-      dealerIndex: nextDealer,
-      roundSequenceIndex: nextIndex,
-      roundSequence: sequence,
-      totalRounds: state.totalRounds,
-      scores: result.updatedScores,
-      roundNumber: state.roundNumber + 1,
-    );
-
+    // Pause in roundEnd until a newRound move is dispatched. Keep the
+    // hands/tricksWon/currentTrick from the round that just finished so
+    // the scoreboard can show the final state until the human confirms.
     return MoveResult.valid(
-      newState: nextState.copyWith(
+      newState: state.copyWith(
         phase: GamePhase.roundEnd,
-        socialMode: state.socialMode,
+        hands: hands,
+        currentTrick: [],
+        tricksWon: tricksWon,
+        scores: result.updatedScores,
+        roundHistory: newHistory,
+        roundSequenceIndex: nextIndex,
+        roundNumber: state.roundNumber + 1,
+        turnNumber: state.turnNumber + 1,
       ),
       events: events,
     );

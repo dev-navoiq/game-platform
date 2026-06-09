@@ -9,7 +9,9 @@
 #   scripts/distribute-android.sh staging "Multiplayer fix"    # custom notes
 #
 # Env knobs:
-#   FIREBASE_TESTERS  comma-separated emails to notify (default: ambartyagi@gmail.com)
+#   FIREBASE_GROUP    App Distribution group alias to notify (default: beta).
+#                     Manage members in the Firebase console or via
+#                     `firebase appdistribution:group:addtesters`.
 #   FIREBASE_TOKEN    Firebase CI token from `firebase login:ci`. Used by CI.
 #                     When unset locally, the `firebase` CLI falls back to
 #                     whatever account `firebase login` left signed in.
@@ -46,7 +48,7 @@ case "$ENV_NAME" in
     ;;
 esac
 
-TESTERS="${FIREBASE_TESTERS:-ambartyagi@gmail.com}"
+GROUP="${FIREBASE_GROUP:-beta}"
 
 echo "→ Building release APK (env=$ENV_NAME)"
 ENV="$ENV_NAME" bash "$PROJECT_ROOT/scripts/build-android-release.sh" apk
@@ -60,7 +62,7 @@ echo
 echo "→ Uploading to Firebase App Distribution"
 echo "  app:      $APP_ID"
 echo "  project:  $FIREBASE_PROJECT"
-echo "  testers:  $TESTERS"
+echo "  group:    $GROUP"
 echo "  notes:    $NOTES"
 echo
 
@@ -68,7 +70,7 @@ firebase appdistribution:distribute "$APK_PATH" \
   --app "$APP_ID" \
   --project "$FIREBASE_PROJECT" \
   --release-notes "$NOTES" \
-  --testers "$TESTERS"
+  --groups "$GROUP"
 
 echo
 echo "✓ Done."

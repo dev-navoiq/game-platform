@@ -13,6 +13,7 @@ export 'src/card_games/twenty_nine_bot.dart';
 export 'src/card_games/oh_hell_bot.dart';
 export 'src/card_games/hearts_bot.dart';
 export 'src/card_games/spades_bot.dart';
+export 'src/card_games/bridge_bot.dart';
 
 // Board game bots
 export 'src/board_games/chess_bot.dart';

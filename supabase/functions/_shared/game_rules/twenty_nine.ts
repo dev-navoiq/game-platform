@@ -83,10 +83,12 @@ export function validateTwentyNineMove(
 ): ValidationResult {
   const state = stateJson as unknown as TwentyNineState;
 
-  // newRound can be sent by any player in the game
+  // newRound can be sent by any player in the game. Allowed from gameEnd too
+  // so a "Play Again" tap in the game-over dialog can start a fresh session
+  // (sessionScores reset is handled in applyNewRound).
   if (move.type === 'newRound') {
-    if (state.phase !== 'roundEnd') {
-      return { valid: false, error: 'Not round end phase', error_code: 'WRONG_PHASE' };
+    if (state.phase !== 'roundEnd' && state.phase !== 'gameEnd') {
+      return { valid: false, error: 'Not round end or game end phase', error_code: 'WRONG_PHASE' };
     }
     return { valid: true };
   }
@@ -386,13 +388,26 @@ function applyPlayCard(
     { playerId: move.player_id, card, seatIndex },
   ];
 
+  // Auto-reveal trump when a player plays a trump card while trump is still
+  // face-down. The card itself publicly discloses the suit, so the state
+  // should reflect that without requiring a separate reveal step.
+  const autoRevealing =
+    !!state.trumpSuit && !state.trumpRevealed && card.suit === state.trumpSuit;
+  const baseState = autoRevealing
+    ? {
+        ...state,
+        trumpRevealed: true,
+        trumpRevealerThisTrick: move.player_id,
+      }
+    : state;
+
   // Trick complete when 4 players have played
   if (newTrick.length === 4) {
-    return completeTrick(state, newTrick, newHands);
+    return completeTrick(baseState, newTrick, newHands);
   }
 
   return {
-    ...state,
+    ...baseState,
     hands: newHands,
     currentTrick: newTrick,
     currentPlayerId: getNextPlayerId(state),
@@ -436,6 +451,10 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
   const newDealerIndex = (state.dealerIndex + 1) % 4;
   const firstBidder = state.playerOrder[(newDealerIndex + 1) % 4];
 
+  // "Play Again" path: when starting a brand-new session after gameEnd,
+  // wipe session scores and reset roundNumber so the new game starts clean.
+  const restartingSession = state.phase === 'gameEnd';
+
   return {
     ...state,
     phase: 'bidding',
@@ -457,6 +476,8 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
     doubledBy: null,
     redoubledBy: null,
     trumpRevealerThisTrick: null,
+    sessionScores: restartingSession ? { 0: 0, 1: 0 } : state.sessionScores,
+    roundNumber: restartingSession ? 1 : state.roundNumber,
   };
 }
 

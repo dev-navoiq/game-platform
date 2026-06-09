@@ -72,6 +72,28 @@ class _CardFanAnimationState extends State<CardFanAnimation>
   @override
   void didUpdateWidget(CardFanAnimation oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.cardCount != oldWidget.cardCount) {
+      // Resize the entry-controllers list to match the new card count.
+      // Without this, cards arriving after the first frame (e.g. on the
+      // joiner who initially mounted with an empty hand) hit a RangeError
+      // on `_entryControllers[-1]` and the whole game screen stops painting.
+      // Only grow — when cards shrink during a round we leave existing
+      // controllers in place so they can be reused on the next deal,
+      // avoiding churn when hands cycle 8 → 0 → 8 between rounds.
+      while (_entryControllers.length < widget.cardCount) {
+        final c = AnimationController(
+          duration: AnimationDurations.cardDeal,
+          vsync: this,
+        );
+        _entryControllers.add(c);
+        _entryAnimations.add(
+          Tween<double>(begin: 0, end: 1).animate(
+            CurvedAnimation(parent: c, curve: AnimationCurves.cardDeal),
+          ),
+        );
+        c.forward();
+      }
+    }
     if (widget.selectedIndex != oldWidget.selectedIndex) {
       _animateSelection(widget.selectedIndex);
     }

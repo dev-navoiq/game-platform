@@ -4,6 +4,7 @@ import 'card_games/twenty_nine_bot.dart';
 import 'card_games/oh_hell_bot.dart';
 import 'card_games/hearts_bot.dart';
 import 'card_games/spades_bot.dart';
+import 'card_games/bridge_bot.dart';
 import 'board_games/chess_bot.dart';
 import 'board_games/ludo_bot.dart';
 import 'board_games/sequence_bot.dart';
@@ -69,6 +70,12 @@ class BotFactory {
           personality: personality,
         ),
       'spades' => SpadesBot(
+          playerId: playerId,
+          name: botName,
+          difficulty: difficulty,
+          personality: personality,
+        ),
+      'bridge' => BridgeBot(
           playerId: playerId,
           name: botName,
           difficulty: difficulty,

@@ -111,7 +111,7 @@ export interface TrickCard {
 
 export const GAME_PLAYER_LIMITS: Record<GameType, { min: number; max: number }> = {
   twenty_nine: { min: 4, max: 4 },
-  oh_hell: { min: 4, max: 8 },
+  oh_hell: { min: 4, max: 6 },
   hearts: { min: 4, max: 4 },
   spades: { min: 4, max: 4 },
   bridge: { min: 4, max: 4 },

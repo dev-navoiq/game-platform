@@ -99,7 +99,9 @@ void main() {
       expect(find.text('\u2666'), findsWidgets);
     });
 
-    testWidgets('unplayable card has reduced opacity', (tester) async {
+    testWidgets('unplayable card stays at full opacity', (tester) async {
+      // Cards no longer dim when unplayable — dimming during bidding made
+      // the hand look "blurry". Invalid plays now use a shake animation.
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: Center(
@@ -114,7 +116,7 @@ void main() {
       ));
 
       final opacity = tester.widget<Opacity>(find.byType(Opacity));
-      expect(opacity.opacity, 0.42);
+      expect(opacity.opacity, 1.0);
     });
 
     testWidgets('semantic label includes rank and suit', (tester) async {

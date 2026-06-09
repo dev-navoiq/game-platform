@@ -38,6 +38,9 @@ class _BidCounterAnimationState extends State<BidCounterAnimation>
       vsync: this,
     );
 
+    // TweenSequence domain is [0, 1]; easeOutBack overshoots that range
+    // and would throw at evaluate time. The sequence below already gives
+    // a 1.0 → 1.3 → 1.0 pop, so animate against the raw controller.
     _scaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 1.0, end: 1.3),
@@ -47,10 +50,7 @@ class _BidCounterAnimationState extends State<BidCounterAnimation>
         tween: Tween(begin: 1.3, end: 1.0),
         weight: 0.6,
       ),
-    ]).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutBack,
-    ));
+    ]).animate(_controller);
   }
 
   @override

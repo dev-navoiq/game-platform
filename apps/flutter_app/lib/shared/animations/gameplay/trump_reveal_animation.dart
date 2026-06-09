@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
 import '../core/animation_constants.dart';
-import '../core/animation_curves.dart';
 
 /// Trump suit reveal with particle burst and glow effect.
 class TrumpRevealAnimation extends StatefulWidget {
@@ -46,6 +45,10 @@ class _TrumpRevealAnimationState extends State<TrumpRevealAnimation>
       vsync: this,
     );
 
+    // TweenSequence's domain is strictly [0, 1] — wrapping it in
+    // CurvedAnimation with an overshoot curve (elasticOut) feeds it
+    // values > 1.0 and TweenSequence throws. The sequence below already
+    // provides bounce (0 → 1.5 → 1.0), so use the raw controller.
     _scaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 0.0, end: 1.5),
@@ -59,10 +62,7 @@ class _TrumpRevealAnimationState extends State<TrumpRevealAnimation>
         tween: Tween(begin: 1.0, end: 1.0),
         weight: 0.3,
       ),
-    ]).animate(CurvedAnimation(
-      parent: _mainController,
-      curve: AnimationCurves.bounce,
-    ));
+    ]).animate(_mainController);
 
     _glowAnimation = TweenSequence<double>([
       TweenSequenceItem(

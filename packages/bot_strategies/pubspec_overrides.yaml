@@ -1,5 +1,7 @@
-# melos_managed_dependency_overrides: game_chess,game_core,game_hearts,game_ludo,game_oh_hell,game_sequence,game_spades,game_twenty_nine
+# melos_managed_dependency_overrides: game_chess,game_core,game_hearts,game_ludo,game_oh_hell,game_sequence,game_spades,game_twenty_nine,game_bridge
 dependency_overrides:
+  game_bridge:
+    path: ../game_bridge
   game_chess:
     path: ../game_chess
   game_core:

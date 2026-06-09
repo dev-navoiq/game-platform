@@ -24,6 +24,13 @@ interface OhHellState {
   scores: Record<string, number>;
   turnNumber: number;
   roundNumber: number;
+  /**
+   * One entry per completed round. Each entry maps playerId → points scored
+   * that round (0 for a missed bid; 10 + bid for an exact bid). Used by the
+   * client scoreboard; persisted across the whole session.
+   */
+  roundHistory?: Array<Record<string, number>>;
+  socialMode?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -70,6 +77,16 @@ export function validateOhHellMove(
 ): ValidationResult {
   const state = stateJson as unknown as OhHellState;
 
+  // newRound can be sent by any player at round end or game end so the
+  // round-end overlay (and an eventual "Play Again" tap) can move the
+  // session forward without a turn check.
+  if (move.type === 'newRound') {
+    if (state.phase !== 'roundEnd' && state.phase !== 'gameEnd') {
+      return { valid: false, error: 'Not round end or game end phase', error_code: 'WRONG_PHASE' };
+    }
+    return { valid: true };
+  }
+
   if (state.currentPlayerId !== move.player_id) {
     return { valid: false, error: 'Not your turn', error_code: 'NOT_YOUR_TURN' };
   }
@@ -84,6 +101,11 @@ export function validateOhHellMove(
   }
 }
 
+function readBid(data: Record<string, unknown>): number | undefined {
+  const raw = data.bid_value ?? data.bidValue ?? data.bid;
+  return typeof raw === 'number' ? raw : undefined;
+}
+
 function validateBid(
   state: OhHellState,
   data: Record<string, unknown>,
@@ -91,7 +113,10 @@ function validateBid(
   if (state.phase !== 'bidding') {
     return { valid: false, error: 'Not bidding phase', error_code: 'WRONG_PHASE' };
   }
-  const bid = data.bid as number;
+  const bid = readBid(data);
+  if (bid === undefined) {
+    return { valid: false, error: 'Bid value missing', error_code: 'BID_MISSING' };
+  }
   if (bid < 0) {
     return { valid: false, error: 'Bid too low', error_code: 'BID_TOO_LOW' };
   }
@@ -145,6 +170,8 @@ export function applyOhHellMove(
       return applyBid(state, move.data) as unknown as Record<string, unknown>;
     case 'playCard':
       return applyPlayCard(state, move) as unknown as Record<string, unknown>;
+    case 'newRound':
+      return applyNewRound(state) as unknown as Record<string, unknown>;
     default:
       return stateJson;
   }
@@ -154,7 +181,7 @@ function applyBid(
   state: OhHellState,
   data: Record<string, unknown>,
 ): OhHellState {
-  const bid = data.bid as number;
+  const bid = readBid(data) ?? 0;
   const newBids = { ...state.bids, [state.currentPlayerId]: bid };
 
   // All players have bid → transition to playing
@@ -244,19 +271,25 @@ function completeRound(
   hands: Record<string, Card[]>,
   tricksWon: Record<string, number>,
 ): OhHellState {
-  // Score: exact bid = 10 + bid, else 0
+  // Score: exact bid = 10 + bid, else 0. Capture this round's points map
+  // separately so the client scoreboard can show per-round columns.
   const newScores = { ...state.scores };
+  const roundPoints: Record<string, number> = {};
   for (const pid of state.playerOrder) {
     const bid = state.bids[pid] ?? 0;
     const won = tricksWon[pid] ?? 0;
     if (won === bid) {
-      newScores[pid] = (newScores[pid] ?? 0) + 10 + bid;
+      const pts = 10 + bid;
+      newScores[pid] = (newScores[pid] ?? 0) + pts;
+      roundPoints[pid] = pts;
+    } else {
+      roundPoints[pid] = 0;
     }
-    // else no points added
   }
 
   const nextIndex = state.roundSequenceIndex + 1;
   const gameOver = nextIndex >= state.totalRounds;
+  const newHistory = [...(state.roundHistory ?? []), roundPoints];
 
   return {
     ...state,
@@ -265,9 +298,88 @@ function completeRound(
     currentTrick: [],
     tricksWon,
     scores: newScores,
+    roundHistory: newHistory,
     roundNumber: state.roundNumber + 1,
     turnNumber: state.turnNumber + 1,
     roundSequenceIndex: nextIndex,
+  };
+}
+
+// ─── New Round ───────────────────────────────────────────────────────────────
+
+function buildRoundSequence(playerCount: number): number[] {
+  const maxCards = Math.floor(52 / playerCount);
+  const sequence: number[] = [];
+  for (let i = maxCards; i >= 1; i--) sequence.push(i);
+  for (let i = 2; i <= maxCards; i++) sequence.push(i);
+  return sequence;
+}
+
+function shuffleDeck(deck: Card[]): void {
+  const randomValues = crypto.getRandomValues(new Uint32Array(deck.length));
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = randomValues[i] % (i + 1);
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+}
+
+function build52Deck(): Card[] {
+  const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
+  const ranks = [
+    'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
+    'nine', 'ten', 'jack', 'queen', 'king', 'ace',
+  ];
+  const deck: Card[] = [];
+  for (const suit of suits) {
+    for (const rank of ranks) {
+      deck.push({ suit, rank });
+    }
+  }
+  return deck;
+}
+
+function applyNewRound(state: OhHellState): OhHellState {
+  // "Play Again" path: a newRound from gameEnd wipes the session and starts
+  // a fresh game from the beginning of the round sequence.
+  const restartingSession = state.phase === 'gameEnd';
+
+  const sequence = buildRoundSequence(state.playerOrder.length);
+  const nextIndex = restartingSession ? 0 : state.roundSequenceIndex;
+  const cardsThisRound = sequence[nextIndex];
+
+  const deck = build52Deck();
+  shuffleDeck(deck);
+
+  const hands: Record<string, Card[]> = {};
+  let idx = 0;
+  for (const pid of state.playerOrder) {
+    hands[pid] = deck.slice(idx, idx + cardsThisRound);
+    idx += cardsThisRound;
+  }
+
+  const newDealerIndex = restartingSession
+    ? state.dealerIndex
+    : (state.dealerIndex + 1) % state.playerOrder.length;
+  const firstBidder =
+    state.playerOrder[(newDealerIndex + 1) % state.playerOrder.length];
+
+  return {
+    ...state,
+    phase: 'bidding',
+    currentPlayerId: firstBidder,
+    dealerIndex: newDealerIndex,
+    hands,
+    currentTrick: [],
+    cardsThisRound,
+    roundSequenceIndex: nextIndex,
+    bids: {},
+    tricksWon: Object.fromEntries(state.playerOrder.map((pid) => [pid, 0])),
+    scores: restartingSession
+      ? Object.fromEntries(state.playerOrder.map((pid) => [pid, 0]))
+      : state.scores,
+    roundHistory: restartingSession ? [] : (state.roundHistory ?? []),
+    roundNumber: restartingSession ? 1 : state.roundNumber,
+    turnNumber: state.turnNumber + 1,
   };
 }
 

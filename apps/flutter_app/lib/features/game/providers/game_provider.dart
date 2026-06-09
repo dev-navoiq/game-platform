@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:game_bridge/game_bridge.dart';
 import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
@@ -43,12 +44,20 @@ class GameNotifier extends StateNotifier<GameState?> {
     );
   }
 
-  /// Send a move to the server.
+  /// Send a move to the server. validate-move returns the new state directly
+  /// in the response; we apply it optimistically rather than waiting for the
+  /// Postgres realtime broadcast to round-trip back. The realtime listener
+  /// still acts as a backstop for moves originated by *other* clients.
   Future<void> sendMove({
     required String roomId,
     required dynamic move,
   }) async {
-    await _supabase.sendMove(roomId: roomId, move: move);
+    final response = await _supabase.sendMove(roomId: roomId, move: move);
+    if (_gameType == null) return;
+    final newStateData = response['new_state'] as Map<String, dynamic>?;
+    if (newStateData == null) return;
+    final newState = deserializeGameState(_gameType!, newStateData);
+    if (newState != null) state = newState;
   }
 
   /// Directly update the game state (used by tests and local state injection).
@@ -71,6 +80,8 @@ GameState? deserializeGameState(String gameType, Map<String, dynamic> json) {
         return TwentyNineState.fromJson(json);
       case 'oh_hell':
         return OhHellState.fromJson(json);
+      case 'bridge':
+        return BridgeState.fromJson(json);
       // TODO: Add fromJson for other game types as they are implemented
       default:
         return null;

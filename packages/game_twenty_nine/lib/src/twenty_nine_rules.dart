@@ -421,9 +421,29 @@ class TwentyNineRules extends GameRules<TwentyNineState, TwentyNineMove> {
       ),
     ];
 
+    // Auto-reveal trump when a player plays a trump card while trump is
+    // still face-down. The card itself publicly discloses the suit, so the
+    // game state should reflect that without requiring a separate reveal tap.
+    final autoRevealing = state.trumpSuit != null &&
+        !state.trumpRevealed &&
+        move.card.suit == state.trumpSuit;
+    if (autoRevealing) {
+      events.add(GameEvent(
+        type: GameEventType.trumpRevealed,
+        playerId: move.playerId,
+        data: {'suit': state.trumpSuit!.name, 'hidden': false, 'auto': true},
+      ));
+    }
+
     // Trick complete when all 4 players have played.
     if (newTrick.length == 4) {
-      return _completeTrick(state, newTrick, newHands, events);
+      final intermediate = autoRevealing
+          ? state.copyWith(
+              trumpRevealed: true,
+              trumpRevealerThisTrick: move.playerId,
+            )
+          : state;
+      return _completeTrick(intermediate, newTrick, newHands, events);
     }
 
     return MoveResult.valid(
@@ -432,6 +452,9 @@ class TwentyNineRules extends GameRules<TwentyNineState, TwentyNineMove> {
         currentTrick: newTrick,
         currentPlayerId: state.nextPlayerId,
         turnNumber: state.turnNumber + 1,
+        trumpRevealed: autoRevealing ? true : state.trumpRevealed,
+        trumpRevealerThisTrick:
+            autoRevealing ? move.playerId : state.trumpRevealerThisTrick,
       ),
       events: events,
     );

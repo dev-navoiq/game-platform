@@ -17,6 +17,8 @@ dependencies:
     path: ../game_hearts
   game_spades:
     path: ../game_spades
+  game_bridge:
+    path: ../game_bridge
   game_chess:
     path: ../game_chess
   game_ludo:

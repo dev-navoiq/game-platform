@@ -29,10 +29,47 @@ class RoomScreen extends ConsumerStatefulWidget {
 class _RoomScreenState extends ConsumerState<RoomScreen> {
   List<RoomMember> _members = const [];
   String _socialMode = 'full';
+  String? _gameType;
   bool _isReady = false;
   bool _isStarting = false;
+  bool _isAddingBot = false;
   String? _roomCode;
   void Function()? _disposeMembershipSub;
+
+  /// Minimum number of seats that must be filled before the host can start.
+  /// Default 2 for unknown / 2-player games (chess, sequence). Card games
+  /// that need fixed-or-minimum tables override here.
+  int get _minPlayersForGame {
+    switch (_gameType) {
+      case 'twenty_nine':
+      case 'hearts':
+      case 'spades':
+      case 'bridge':
+      case 'oh_hell':
+        return 4;
+      case 'ludo':
+        return 2;
+      case 'chess':
+      case 'sequence':
+      default:
+        return 2;
+    }
+  }
+  // Guard against re-navigating after the room status flips to 'playing'.
+  // Without this the membership subscription would push the game route
+  // every time it fires (host included, since their room screen stays
+  // mounted under the pushed game route).
+  bool _navigatedToGame = false;
+
+  /// Whether the local user is the host of this room.
+  /// `_members` is populated by the snapshot — until it loads, treat the
+  /// user as a non-host so we don't briefly flash host controls to a joiner.
+  bool get _isLocalHost {
+    for (final m in _members) {
+      if (m.isCurrentUser) return m.isHost;
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -62,7 +99,21 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         _members = snap.members;
         _socialMode = snap.socialMode;
         _roomCode = snap.roomCode;
+        _gameType = snap.gameType;
       });
+
+      // If the host started the game while we were on this screen, follow
+      // them to the game route. The host's _startGame() also navigates
+      // explicitly — _navigatedToGame guards against double-push.
+      if (snap.status == 'playing' && !_navigatedToGame) {
+        _navigatedToGame = true;
+        // Joiners need the game type set on the provider so the game state
+        // deserializer knows which subclass to construct. We deliberately
+        // do NOT populate roomBotsProvider here — only the host runs bots,
+        // which avoids two devices racing to send the same bot move.
+        ref.read(gameTypeProvider.notifier).state = snap.gameType;
+        context.replace(AppRoutes.gamePath(widget.roomId));
+      }
     } catch (e) {
       debugPrint('[RoomScreen] fetchRoomSnapshot failed: $e');
     }
@@ -118,14 +169,39 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       ),
     );
 
-    if (difficulty != null) {
+    if (difficulty == null) return;
+    if (_isAddingBot) return;
+    setState(() => _isAddingBot = true);
+    try {
       final supabase = ref.read(supabaseServiceProvider);
       await supabase.addBot(
         roomId: widget.roomId,
         difficulty: difficulty,
       );
-      // No local setState here — the game_rooms realtime subscription will
-      // fire and `_loadSnapshot` will pick up the new bot.
+      // We don't update _members here — the game_rooms realtime subscription
+      // will fire and `_loadSnapshot` will pick up the new bot — but we do
+      // ack the click with a snackbar because the realtime delivery can take
+      // a beat and silence reads as a failed click.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added a $difficulty bot'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not add bot: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAddingBot = false);
     }
   }
 
@@ -133,6 +209,37 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     setState(() => _isStarting = true);
     try {
       final supabase = ref.read(supabaseServiceProvider);
+
+      // Load bots BEFORE calling startGame so they're already in
+      // roomBotsProvider by the time the room-status realtime event fires
+      // (which can navigate via _loadSnapshot and dispose this screen
+      // before our `if (mounted)` block below runs). Without this, the
+      // host's roomBotsProvider stays empty and no bot ever plays.
+      try {
+        final roomData = await supabase.client
+            .from('game_rooms')
+            .select('config')
+            .eq('id', widget.roomId)
+            .single();
+        final config = roomData['config'] as Map<String, dynamic>?;
+        final botsList = (config?['bots'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        ref.read(roomBotsProvider.notifier).state = botsList
+            .map((b) => BotInfo(
+                  id: b['id'] as String,
+                  difficulty: (b['difficulty'] as String?) ?? 'medium',
+                ))
+            .toList();
+        print('[RoomScreen] Pre-loaded ${botsList.length} bots');
+      } catch (e) {
+        print('[RoomScreen] Failed to pre-load bots: $e');
+      }
+
+      // Mark navigation BEFORE the await so the realtime snapshot path
+      // also sees `_navigatedToGame=true` and treats this as a host nav,
+      // not a joiner nav. Either path navigates safely because the bots
+      // are already in the provider.
+      _navigatedToGame = true;
+
       final result = await supabase.startGame(roomId: widget.roomId);
 
       if (mounted) {
@@ -152,26 +259,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           if (gameState != null) {
             ref.read(gameStateProvider.notifier).updateState(gameState);
           }
-        }
-
-        // Populate bot info from room config for client-side bot moves
-        try {
-          final roomData = await supabase.client
-              .from('game_rooms')
-              .select('config')
-              .eq('id', widget.roomId)
-              .single();
-          final config = roomData['config'] as Map<String, dynamic>?;
-          final botsList = (config?['bots'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-          ref.read(roomBotsProvider.notifier).state = botsList
-              .map((b) => BotInfo(
-                    id: b['id'] as String,
-                    difficulty: (b['difficulty'] as String?) ?? 'medium',
-                  ))
-              .toList();
-          print('[RoomScreen] Loaded ${botsList.length} bots');
-        } catch (e) {
-          print('[RoomScreen] Failed to load bots: $e');
         }
 
         context.push(AppRoutes.gamePath(widget.roomId));
@@ -354,20 +441,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
               ),
 
-              // Action buttons
+              // Action buttons. Only the host controls bot adding + game start;
+              // non-host players see Ready only and a "Waiting for host" hint.
               Padding(
                 padding: const EdgeInsets.only(bottom: 24),
                 child: Column(
                   children: [
-                    GlassButton(
-                      label: 'Add Bot',
-                      onPressed: _addBot,
-                      variant: GlassButtonVariant.outlined,
-                      size: GlassButtonSize.large,
-                      width: double.infinity,
-                      icon: Icon(Icons.smart_toy, color: AppColors.accent, size: 20),
-                    ),
-                    const SizedBox(height: 8),
+                    if (_isLocalHost) ...[
+                      GlassButton(
+                        label: _isAddingBot ? 'Adding bot…' : 'Add Bot',
+                        onPressed: _isAddingBot ? null : _addBot,
+                        isLoading: _isAddingBot,
+                        variant: GlassButtonVariant.outlined,
+                        size: GlassButtonSize.large,
+                        width: double.infinity,
+                        icon: Icon(Icons.smart_toy, color: AppColors.accent, size: 20),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     Row(
                       children: [
                         Expanded(
@@ -378,17 +469,32 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                             color: _isReady ? AppColors.danger : AppColors.success,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GlassButton(
-                            label: 'Start Game',
-                            isLoading: _isStarting,
-                            onPressed: _members.length >= 2 ? _startGame : null,
-                            size: GlassButtonSize.large,
+                        if (_isLocalHost) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: GlassButton(
+                              label: 'Start Game',
+                              isLoading: _isStarting,
+                              onPressed: _members.length >= _minPlayersForGame
+                                  ? _startGame
+                                  : null,
+                              size: GlassButtonSize.large,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
+                    if (!_isLocalHost) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Waiting for host to start the game…',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textFeltMuted,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

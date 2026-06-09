@@ -7,6 +7,8 @@ import '../../../../core/utils/player_avatar.dart';
 import '../../providers/game_provider.dart';
 import '../widgets/bidding_modal.dart';
 import '../widgets/card_hand.dart';
+import '../widgets/card_sort.dart';
+import '../widgets/turn_indicator.dart';
 import '../widgets/emoji_bar.dart';
 import '../widgets/game_actions.dart';
 import '../widgets/game_hud.dart';
@@ -21,6 +23,12 @@ import '../widgets/round_end_overlay.dart';
 import '../widgets/trump_indicator.dart';
 import '../widgets/trump_reveal_overlay.dart';
 import '../widgets/turn_timer.dart';
+import '../../../../shared/animations/gameplay/shake_animation.dart';
+
+/// Stable global key on the trick zone — used by CardHand to fly played
+/// cards toward where they'll land. Only one 29 screen mounts at a time,
+/// so a top-level static key is safe.
+final GlobalKey _twentyNineTrickZoneKey = GlobalKey();
 
 /// Twenty-Nine game screen with team-based scoring.
 ///
@@ -45,6 +53,13 @@ class TwentyNineGameScreen extends ConsumerStatefulWidget {
 
 class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   bool _showTrumpReveal = false;
+  final ShakeController _handShake = ShakeController();
+
+  @override
+  void dispose() {
+    _handShake.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant TwentyNineGameScreen oldWidget) {
@@ -73,6 +88,21 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
 
     final localHand = state.hands[widget.localPlayerId];
     final cards = localHand?.cards ?? [];
+    if (cards.isEmpty &&
+        !isSpectator &&
+        state.phase != GamePhase.roundEnd &&
+        state.phase != GamePhase.gameEnd) {
+      // Diagnostic: a non-spectator participant should always have a hand
+      // outside roundEnd/gameEnd. Print per-player card counts so we can
+      // see if the server is dealing into the right keys.
+      final perPlayer = state.hands
+          .map((k, v) => MapEntry(k.substring(0, 8), v.cards.length));
+      print('[29Screen] EMPTY HAND for localPlayer=${widget.localPlayerId.substring(0, 8)} '
+          'phase=${state.phase} round=${state.roundNumber} '
+          'trick=${state.currentTrick.length} '
+          'cardsPerPlayer=$perPlayer '
+          'currentPlayer=${state.currentPlayerId?.substring(0, 8)}');
+    }
     final playerEmojis = PlayerAvatar.emojiMap(state.playerOrder);
 
     return Stack(
@@ -201,13 +231,18 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                         );
                       }),
 
-                      // Trick zone
+                      // Trick zone (keyed so CardHand can fly played
+                      // cards toward its global position).
                       Center(
-                        child: TrickZone(
-                          currentTrick: state.currentTrick,
-                          playerOrder: state.playerOrder,
-                          playerEmojis: playerEmojis,
-                          trumpSuit: state.trumpRevealed ? state.trumpSuit : null,
+                        child: KeyedSubtree(
+                          key: _twentyNineTrickZoneKey,
+                          child: TrickZone(
+                            currentTrick: state.currentTrick,
+                            playerOrder: state.playerOrder,
+                            playerEmojis: playerEmojis,
+                            trumpSuit:
+                                state.trumpRevealed ? state.trumpSuit : null,
+                          ),
                         ),
                       ),
 
@@ -234,10 +269,32 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                 if (!isSpectator)
                   SizedBox(
                     height: 130,
-                    child: CardHand(
-                      cards: cards,
-                      isPlayable: isMyTurn && state.phase == GamePhase.playing,
-                      onCardTap: (card) => _playCard(card),
+                    child: TurnIndicator(
+                      isYourTurn:
+                          isMyTurn && state.phase == GamePhase.playing,
+                      child: ShakeAnimation(
+                        controller: _handShake,
+                        child: CardHand(
+                          cards: cards,
+                          isPlayable:
+                              isMyTurn && state.phase == GamePhase.playing,
+                          sorter: twentyNineCardSort,
+                          flightTargetKey: _twentyNineTrickZoneKey,
+                          onCardTap: (card) => _playCard(card),
+                          onIllegalTap: (_) {
+                            _handShake.shake();
+                            ScaffoldMessenger.of(context)
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                const SnackBar(
+                                  content: Text('Wait for your turn.'),
+                                  duration: Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                          },
+                        ),
+                      ),
                     ),
                   ),
 
@@ -319,7 +376,9 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
             onDoubleCoins: () {
               RewardedAdModal.show(context: context);
             },
-            onPlayAgain: () {},
+            // Reuses the newRound move — the server resets sessionScores
+            // when the move arrives in gameEnd phase (see applyNewRound).
+            onPlayAgain: () => _startNextRound(),
             onLeave: () => Navigator.of(context).pop(),
           ),
       ],
@@ -421,15 +480,15 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     );
   }
 
-  void _playCard(PlayingCard card) {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'playCard',
-        'player_id': widget.localPlayerId,
-        'card': card.toJson(),
-      },
-    );
+  Future<void> _playCard(PlayingCard card) async {
+    await ref.read(gameStateProvider.notifier).sendMove(
+          roomId: widget.roomId,
+          move: {
+            'type': 'playCard',
+            'player_id': widget.localPlayerId,
+            'card': card.toJson(),
+          },
+        );
   }
 
   void _placeBid(int bid) {

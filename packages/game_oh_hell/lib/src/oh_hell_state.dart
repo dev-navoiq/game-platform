@@ -50,6 +50,11 @@ class OhHellState extends GameState {
   /// Cumulative scores across all rounds.
   final Map<String, int> scores;
 
+  /// One entry per completed round. Each entry maps playerId → points
+  /// scored that round (0 = missed, otherwise 10 + bid). Used by the
+  /// round-end scoreboard; empty until the first round completes.
+  final List<Map<String, int>> roundHistory;
+
   OhHellState({
     required this.phase,
     this.currentPlayerId,
@@ -66,6 +71,7 @@ class OhHellState extends GameState {
     this.bids = const {},
     this.tricksWon = const {},
     this.scores = const {},
+    this.roundHistory = const [],
   });
 
   // ── Computed helpers ────────────────────────────────────────────────────────
@@ -113,6 +119,7 @@ class OhHellState extends GameState {
     Map<String, int>? bids,
     Map<String, int>? tricksWon,
     Map<String, int>? scores,
+    List<Map<String, int>>? roundHistory,
   }) {
     return OhHellState(
       phase: phase ?? this.phase,
@@ -130,6 +137,7 @@ class OhHellState extends GameState {
       bids: bids ?? this.bids,
       tricksWon: tricksWon ?? this.tricksWon,
       scores: scores ?? this.scores,
+      roundHistory: roundHistory ?? this.roundHistory,
     );
   }
 
@@ -151,6 +159,7 @@ class OhHellState extends GameState {
         'bids': bids,
         'tricksWon': tricksWon,
         'scores': scores,
+        'roundHistory': roundHistory,
         'socialMode': socialMode.name,
       };
 
@@ -181,6 +190,11 @@ class OhHellState extends GameState {
       scores: (json['scores'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, v as int)) ??
           const {},
+      roundHistory: (json['roundHistory'] as List?)
+              ?.map((e) => (e as Map<String, dynamic>)
+                  .map((k, v) => MapEntry(k, v as int)))
+              .toList() ??
+          const [],
       socialMode: json['socialMode'] != null
           ? RoomSocialMode.values.byName(json['socialMode'] as String)
           : RoomSocialMode.full,

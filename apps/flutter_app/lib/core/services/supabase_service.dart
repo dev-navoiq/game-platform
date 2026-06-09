@@ -149,7 +149,7 @@ class SupabaseService {
   Future<RoomSnapshot> fetchRoomSnapshot({required String roomId}) async {
     final room = await _client
         .from('game_rooms')
-        .select('code, social_mode, status, created_by, config')
+        .select('code, social_mode, status, created_by, config, game_type')
         .eq('id', roomId)
         .single();
 
@@ -209,6 +209,7 @@ class SupabaseService {
       roomCode: room['code'] as String,
       socialMode: room['social_mode'] as String,
       status: room['status'] as String,
+      gameType: room['game_type'] as String,
       members: members,
     );
   }

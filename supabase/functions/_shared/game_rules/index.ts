@@ -1,6 +1,7 @@
 import { MovePayload, ValidationResult } from '../types.ts';
 import { validateTwentyNineMove, applyTwentyNineMove } from './twenty_nine.ts';
 import { validateOhHellMove, applyOhHellMove } from './oh_hell.ts';
+import { validateBridgeMove, applyBridgeMove } from './bridge.ts';
 import { passthroughValidate, passthroughApply } from './passthrough.ts';
 
 /**
@@ -17,6 +18,8 @@ export function validateMove(
       return validateTwentyNineMove(stateData, move);
     case 'oh_hell':
       return validateOhHellMove(stateData, move);
+    case 'bridge':
+      return validateBridgeMove(stateData, move);
     default:
       return passthroughValidate(stateData, move);
   }
@@ -36,6 +39,8 @@ export function applyMove(
       return applyTwentyNineMove(stateData, move);
     case 'oh_hell':
       return applyOhHellMove(stateData, move);
+    case 'bridge':
+      return applyBridgeMove(stateData, move);
     default:
       return passthroughApply(stateData, move);
   }

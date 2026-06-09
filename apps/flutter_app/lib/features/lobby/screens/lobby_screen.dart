@@ -1,22 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/routing/routes.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
+import '../../../shared/widgets/glass_bottom_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
 import '../presentation/widgets/room_list_card.dart';
 
-class LobbyScreen extends ConsumerWidget {
+class LobbyScreen extends ConsumerStatefulWidget {
   final String gameType;
 
   const LobbyScreen({super.key, this.gameType = ''});
 
+  @override
+  ConsumerState<LobbyScreen> createState() => _LobbyScreenState();
+}
+
+class _LobbyScreenState extends ConsumerState<LobbyScreen> {
+  /// Tracks an in-flight create-room request so the button can show a
+  /// spinner and reject repeat taps. Without this guard, the create-room
+  /// edge function can race and produce two rooms for a single intent.
+  bool _isCreating = false;
+
   String get _displayName {
-    switch (gameType) {
+    switch (widget.gameType) {
       case 'twenty_nine':
         return 'Twenty-Nine';
       case 'oh_hell':
@@ -25,6 +38,8 @@ class LobbyScreen extends ConsumerWidget {
         return 'Hearts';
       case 'spades':
         return 'Spades';
+      case 'bridge':
+        return 'Bridge';
       case 'chess':
         return 'Chess';
       case 'ludo':
@@ -37,7 +52,7 @@ class LobbyScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return FeltBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -54,7 +69,7 @@ class LobbyScreen extends ConsumerWidget {
               // Join by Code button — opens the join screen
               GlassButton(
                 label: 'Join by Code',
-                onPressed: () => context.push(AppRoutes.joinByCodePath(gameType)),
+                onPressed: () => context.push(AppRoutes.joinByCodePath(widget.gameType)),
                 size: GlassButtonSize.large,
                 width: double.infinity,
                 variant: GlassButtonVariant.outlined,
@@ -65,27 +80,21 @@ class LobbyScreen extends ConsumerWidget {
 
               // Room list (placeholder — sample rooms until matchmaking is wired)
               Expanded(
-                child: _RoomList(gameType: gameType),
+                child: _RoomList(gameType: widget.gameType),
               ),
 
               // Banner ad (free tier only)
               const BannerAdWidget(),
 
-              // Create Room button
+              // Create Room button — disables itself + shows a spinner while
+              // the edge function call is in flight so impatient retaps don't
+              // spawn duplicate rooms.
               Padding(
                 padding: const EdgeInsets.only(bottom: 24, top: 12),
                 child: GlassButton(
-                  label: 'Create Room',
-                  onPressed: () async {
-                    final supabase = ref.read(supabaseServiceProvider);
-                    final result = await supabase.createRoom(
-                      gameType: gameType,
-                      socialMode: 'full',
-                    );
-                    if (context.mounted) {
-                      context.push(AppRoutes.roomPath(result['room_id'] as String));
-                    }
-                  },
+                  label: _isCreating ? 'Creating Room…' : 'Create Room',
+                  onPressed: _isCreating ? null : _onCreateRoom,
+                  isLoading: _isCreating,
                   size: GlassButtonSize.large,
                   width: double.infinity,
                   icon: const Icon(Icons.add, color: Colors.white, size: 20),
@@ -93,6 +102,124 @@ class LobbyScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onCreateRoom() async {
+    if (_isCreating) return;
+
+    // For variable-player games, ask the host how many seats to open before
+    // we actually create the room. The picker is shown before _isCreating
+    // flips so a dismissed sheet doesn't leave the button spinning.
+    int maxPlayers = 4;
+    if (widget.gameType == 'oh_hell') {
+      final picked = await _showOhHellPlayerCountSheet(context);
+      if (picked == null) return; // dismissed
+      maxPlayers = picked;
+    }
+
+    setState(() => _isCreating = true);
+
+    try {
+      final supabase = ref.read(supabaseServiceProvider);
+      final result = await supabase.createRoom(
+        gameType: widget.gameType,
+        socialMode: 'full',
+        maxPlayers: maxPlayers,
+      );
+      if (mounted) {
+        context.push(AppRoutes.roomPath(result['room_id'] as String));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not create room: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
+    }
+  }
+
+  Future<int?> _showOhHellPlayerCountSheet(BuildContext context) {
+    return GlassBottomSheet.show<int>(
+      context: context,
+      title: 'How many players?',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Oh Hell needs 4 to 6 players. You can add bots in the room.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final n in const [4, 5, 6])
+                  _PlayerCountChoice(
+                    count: n,
+                    onTap: () => Navigator.of(context).pop(n),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayerCountChoice extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _PlayerCountChoice({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 80,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.accent.withOpacity(0.12),
+          border: Border.all(color: AppColors.accent.withOpacity(0.45), width: 1.2),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$count',
+              style: GoogleFonts.poppins(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: AppColors.accent,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'players',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

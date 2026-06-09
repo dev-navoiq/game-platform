@@ -23,7 +23,7 @@ class AppColors {
 
   // Text on felt
   static const textOnFelt = Color(0xE6FFFFFF); // 90% opacity
-  static const textFeltMuted = Color(0x80FFFFFF); // 50% opacity
+  static const textFeltMuted = Color(0xB3FFFFFF); // 70% opacity — bumped from 50% for legibility on dark felt
 
   // Status
   static const success = Color(0xFF27ae60);

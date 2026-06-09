@@ -38,6 +38,9 @@ class _AvatarReactionAnimationState extends State<AvatarReactionAnimation>
       vsync: this,
     );
 
+    // TweenSequence domain is [0, 1]; easeOutBack overshoots and would
+    // throw at evaluate time. The sequence already provides the bounce
+    // (1.0 → 0.8 → 1.2 → 1.0), so drive it from the raw controller.
     _scaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 1.0, end: 0.8),
@@ -51,10 +54,7 @@ class _AvatarReactionAnimationState extends State<AvatarReactionAnimation>
         tween: Tween(begin: 1.2, end: 1.0),
         weight: 0.5,
       ),
-    ]).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutBack,
-    ));
+    ]).animate(_controller);
 
     _ringAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0, end: 1), weight: 0.3),

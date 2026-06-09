@@ -2,8 +2,8 @@
 class OhHellConfig {
   OhHellConfig._();
 
-  static const int minPlayers = 3;
-  static const int maxPlayers = 7;
+  static const int minPlayers = 4;
+  static const int maxPlayers = 6;
 
   /// Maximum cards per player for a given [playerCount] using a 52-card deck.
   static int maxCardsPerPlayer(int playerCount) => 52 ~/ playerCount;

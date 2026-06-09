@@ -84,10 +84,13 @@ class PlayingCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Cards always render at full opacity — dimming during non-interactive
+    // moments (bidding, waiting for other player) made the hand look "blurry".
+    // Invalid plays are signalled by the parent shake animation instead.
     final card = Semantics(
       label: '$_fullRankName of $_fullSuitName',
       child: Opacity(
-        opacity: isPlayable ? 1.0 : 0.42,
+        opacity: 1.0,
         child: GestureDetector(
           onTap: isPlayable ? onTap : null,
           child: Container(

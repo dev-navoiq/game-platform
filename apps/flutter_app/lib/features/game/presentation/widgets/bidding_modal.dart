@@ -270,7 +270,6 @@ class _BiddingModalState extends State<BiddingModal> {
   Widget _buildBidGrid() {
     final rawCount = widget.maxBid - widget.minBid + 1;
     final bidCount = rawCount.clamp(0, 30);
-    print('[BiddingModal] minBid=${widget.minBid} maxBid=${widget.maxBid} rawCount=$rawCount bidCount=$bidCount');
 
     if (bidCount <= 0) {
       return const Text('No valid bids', style: TextStyle(color: Colors.grey));

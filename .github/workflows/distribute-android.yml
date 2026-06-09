@@ -152,7 +152,6 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
           # Short-lived OAuth2 access token minted by the WIF step above.
           # Expires within an hour; only needs to outlive this job.
           FIREBASE_TOKEN: ${{ steps.auth.outputs.access_token }}

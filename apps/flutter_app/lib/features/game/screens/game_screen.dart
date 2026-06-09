@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:game_bridge/game_bridge.dart';
 import 'package:game_chess/game_chess.dart';
 import 'package:game_hearts/game_hearts.dart';
 import 'package:game_ludo/game_ludo.dart';
@@ -11,6 +12,7 @@ import 'package:game_spades/game_spades.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
 import '../../../core/di/providers.dart';
+import '../presentation/screens/bridge_game_screen.dart';
 import '../presentation/screens/chess_game_screen.dart';
 import '../presentation/screens/hearts_game_screen.dart';
 import '../presentation/screens/ludo_game_screen.dart';
@@ -171,6 +173,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           );
         }
       case 'bridge':
+        if (gameState is BridgeState) {
+          return BridgeGameScreen(
+            state: gameState,
+            roomId: widget.roomId,
+            localPlayerId: localPlayerId,
+          );
+        }
       case 'rummy':
         return UnsupportedGameScreen(
           gameType: gameType!,
@@ -223,6 +232,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
     if (gameState is SequenceState) {
       return SequenceGameScreen(
+        state: gameState,
+        roomId: widget.roomId,
+        localPlayerId: localPlayerId,
+      );
+    }
+    if (gameState is BridgeState) {
+      return BridgeGameScreen(
         state: gameState,
         roomId: widget.roomId,
         localPlayerId: localPlayerId,

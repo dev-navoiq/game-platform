@@ -141,6 +141,8 @@ function buildInitialState(
       return buildHeartsState(playerIds, dealerIndex, socialMode);
     case 'spades':
       return buildSpadesState(playerIds, dealerIndex, socialMode);
+    case 'bridge':
+      return buildBridgeState(playerIds, dealerIndex, socialMode);
     default:
       return buildGenericState(gameType, playerIds, dealerIndex, socialMode);
   }
@@ -210,6 +212,7 @@ function buildOhHellState(
     bids: {},
     tricksWon: Object.fromEntries(playerIds.map((pid) => [pid, 0])),
     scores: Object.fromEntries(playerIds.map((pid) => [pid, 0])),
+    roundHistory: [],
     turnNumber: 0,
     roundNumber: 1,
     socialMode,
@@ -269,6 +272,53 @@ function buildSpadesState(
     roundNumber: 1,
     socialMode,
   };
+}
+
+function buildBridgeState(
+  playerIds: string[],
+  dealerIndex: number,
+  socialMode: string,
+): Record<string, unknown> {
+  if (playerIds.length !== 4) {
+    throw new Error('Bridge requires exactly 4 players');
+  }
+  const deck = createStandard52Deck();
+  shuffleDeck(deck);
+  const hands = dealHands(deck, playerIds, 13);
+  // Bridge: dealer makes the first auction call.
+  const firstBidder = playerIds[dealerIndex];
+  const dealNumber = 1;
+
+  return {
+    phase: 'bidding',
+    currentPlayerId: firstBidder,
+    playerOrder: playerIds,
+    dealerIndex,
+    hands,
+    dealNumber,
+    vulnerability: vulnerabilityForDeal(dealNumber),
+    auctionHistory: [],
+    contract: null,
+    dummyId: null,
+    dummyRevealed: false,
+    currentTrick: [],
+    tricksWon: { NS: 0, EW: 0 },
+    trickNumber: 0,
+    scores: { NS: 0, EW: 0 },
+    dealHistory: [],
+    totalDeals: 4,
+    turnNumber: 0,
+    roundNumber: dealNumber,
+    socialMode,
+  };
+}
+
+function vulnerabilityForDeal(dealNumber: number): string {
+  const mod = ((dealNumber - 1) % 4) + 1;
+  if (mod === 1) return 'none';
+  if (mod === 2) return 'ns';
+  if (mod === 3) return 'ew';
+  return 'both';
 }
 
 function buildGenericState(

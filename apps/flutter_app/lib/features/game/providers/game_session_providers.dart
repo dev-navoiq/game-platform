@@ -10,6 +10,11 @@ final gameTypeProvider = StateProvider<String?>((ref) => null);
 /// Currently selected card in hand (card games).
 final selectedCardProvider = StateProvider<PlayingCard?>((ref) => null);
 
+/// A card the user tapped *before* their turn. CardHand auto-dispatches it
+/// when the turn arrives. Cleared whenever a move is sent or the hand
+/// changes shape (new deal, card removed).
+final queuedCardProvider = StateProvider<PlayingCard?>((ref) => null);
+
 /// Currently selected board position (board games).
 final selectedPositionProvider = StateProvider<dynamic>((ref) => null);
 

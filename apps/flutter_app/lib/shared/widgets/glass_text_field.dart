@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -91,28 +89,31 @@ class _GlassTextFieldState extends State<GlassTextField> {
         ],
         ClipRRect(
           borderRadius: BorderRadius.circular(GlassTokens.radiusMedium),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: AnimatedContainer(
-              duration: GlassTokens.durationFast,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(GlassTokens.radiusMedium),
-                color: Colors.white.withOpacity(
-                    _isFocused ? 0.58 : GlassTokens.surfaceOpacity),
-                border: Border.all(
-                  color: borderColor,
-                  width: _isFocused ? 2 : 1,
-                ),
-                boxShadow: _isFocused
-                    ? [
-                        BoxShadow(
-                          color: GlassTokens.accentPrimary
-                              .withOpacity(0.2),
-                          blurRadius: 10,
-                        ),
-                      ]
-                    : null,
+          child: AnimatedContainer(
+            // Fully opaque white so dark text always reads cleanly over the
+            // dark felt background. Earlier glass-blur + 0.88/0.95 white
+            // mixed with the felt and the entered text was still hard to
+            // see — particularly while pasting a room code. The BackdropFilter
+            // was removed because it does nothing visually behind an opaque
+            // surface and was costing a render pass.
+            duration: GlassTokens.durationFast,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(GlassTokens.radiusMedium),
+              color: Colors.white,
+              border: Border.all(
+                color: borderColor,
+                width: _isFocused ? 2 : 1,
               ),
+              boxShadow: _isFocused
+                  ? [
+                      BoxShadow(
+                        color: GlassTokens.accentPrimary
+                            .withOpacity(0.25),
+                        blurRadius: 12,
+                      ),
+                    ]
+                  : null,
+            ),
               child: TextField(
                 controller: widget.controller,
                 focusNode: _focusNode,
@@ -124,13 +125,18 @@ class _GlassTextFieldState extends State<GlassTextField> {
                 enabled: widget.enabled,
                 inputFormatters: widget.inputFormatters,
                 textCapitalization: widget.textCapitalization,
-                style: TextStyle(
+                cursorColor: GlassTokens.accentPrimary,
+                style: const TextStyle(
                   fontSize: 16,
+                  fontWeight: FontWeight.w600,
                   color: AppColors.textDark,
                 ),
                 decoration: InputDecoration(
                   hintText: widget.hint,
-                  hintStyle: TextStyle(color: AppColors.textMuted),
+                  hintStyle: TextStyle(
+                    color: AppColors.textMuted.withOpacity(0.85),
+                    fontWeight: FontWeight.w400,
+                  ),
                   prefixIcon: widget.prefixIcon != null
                       ? Icon(
                           widget.prefixIcon,
@@ -148,7 +154,6 @@ class _GlassTextFieldState extends State<GlassTextField> {
                 ),
               ),
             ),
-          ),
         ),
         if (hasError) ...[
           const SizedBox(height: 6),

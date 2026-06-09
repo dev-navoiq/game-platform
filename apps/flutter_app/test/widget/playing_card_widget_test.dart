@@ -35,7 +35,10 @@ void main() {
       expect(find.byKey(const Key('card-selected-indicator')), findsOneWidget);
     });
 
-    testWidgets('non-playable card is visually dimmed', (tester) async {
+    testWidgets('non-playable card stays at full opacity', (tester) async {
+      // Cards no longer auto-dim when unplayable — dimming all cards during
+      // bidding made the hand look "blurry". Tap is still blocked (see test
+      // below); invalid plays are signalled by a shake animation in the parent.
       await tester.pumpWidget(wrap(
         const PlayingCardWidget(suit: 'clubs', rank: '7', isPlayable: false),
       ));
@@ -45,7 +48,7 @@ void main() {
           matching: find.byType(Opacity),
         ).first,
       );
-      expect(opacity.opacity, lessThan(1.0));
+      expect(opacity.opacity, equals(1.0));
     });
 
     testWidgets('tap on playable card fires onTap callback', (tester) async {

@@ -36,12 +36,14 @@ class RoomSnapshot {
   final String roomCode;
   final String socialMode;
   final String status;
+  final String gameType;
   final List<RoomMember> members;
 
   const RoomSnapshot({
     required this.roomCode,
     required this.socialMode,
     required this.status,
+    required this.gameType,
     required this.members,
   });
 }

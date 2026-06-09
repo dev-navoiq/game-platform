@@ -13,6 +13,7 @@ RoomSnapshot _snapshotWith({required int memberCount, String code = 'ABC123'}) {
     roomCode: code,
     socialMode: 'full',
     status: 'waiting',
+    gameType: 'twenty_nine',
     members: [
       const RoomMember(
         id: 'guest-uid',

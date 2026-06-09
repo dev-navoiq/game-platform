@@ -29,6 +29,7 @@ class PlayerNode extends ConsumerWidget {
   final RoomSocialMode socialMode;
   final String? chatMessage;
   final bool showBidPill;
+  final bool hasBid;
   final String? roomId;
   final String? playerId;
 
@@ -47,6 +48,7 @@ class PlayerNode extends ConsumerWidget {
     this.socialMode = RoomSocialMode.full,
     this.chatMessage,
     this.showBidPill = true,
+    this.hasBid = true,
     this.roomId,
     this.playerId,
   });
@@ -125,7 +127,7 @@ class PlayerNode extends ConsumerWidget {
         const SizedBox(height: 4),
 
         // Bid pill
-        if (showBidPill) BidPill(won: won, bid: bid),
+        if (showBidPill) BidPill(won: won, bid: bid, hasBid: hasBid),
       ],
     );
   }
