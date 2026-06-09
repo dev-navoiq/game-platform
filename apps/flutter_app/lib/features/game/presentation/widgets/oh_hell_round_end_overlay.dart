@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -9,8 +11,11 @@ import '../../../../shared/animations/transitions/modal_transitions.dart';
 ///
 /// Each row is one player: their bid, tricks won this round, points earned
 /// this round, and total session score. Optionally renders a compact
-/// "history" footer with one column per completed round.
-class OhHellRoundEndOverlay extends StatelessWidget {
+/// "history" footer with one column per completed round. For mid-game
+/// round transitions a 30-sec countdown auto-fires [onContinue] so the
+/// table doesn't stall on whichever human is slowest to tap. Game-end
+/// path stays manual — "Play Again" is an explicit choice.
+class OhHellRoundEndOverlay extends StatefulWidget {
   final int roundNumber;
   final int cardsThisRound;
   final List<String> playerOrder;
@@ -21,6 +26,7 @@ class OhHellRoundEndOverlay extends StatelessWidget {
   final Map<String, int> scores;
   final List<Map<String, int>> roundHistory;
   final bool isGameOver;
+  final int autoStartSeconds;
   final VoidCallback onContinue;
 
   const OhHellRoundEndOverlay({
@@ -36,7 +42,61 @@ class OhHellRoundEndOverlay extends StatelessWidget {
     required this.roundHistory,
     required this.onContinue,
     this.isGameOver = false,
+    this.autoStartSeconds = 30,
   });
+
+  @override
+  State<OhHellRoundEndOverlay> createState() => _OhHellRoundEndOverlayState();
+}
+
+class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
+  Timer? _tickTimer;
+  int _countdown = 0;
+  bool _fired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // No countdown at game end — the human picks Play Again or Leave.
+    if (widget.isGameOver || widget.autoStartSeconds <= 0) return;
+    _countdown = widget.autoStartSeconds;
+    _tickTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _countdown -= 1);
+      if (_countdown <= 0) {
+        timer.cancel();
+        _fire();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tickTimer?.cancel();
+    super.dispose();
+  }
+
+  void _fire() {
+    if (_fired) return;
+    _fired = true;
+    _tickTimer?.cancel();
+    widget.onContinue();
+  }
+
+  // Forwarders so existing layout below can stay readable.
+  int get roundNumber => widget.roundNumber;
+  int get cardsThisRound => widget.cardsThisRound;
+  List<String> get playerOrder => widget.playerOrder;
+  String get localPlayerId => widget.localPlayerId;
+  Map<String, int> get bids => widget.bids;
+  Map<String, int> get tricksWon => widget.tricksWon;
+  Map<String, int> get roundPoints => widget.roundPoints;
+  Map<String, int> get scores => widget.scores;
+  List<Map<String, int>> get roundHistory => widget.roundHistory;
+  bool get isGameOver => widget.isGameOver;
 
   @override
   Widget build(BuildContext context) {
@@ -311,8 +371,14 @@ class OhHellRoundEndOverlay extends StatelessWidget {
   }
 
   Widget _buildContinueButton() {
+    final showCountdown = !isGameOver && _countdown > 0;
+    final label = isGameOver
+        ? 'Play Again'
+        : showCountdown
+            ? 'Next Round (${_countdown}s)'
+            : 'Next Round';
     return GestureDetector(
-      onTap: onContinue,
+      onTap: _fire,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -329,7 +395,7 @@ class OhHellRoundEndOverlay extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            isGameOver ? 'Play Again' : 'Next Round',
+            label,
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w700,

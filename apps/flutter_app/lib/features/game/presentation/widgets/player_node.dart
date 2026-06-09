@@ -24,6 +24,7 @@ class PlayerNode extends ConsumerWidget {
   final bool isActive;
   final bool hasPlayed;
   final bool isDealer;
+  final bool isBot;
   final bool isSmall;
   final bool isSpectator;
   final RoomSocialMode socialMode;
@@ -43,6 +44,7 @@ class PlayerNode extends ConsumerWidget {
     this.isActive = false,
     this.hasPlayed = false,
     this.isDealer = false,
+    this.isBot = false,
     this.isSmall = false,
     this.isSpectator = false,
     this.socialMode = RoomSocialMode.full,
@@ -104,22 +106,29 @@ class PlayerNode extends ConsumerWidget {
               _buildAvatar(),
               if (isDealer && !hasPlayed) _buildDealerBadge(),
               if (hasPlayed) _buildPlayedBadge(),
+              // Top-left corner: tiny "BOT" tag so humans aren't confused
+              // for bots at a glance. Humans get no badge — the absence is
+              // the signal.
+              if (isBot) _buildBotBadge(),
             ],
           ),
         ),
 
         const SizedBox(height: 4),
 
-        // Name
+        // Name — tinted slightly accent for humans so they read as players
+        // rather than generic seats. Bots keep the muted treatment.
         SizedBox(
-          width: 54,
+          width: 60,
           child: Text(
-            name.length > 8 ? '${name.substring(0, 7)}…' : name,
+            name.length > 9 ? '${name.substring(0, 8)}…' : name,
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: isSmall ? 8.5 : 9.0,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withOpacity(0.52),
+              fontWeight: FontWeight.w700,
+              color: isBot
+                  ? Colors.white.withOpacity(0.52)
+                  : Colors.white.withOpacity(0.92),
             ),
           ),
         ),
@@ -164,6 +173,33 @@ class PlayerNode extends ConsumerWidget {
       ),
       child: Center(
         child: Text(emoji, style: TextStyle(fontSize: _avatarSize * 0.50)),
+      ),
+    );
+  }
+
+  Widget _buildBotBadge() {
+    return Positioned(
+      top: -2,
+      left: -2,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.55),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.35),
+            width: 0.75,
+          ),
+        ),
+        child: Text(
+          'BOT',
+          style: GoogleFonts.poppins(
+            fontSize: 7,
+            fontWeight: FontWeight.w800,
+            color: Colors.white.withOpacity(0.85),
+            letterSpacing: 0.3,
+          ),
+        ),
       ),
     );
   }

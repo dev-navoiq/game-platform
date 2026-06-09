@@ -7,7 +7,9 @@ import 'package:game_oh_hell/game_oh_hell.dart';
 
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/animations/gameplay/ohell_bust_animation.dart';
+import '../../../lobby/models/room_member.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_session_providers.dart';
 import '../widgets/bid_pill.dart';
 import '../widgets/bidding_modal.dart';
 import '../widgets/card_hand.dart';
@@ -58,6 +60,21 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   int? _dealAnimatedRound;
   Timer? _dealTimer;
 
+  /// Snapshot of the trick that just completed. The server clears
+  /// currentTrick the moment the 4th card lands and the winner becomes the
+  /// next leader; without this hold the cards vanish before the human can
+  /// see who won.
+  List<TrickCard>? _heldTrick;
+  String? _heldWinnerId;
+  String? _heldWinnerName;
+  Timer? _heldTrickTimer;
+  static const Duration _heldTrickDuration = Duration(seconds: 5);
+
+  /// Tracks the previous tricksWon + currentTrick so we can spot the
+  /// trick-completion edge without needing server-side phase changes.
+  Map<String, int> _prevTricksWon = const {};
+  List<TrickCard> _prevTrick = const [];
+
   /// Approximate time the [CardFanAnimation] needs to stagger N cards into
   /// view: 60ms per card + 300ms tail for the last card to settle.
   Duration _dealAnimationDuration(int cardCount) =>
@@ -75,7 +92,60 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   @override
   void dispose() {
     _dealTimer?.cancel();
+    _heldTrickTimer?.cancel();
     super.dispose();
+  }
+
+  void _checkForTrickEnd(OhHellState state, Map<String, RoomMember> members) {
+    // Need a prior frame to compare against; first build seeds the cache.
+    final prevTrick = _prevTrick;
+    final prevTricksWon = _prevTricksWon;
+    _prevTrick = state.currentTrick;
+    _prevTricksWon = state.tricksWon;
+
+    // A trick "just completed" when the previous frame had a full trick and
+    // the new frame's currentTrick is empty (or smaller). The winner is the
+    // player whose tricksWon went up between frames.
+    final wasFull = prevTrick.length == state.playerOrder.length;
+    final isEmpty = state.currentTrick.isEmpty;
+    if (!wasFull || !isEmpty) return;
+
+    String? winnerId;
+    for (final pid in state.playerOrder) {
+      final before = prevTricksWon[pid] ?? 0;
+      final after = state.tricksWon[pid] ?? 0;
+      if (after > before) {
+        winnerId = pid;
+        break;
+      }
+    }
+    if (winnerId == null) return;
+
+    final winnerName = PlayerAvatar.nameFor(
+      playerId: winnerId,
+      localPlayerId: widget.localPlayerId,
+      seatIndex: state.playerOrder.indexOf(winnerId),
+      displayName: members[winnerId]?.displayName,
+    );
+
+    _heldTrickTimer?.cancel();
+    // Schedule for after build to avoid setState-in-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _heldTrick = prevTrick;
+        _heldWinnerId = winnerId;
+        _heldWinnerName = winnerName;
+      });
+      _heldTrickTimer = Timer(_heldTrickDuration, () {
+        if (!mounted) return;
+        setState(() {
+          _heldTrick = null;
+          _heldWinnerId = null;
+          _heldWinnerName = null;
+        });
+      });
+    });
   }
 
   void _checkForBust(OhHellState state) {
@@ -133,7 +203,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     final roomId = widget.roomId;
     final localPlayerId = widget.localPlayerId;
 
+    // Identity lookup populated by the room screen — without it every seat
+    // falls back to "Bot N" and humans appear to be bots.
+    final members = ref.watch(roomMembersProvider);
+
     _checkForBust(state);
+    _checkForTrickEnd(state, members);
     _scheduleDealReveal(state.roundNumber, state.cardsThisRound);
     final bidModalReady = _dealAnimatedRound == state.roundNumber;
 
@@ -193,10 +268,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                         final hasPlayed = state.currentTrick
                             .any((tc) => tc.playerId == playerId);
 
+                        final member = members[playerId];
                         final displayName = PlayerAvatar.nameFor(
                           playerId: playerId,
                           localPlayerId: localPlayerId,
                           seatIndex: seat.seatIndex,
+                          displayName: member?.displayName,
                         );
                         return Align(
                           alignment: seat.alignment,
@@ -210,6 +287,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                               isActive: isPlayerActive,
                               hasPlayed: hasPlayed,
                               isDealer: isDealer,
+                              isBot: member?.isBot ?? false,
                               isSmall: seat.isSmall,
                               socialMode: state.socialMode,
                               showBidPill: true,
@@ -221,15 +299,26 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                         );
                       }),
 
-                      // Trick zone (center)
+                      // Trick zone (center) — show the held trick during
+                      // the post-win pause so the player can see what just
+                      // happened, otherwise show the live trick.
                       Center(
                         child: TrickZone(
-                          currentTrick: state.currentTrick,
+                          currentTrick: _heldTrick ?? state.currentTrick,
                           playerOrder: state.playerOrder,
                           playerEmojis: playerEmojis,
+                          winningPlayerId: _heldWinnerId,
                           trumpSuit: Suit.hearts,
                         ),
                       ),
+
+                      // Trick winner banner — sits just above the trick zone
+                      // for the duration of the hold.
+                      if (_heldWinnerName != null)
+                        Align(
+                          alignment: const Alignment(0, -0.55),
+                          child: _TrickWinnerBanner(name: _heldWinnerName!),
+                        ),
 
                       // Turn timer
                       if (isMyTurn && state.phase == GamePhase.playing)
@@ -382,5 +471,50 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       },
     );
   }
+}
 
+/// Small accent banner shown above the trick zone while a completed trick
+/// is being held in place so the player can see who just won.
+class _TrickWinnerBanner extends StatelessWidget {
+  final String name;
+
+  const _TrickWinnerBanner({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.6),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.emoji_events, size: 14, color: Color(0xFFFFD180)),
+          const SizedBox(width: 6),
+          Text(
+            'Trick won by $name',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

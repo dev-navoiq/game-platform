@@ -2,10 +2,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game_core/game_core.dart';
 
 import '../../../core/di/providers.dart';
+import '../../lobby/models/room_member.dart';
 import 'game_provider.dart';
 
 /// Tracks the active game type (e.g., 'oh_hell', 'twenty_nine', 'chess').
 final gameTypeProvider = StateProvider<String?>((ref) => null);
+
+/// Player identity lookup for the active room — populated by the room
+/// screen before navigating into the game so the seat avatars can show
+/// real display names + a human/bot indicator instead of falling back to
+/// "Bot 1". Keyed by playerId.
+final roomMembersProvider =
+    StateProvider<Map<String, RoomMember>>((ref) => const {});
 
 /// Currently selected card in hand (card games).
 final selectedCardProvider = StateProvider<PlayingCard?>((ref) => null);

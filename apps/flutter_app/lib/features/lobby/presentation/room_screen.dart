@@ -101,6 +101,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         _roomCode = snap.roomCode;
         _gameType = snap.gameType;
       });
+      // Keep the game-side identity lookup current as members come and go
+      // (humans joining, bots being added) so seat labels stay correct even
+      // mid-game.
+      ref.read(roomMembersProvider.notifier).state = {
+        for (final m in snap.members) m.id: m,
+      };
 
       // If the host started the game while we were on this screen, follow
       // them to the game route. The host's _startGame() also navigates
