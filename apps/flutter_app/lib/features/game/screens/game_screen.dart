@@ -47,6 +47,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.initState();
     // Subscribe to realtime game state updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Publish the active room id so descendant widgets (GameActions etc.)
+      // can read it without prop-drilling.
+      ref.read(currentRoomIdProvider.notifier).state = widget.roomId;
+
       final notifier = ref.read(gameStateProvider.notifier);
       final gameType = ref.read(gameTypeProvider);
       if (gameType != null) {
@@ -67,6 +71,29 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   @override
   void dispose() {
     _timeoutTimer?.cancel();
+
+    // Forfeit / back-button / route-pop all converge here. Clear all the
+    // game-scoped state so a future room visit (or a quick "forfeit → back
+    // to lobby → add bots → start") never inherits a stale game state, a
+    // stale game type, or stale bot list. Before this, the host's
+    // BotMoveController would re-fire on the previous game's state the
+    // moment the new game screen mounted, dispatch a move against a dead
+    // state, and the server would reject it (NOT_PLAYING / WRONG_PHASE)
+    // — that's the "stuck after forfeit" loop.
+    //
+    // Guarded with try/catch because in widget tests the ConsumerElement
+    // can be disposed before our State.dispose runs ("Cannot use ref
+    // after the widget was disposed"); we don't want test teardown order
+    // to mask real production code paths.
+    try {
+      ref.invalidate(gameStateProvider);
+      ref.invalidate(gameTypeProvider);
+      ref.read(roomBotsProvider.notifier).state = const [];
+      ref.read(currentRoomIdProvider.notifier).state = null;
+    } catch (_) {
+      // Test teardown — providers were already torn down. Nothing to do.
+    }
+
     super.dispose();
   }
 

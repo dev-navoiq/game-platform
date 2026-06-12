@@ -11,6 +11,12 @@ final gameStateProvider =
   return GameNotifier(ref.watch(supabaseServiceProvider));
 });
 
+/// Active room id while the GameScreen is mounted. Set in
+/// [GameScreen.initState] and cleared in dispose. Used by GameActions
+/// (and any other game-screen-scoped widget) to forfeit/leave without
+/// having to thread the room id through every widget constructor.
+final currentRoomIdProvider = StateProvider<String?>((ref) => null);
+
 class GameNotifier extends StateNotifier<GameState?> {
   final SupabaseService _supabase;
   String? _gameType;

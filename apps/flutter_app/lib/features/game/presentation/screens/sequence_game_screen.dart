@@ -185,6 +185,7 @@ class _SequenceGameScreenState extends ConsumerState<SequenceGameScreen> {
                     child: CardHand(
                       cards: localHand,
                       isPlayable: _isMyTurn,
+                      mode: CardHandMode.tapToSelect,
                       onCardTap: (_) {},
                     ),
                   ),

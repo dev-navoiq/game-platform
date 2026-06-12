@@ -7,9 +7,10 @@ import 'package:game_bridge/game_bridge.dart';
 import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/di/providers.dart';
 import 'game_provider.dart';
-import 'game_session_providers.dart';
 
 /// Info about bots in the current room.
 class BotInfo {
@@ -34,6 +35,7 @@ class BotMoveController {
   final Ref _ref;
   Timer? _moveTimer;
   bool _disposed = false;
+  StreamSubscription<dynamic>? _roomSubscription;
 
   // Cache bot instances by player ID.
   final Map<String, Object> _bots = {};
@@ -44,6 +46,14 @@ class BotMoveController {
   // guard, every redelivery cancels the in-flight timer and the bot's move
   // never fires.
   String? _pendingMovePlayerId;
+
+  // Trick-completion detector: when state.currentTrick goes from >0 to 0,
+  // the trick just completed and the UI is showing the hold + collect
+  // animation (~3s). We stretch the next bot's "think" delay to ~3000ms
+  // so the bot's next move doesn't dispatch before the user sees the
+  // previous trick get collected.
+  int _prevTrickSize = 0;
+  bool _justCompletedTrick = false;
 
   // Rules engine for generating valid moves.
   final TwentyNineRules _twentyNineRules = TwentyNineRules();
@@ -71,6 +81,13 @@ class BotMoveController {
         if (current != null) _onStateChanged(current, roomId);
       }
     });
+    // Subscribe to game_rooms so mid-game changes to config.bots (a human
+    // forfeits → server appends a substitute bot inheriting their user_id)
+    // and host transfers (current_host_id flips) propagate to this client.
+    // Without this, the host who started the game keeps the bot list from
+    // _startGame's snapshot forever, and a forfeited human's turn never
+    // gets picked up by the bot subroutine.
+    _subscribeToRoomConfig(roomId);
     // The Riverpod listener only fires on FUTURE changes. The host's
     // `_startGame()` already pushed the initial state into the provider
     // before this controller existed, so if a bot is in the first seat
@@ -82,13 +99,105 @@ class BotMoveController {
     }
   }
 
+  /// Listen for changes to the room's config.bots and current_host_id so
+  /// substitutions made by `leave-room` (forfeits) and host transfers stay
+  /// in sync with this client's `roomBotsProvider`.
+  ///
+  /// Only the live host populates roomBotsProvider — joiner clients keep
+  /// it empty so we don't get two devices racing to dispatch the same
+  /// bot move. This handler enforces that gate: it clears the provider if
+  /// the current client isn't the host, and populates it otherwise.
+  void _subscribeToRoomConfig(String roomId) {
+    // Wrap the supabase access in a try/catch — in widget tests Supabase
+    // is intentionally not initialized, and `_ref.read(supabaseProvider)`
+    // throws. The bot move flow has its own _startGame-time pre-load, so
+    // the subscription is a nice-to-have for live substitutions, not a
+    // hard prerequisite. Skip it silently when Supabase isn't around.
+    final SupabaseClient supabase;
+    try {
+      supabase = _ref.read(supabaseProvider);
+    } catch (_) {
+      return;
+    }
+    _roomSubscription = supabase
+        .from('game_rooms')
+        .stream(primaryKey: ['id'])
+        .eq('id', roomId)
+        .listen((rows) {
+      if (_disposed || rows.isEmpty) return;
+      final row = rows.first;
+      final config = row['config'] as Map<String, dynamic>?;
+      final currentHostId = (row['current_host_id'] as String?) ??
+          (row['created_by'] as String?);
+      final myId = _ref.read(currentUserProvider)?.id;
+
+      if (currentHostId == null || myId == null || currentHostId != myId) {
+        // Not the host — never populate bots. If a previous read had put
+        // bots here (e.g. host transferred away from us), clear them so
+        // we stop dispatching moves we're no longer responsible for.
+        final existing = _ref.read(roomBotsProvider);
+        if (existing.isNotEmpty) {
+          _ref.read(roomBotsProvider.notifier).state = const [];
+        }
+        return;
+      }
+
+      final botsList = (config?['bots'] as List?)?.cast<Map<String, dynamic>>() ??
+          const <Map<String, dynamic>>[];
+      final next = botsList
+          .map((b) => BotInfo(
+                id: b['id'] as String,
+                difficulty: (b['difficulty'] as String?) ?? 'medium',
+              ))
+          .toList();
+      // Avoid emitting equal lists — saves a redundant _onStateChanged
+      // re-entry via the roomBotsProvider listener above.
+      final current = _ref.read(roomBotsProvider);
+      if (!_botListsEqual(current, next)) {
+        _ref.read(roomBotsProvider.notifier).state = next;
+      }
+    });
+  }
+
+  static bool _botListsEqual(List<BotInfo> a, List<BotInfo> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id || a[i].difficulty != b[i].difficulty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Helper for the trick-completion detector. Returns the size of the
+  /// current trick across all supported games (0 if not a trick-taking
+  /// state). Looked up dynamically to keep this controller from depending
+  /// on a sealed type hierarchy.
+  int _currentTrickSize(GameState state) {
+    if (state is TwentyNineState) return state.currentTrick.length;
+    if (state is BridgeState) return state.currentTrick.length;
+    if (state is OhHellState) return state.currentTrick.length;
+    return 0;
+  }
+
   void _onStateChanged(GameState state, String roomId) {
     final bots = _ref.read(roomBotsProvider);
-    developer.log(
-      'state changed: phase=${(state as dynamic).phase} '
+
+    // Trick-completion detector: previous frame had cards on the table,
+    // this frame has none. The flag is consumed when the *next* bot move
+    // is scheduled — so the bot leading the new trick waits long enough
+    // for the user to see the collect animation before its card pops in.
+    final currentTrickSize = _currentTrickSize(state);
+    if (_prevTrickSize > 0 && currentTrickSize == 0) {
+      _justCompletedTrick = true;
+    }
+    _prevTrickSize = currentTrickSize;
+
+    print(
+      '[BotMoveController] state changed: phase=${(state as dynamic).phase} '
       'current=${state.currentPlayerId} '
-      'bots=${bots.length} pending=$_pendingMovePlayerId',
-      name: 'BotMoveController',
+      'bots=${bots.length} pending=$_pendingMovePlayerId '
+      'trick=$currentTrickSize postTrick=$_justCompletedTrick',
     );
 
     // Don't auto-trigger newRound — human confirms via RoundEndOverlay.
@@ -124,8 +233,7 @@ class BotMoveController {
     _cancelPending();
 
     if (bots.isEmpty) {
-      developer.log('roomBotsProvider empty — waiting for population',
-          name: 'BotMoveController');
+      print('[BotMoveController] roomBotsProvider empty — waiting for population');
       return;
     }
 
@@ -137,31 +245,74 @@ class BotMoveController {
     if (botInfo == null) return; // Not a bot's turn — it's a human's.
 
     _pendingMovePlayerId = currentPlayer;
-    // Brief delay so moves don't feel instant. Kept short because cloud-staging
-    // round-trips already add ~500ms — a longer think delay stacks badly.
-    _moveTimer = Timer(const Duration(milliseconds: 200), () {
-      _pendingMovePlayerId = null;
-      if (_disposed) return;
-      _playBotMove(state, botInfo, roomId);
+    // When the previous move just completed a trick, the UI is mid-collect
+    // (trickHold + collect ≈ 3s). Stretch the bot's delay so its next card
+    // doesn't appear before the collect finishes. The flag is consumed
+    // here — subsequent state changes inside the same trick use the short
+    // delay again.
+    final Duration thinkDelay;
+    if (_justCompletedTrick) {
+      thinkDelay = const Duration(milliseconds: 3000);
+      _justCompletedTrick = false;
+    } else {
+      // Brief delay so moves don't feel instant. Kept short because
+      // cloud-staging round-trips already add ~500ms — a longer think
+      // delay stacks badly.
+      thinkDelay = const Duration(milliseconds: 200);
+    }
+    _moveTimer = Timer(thinkDelay, () async {
+      if (_disposed) {
+        _pendingMovePlayerId = null;
+        return;
+      }
+      // Always read the freshest state. The duplicate-delivery guard above
+      // intentionally lets the timer run when `currentPlayerId` is unchanged
+      // — but the *phase* can still flip under us (29's bidding → trumpSelection
+      // when the bidder is the bot, Oh Hell's bidding → playing on the last
+      // bid). Without this re-read, the bot computes a move against a stale
+      // phase, the server rejects WRONG_PHASE, and the table never moves.
+      final fresh = _ref.read(gameStateProvider) ?? state;
+      if (fresh.currentPlayerId != botInfo.id) {
+        // Turn moved off the bot in the gap — let the next state change
+        // schedule the appropriate move for whoever is up.
+        _pendingMovePlayerId = null;
+        return;
+      }
+      // Hold `_pendingMovePlayerId` through the ENTIRE async dispatch
+      // (network roundtrip included). Without this hold, a Supabase
+      // realtime echo or re-entrant _onStateChanged that arrives between
+      // dispatch-kicked-off and server-response-arrives would see the
+      // guard already cleared and issue a SECOND `sendMove` for the same
+      // bid. The first lands and advances state; the second arrives after
+      // → server returns 409 VERSION_CONFLICT or 403 NOT_YOUR_TURN; the
+      // bot's error path swallows it; the table looks stuck. Confirmed
+      // via staging edge-function logs (2026-06-11).
+      try {
+        await _playBotMove(fresh, botInfo, roomId);
+      } finally {
+        if (_pendingMovePlayerId == botInfo.id) {
+          _pendingMovePlayerId = null;
+        }
+      }
     });
   }
 
-  void _playBotMove(GameState state, BotInfo botInfo, String roomId) {
+  Future<void> _playBotMove(GameState state, BotInfo botInfo, String roomId) {
     if (state is TwentyNineState) {
-      _playTwentyNineBotMove(state, botInfo, roomId);
+      return _playTwentyNineBotMove(state, botInfo, roomId);
     } else if (state is BridgeState) {
-      _playBridgeBotMove(state, botInfo, roomId);
+      return _playBridgeBotMove(state, botInfo, roomId);
     } else if (state is OhHellState) {
-      _playOhHellBotMove(state, botInfo, roomId);
+      return _playOhHellBotMove(state, botInfo, roomId);
     }
-    // TODO: Add other game types as needed.
+    return Future<void>.value();
   }
 
-  void _playOhHellBotMove(
+  Future<void> _playOhHellBotMove(
     OhHellState state,
     BotInfo botInfo,
     String roomId,
-  ) {
+  ) async {
     final bot = _getOrCreateBot('oh_hell', botInfo);
     if (bot is! OhHellBot) return;
 
@@ -174,12 +325,9 @@ class BotMoveController {
     final movePayload = _convertOhHellMoveToPayload(selectedMove);
     if (movePayload == null) return;
 
-    developer.log('[BotMoveController] Oh Hell bot ${botInfo.id.substring(0, 8)} playing: ${movePayload['type']}');
+    print('[BotMoveController] Oh Hell bot ${botInfo.id.substring(0, 8)} computed: ${movePayload['type']}');
 
-    _ref.read(gameStateProvider.notifier).sendMove(
-      roomId: roomId,
-      move: movePayload,
-    );
+    await _dispatchBotMove(botInfo, roomId, movePayload, 'oh_hell');
   }
 
   Map<String, dynamic>? _convertOhHellMoveToPayload(OhHellMove move) {
@@ -197,11 +345,11 @@ class BotMoveController {
     };
   }
 
-  void _playTwentyNineBotMove(
+  Future<void> _playTwentyNineBotMove(
     TwentyNineState state,
     BotInfo botInfo,
     String roomId,
-  ) {
+  ) async {
     final bot = _getOrCreateBot('twenty_nine', botInfo);
     if (bot is! TwentyNineBot) return;
 
@@ -215,19 +363,16 @@ class BotMoveController {
     final movePayload = _convertMoveToPayload(selectedMove);
     if (movePayload == null) return;
 
-    developer.log('[BotMoveController] Bot ${botInfo.id.substring(0, 8)} playing: ${movePayload['type']}');
+    print('[BotMoveController] 29 bot ${botInfo.id.substring(0, 8)} computed: ${movePayload['type']}');
 
-    _ref.read(gameStateProvider.notifier).sendMove(
-      roomId: roomId,
-      move: movePayload,
-    );
+    await _dispatchBotMove(botInfo, roomId, movePayload, 'twenty_nine');
   }
 
-  void _playBridgeBotMove(
+  Future<void> _playBridgeBotMove(
     BridgeState state,
     BotInfo botInfo,
     String roomId,
-  ) {
+  ) async {
     final bot = _getOrCreateBot('bridge', botInfo);
     if (bot is! BridgeBot) return;
 
@@ -243,12 +388,44 @@ class BotMoveController {
     final movePayload = _convertBridgeMoveToPayload(selectedMove);
     if (movePayload == null) return;
 
-    developer.log('[BotMoveController] Bridge bot ${botInfo.id.substring(0, 8)} playing: ${movePayload['type']}');
+    print('[BotMoveController] Bridge bot ${botInfo.id.substring(0, 8)} computed: ${movePayload['type']}');
 
-    _ref.read(gameStateProvider.notifier).sendMove(
-      roomId: roomId,
-      move: movePayload,
-    );
+    await _dispatchBotMove(botInfo, roomId, movePayload, 'bridge');
+  }
+
+  /// Shared dispatch + error-visibility path for all bot moves.
+  ///
+  /// sendMove is fire-and-forget at the call site (we don't block the
+  /// timer waiting for the network), but the returned Future can still
+  /// reject — e.g. server returns 400 NOT_YOUR_TURN/WRONG_PHASE/FORBIDDEN_BID,
+  /// 409 VERSION_CONFLICT, or a network error. Before this hook those
+  /// rejections propagated as unhandled async exceptions and the bot
+  /// silently stayed "stuck" — there was no visible signal anywhere that
+  /// the move had failed, the engine state didn't advance, and the bot
+  /// never retried. Now the failure is at least logged with the game
+  /// type + bot id so the case is debuggable from a device log.
+  Future<void> _dispatchBotMove(
+    BotInfo botInfo,
+    String roomId,
+    Map<String, dynamic> movePayload,
+    String gameType,
+  ) async {
+    // `print` (not developer.log) so the dispatch shows up in flutter-run
+    // output on release builds — developer.log is silenced without a VM
+    // service attached.
+    print('[BotMoveController] dispatching $gameType bot ${botInfo.id.substring(0, 8)}: ${movePayload['type']}');
+    try {
+      await _ref
+          .read(gameStateProvider.notifier)
+          .sendMove(roomId: roomId, move: movePayload);
+    } catch (error) {
+      print(
+        '[BotMoveController] $gameType bot ${botInfo.id.substring(0, 8)} '
+        'sendMove rejected: $error',
+      );
+      // Future enhancement: typed MoveRejection + retry on VERSION_CONFLICT
+      // with fresh state. See prompts/2026-06-10-night-memo.md.
+    }
   }
 
   /// Convert a Dart [BridgeMove] to the snake_case JSON payload the edge
@@ -356,5 +533,7 @@ class BotMoveController {
   void dispose() {
     _disposed = true;
     _moveTimer?.cancel();
+    _roomSubscription?.cancel();
+    _roomSubscription = null;
   }
 }

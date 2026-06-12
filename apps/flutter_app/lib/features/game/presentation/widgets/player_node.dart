@@ -33,6 +33,13 @@ class PlayerNode extends ConsumerWidget {
   final bool hasBid;
   final String? roomId;
   final String? playerId;
+  final GlobalKey? nodeKey;
+  final bool isTrickWinnerPulsing;
+
+  /// Between-rounds ready state. `null` = hidden (round in progress).
+  /// `true` = ready, `false` = waiting. Bots auto-ready so callers pass
+  /// `true` for them.
+  final bool? isReady;
 
   const PlayerNode({
     super.key,
@@ -53,9 +60,12 @@ class PlayerNode extends ConsumerWidget {
     this.hasBid = true,
     this.roomId,
     this.playerId,
+    this.nodeKey,
+    this.isTrickWinnerPulsing = false,
+    this.isReady,
   });
 
-  double get _avatarSize => isSmall ? 36.0 : 40.0;
+  double get _avatarSize => isSmall ? 42.0 : 48.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -84,7 +94,7 @@ class PlayerNode extends ConsumerWidget {
     final showBubble =
         bubbleText != null && ChatRules.areBubblesAllowed(socialMode);
 
-    return Column(
+    final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Chat bubble above
@@ -104,6 +114,7 @@ class PlayerNode extends ConsumerWidget {
             clipBehavior: Clip.none,
             children: [
               _buildAvatar(),
+              if (isTrickWinnerPulsing) _buildWinnerPulse(),
               if (isDealer && !hasPlayed) _buildDealerBadge(),
               if (hasPlayed) _buildPlayedBadge(),
               // Top-left corner: tiny "BOT" tag so humans aren't confused
@@ -135,9 +146,64 @@ class PlayerNode extends ConsumerWidget {
 
         const SizedBox(height: 4),
 
-        // Bid pill
-        if (showBidPill) BidPill(won: won, bid: bid, hasBid: hasBid),
+        // Bid pill (suppressed between rounds — the ready chip takes its slot).
+        if (isReady == null && showBidPill)
+          BidPill(won: won, bid: bid, hasBid: hasBid),
+
+        // Ready chip — shown only between rounds. Replaces the bid pill
+        // visually so the player area stays vertically compact.
+        if (isReady != null) _buildReadyChip(),
       ],
+    );
+
+    // Trick winner jump — single bounce, fires once when
+    // [isTrickWinnerPulsing] toggles to true. The pulse ring keeps glowing
+    // around the avatar; this widget bounces the whole node up + down.
+    final celebrated = isTrickWinnerPulsing
+        ? _TrickWinnerJump(child: content)
+        : content;
+
+    if (nodeKey != null) {
+      return KeyedSubtree(key: nodeKey!, child: celebrated);
+    }
+    return celebrated;
+  }
+
+  Widget _buildReadyChip() {
+    final ready = isReady ?? false;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: ready
+            ? AppColors.success.withOpacity(0.18)
+            : Colors.white.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: ready
+              ? AppColors.success.withOpacity(0.55)
+              : Colors.white.withOpacity(0.25),
+          width: 1.0,
+        ),
+      ),
+      child: Text(
+        ready ? 'READY ✓' : 'WAITING',
+        style: GoogleFonts.poppins(
+          fontSize: 8.5,
+          fontWeight: FontWeight.w800,
+          color: ready
+              ? AppColors.success
+              : Colors.white.withOpacity(0.7),
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWinnerPulse() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: _WinnerPulseRing(size: _avatarSize),
+      ),
     );
   }
 
@@ -261,6 +327,141 @@ class PlayerNode extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _WinnerPulseRing extends StatefulWidget {
+  final double size;
+
+  const _WinnerPulseRing({required this.size});
+
+  @override
+  State<_WinnerPulseRing> createState() => _WinnerPulseRingState();
+}
+
+class _WinnerPulseRingState extends State<_WinnerPulseRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      // Longer + bigger ring so the winner's seat reads as a celebratory
+      // beat (was 600ms → 40px; now 1300ms → 64px). Still one-shot so
+      // pumpAndSettle in tests doesn't hang.
+      duration: const Duration(milliseconds: 1300),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = Curves.easeOutCubic.transform(_controller.value);
+        final radius = 64.0 * t;
+        final opacity = (1.0 - t).clamp(0.0, 1.0);
+        // The pulse expands well past the avatar's bounds. The parent
+        // Stack uses clipBehavior: Clip.none, but Positioned.fill still
+        // hands down tight constraints that match the avatar size. Without
+        // OverflowBox here, a Container wider than the avatar throws a
+        // "RenderFlex overflowed" warning (the yellow-stripe bars).
+        return Center(
+          child: OverflowBox(
+            minWidth: 0,
+            minHeight: 0,
+            maxWidth: double.infinity,
+            maxHeight: double.infinity,
+            child: Container(
+              width: widget.size + radius * 2,
+              height: widget.size + radius * 2,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.accent.withOpacity(opacity),
+                  width: 3.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.accent.withOpacity(opacity * 0.7),
+                    blurRadius: 18,
+                    spreadRadius: 3,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One-shot jump for the trick winner — translateY bounces up and back
+/// down once over ~600ms. Used INSTEAD of a winner-message banner; the
+/// movement is the celebratory signal.
+class _TrickWinnerJump extends StatefulWidget {
+  final Widget child;
+
+  const _TrickWinnerJump({required this.child});
+
+  @override
+  State<_TrickWinnerJump> createState() => _TrickWinnerJumpState();
+}
+
+class _TrickWinnerJumpState extends State<_TrickWinnerJump>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _translateY;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _translateY = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: -20.0)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -20.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.bounceOut)),
+        weight: 1.4,
+      ),
+    ]).animate(_controller);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _translateY,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, _translateY.value),
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }

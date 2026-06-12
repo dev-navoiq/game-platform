@@ -132,6 +132,12 @@ class _GlassTextFieldState extends State<GlassTextField> {
                   color: AppColors.textDark,
                 ),
                 decoration: InputDecoration(
+                  // The app's inputDecorationTheme sets `filled: true,
+                  // fillColor: cardDark` for dark mode, which would paint
+                  // over our white AnimatedContainer and make the dark text
+                  // unreadable on Android in auto-dark mode. Force filled
+                  // off here so the white container shows through.
+                  filled: false,
                   hintText: widget.hint,
                   hintStyle: TextStyle(
                     color: AppColors.textMuted.withOpacity(0.85),
@@ -147,6 +153,9 @@ class _GlassTextFieldState extends State<GlassTextField> {
                       : null,
                   suffix: widget.suffix,
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 14,

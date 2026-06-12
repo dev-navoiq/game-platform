@@ -68,16 +68,19 @@ class _TurnIndicatorState extends State<TurnIndicator>
     return AnimatedBuilder(
       animation: _pulse,
       builder: (_, child) {
-        // Glow intensity oscillates between 0.35 and 0.7.
-        final t = 0.35 + 0.35 * _pulse.value;
+        // Tight gold rim around the hand — earlier values (blur 22-32 +
+        // spread 1-3 + opacity .35-.7) bloomed into a screen-filling orange
+        // vignette when the hand sat flush against the bottom of the screen
+        // because the shadow had nowhere to dissipate downward.
+        final t = 0.15 + 0.15 * _pulse.value;
         return Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
                 color: widget.color.withOpacity(t),
-                blurRadius: 22 + 10 * _pulse.value,
-                spreadRadius: 1 + 2 * _pulse.value,
+                blurRadius: 6 + 3 * _pulse.value,
+                spreadRadius: 0,
               ),
             ],
           ),

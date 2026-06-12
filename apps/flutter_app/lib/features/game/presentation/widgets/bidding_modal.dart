@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -48,6 +50,32 @@ class BiddingModal extends StatefulWidget {
 
 class _BiddingModalState extends State<BiddingModal> {
   int? _selected;
+
+  /// True between the user committing a bid (Confirm/Pass/Double/Redouble)
+  /// and the parent dismissing this modal because the engine state advanced.
+  /// We use this to: (a) disable the grid + action buttons so double-taps
+  /// don't dispatch twice, (b) show a spinner where Confirm normally lives
+  /// so the user sees the tap was acknowledged. A safety timer resets it
+  /// after 5s in case the server never confirms — without it a failed bid
+  /// would leave the modal stuck.
+  bool _isSubmitting = false;
+  Timer? _submitTimeoutTimer;
+
+  void _markSubmitting() {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    _submitTimeoutTimer?.cancel();
+    _submitTimeoutTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _submitTimeoutTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -126,8 +154,13 @@ class _BiddingModalState extends State<BiddingModal> {
 
               const SizedBox(height: 10),
 
-              // Bid grid
-              if (widget.bidGridEnabled) _buildBidGrid(),
+              // Bid grid (dimmed while submitting so the disabled state reads).
+              if (widget.bidGridEnabled)
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: _isSubmitting ? 0.4 : 1,
+                  child: _buildBidGrid(),
+                ),
 
               // Double / Redouble row
               if (widget.showDoubleButton || widget.showRedoubleButton) ...[
@@ -138,7 +171,12 @@ class _BiddingModalState extends State<BiddingModal> {
                       Expanded(
                         child: GestureDetector(
                           key: const Key('bid-double'),
-                          onTap: widget.onDouble,
+                          onTap: _isSubmitting
+                              ? null
+                              : () {
+                                  _markSubmitting();
+                                  widget.onDouble?.call();
+                                },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
@@ -167,7 +205,12 @@ class _BiddingModalState extends State<BiddingModal> {
                       Expanded(
                         child: GestureDetector(
                           key: const Key('bid-redouble'),
-                          onTap: widget.onRedouble,
+                          onTap: _isSubmitting
+                              ? null
+                              : () {
+                                  _markSubmitting();
+                                  widget.onRedouble?.call();
+                                },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
@@ -196,7 +239,12 @@ class _BiddingModalState extends State<BiddingModal> {
                 const SizedBox(height: 8),
                 GestureDetector(
                   key: const Key('bid-pass'),
-                  onTap: widget.onPass,
+                  onTap: _isSubmitting
+                      ? null
+                      : () {
+                          _markSubmitting();
+                          widget.onPass?.call();
+                        },
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -224,9 +272,13 @@ class _BiddingModalState extends State<BiddingModal> {
               if (widget.bidGridEnabled) ...[
                 const SizedBox(height: 10),
                 GestureDetector(
-                  onTap: _selected == null
+                  key: const Key('bid-confirm'),
+                  onTap: _selected == null || _isSubmitting
                       ? null
-                      : () => widget.onBidSelected(_selected!),
+                      : () {
+                          _markSubmitting();
+                          widget.onBidSelected(_selected!);
+                        },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     width: double.infinity,
@@ -247,15 +299,26 @@ class _BiddingModalState extends State<BiddingModal> {
                             ],
                     ),
                     child: Center(
-                      child: Text(
-                        'Confirm Bid',
-                        style: GoogleFonts.inter(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          letterSpacing: -0.1,
-                        ),
-                      ),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              key: Key('bid-confirm-spinner'),
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            )
+                          : Text(
+                              'Confirm Bid',
+                              style: GoogleFonts.inter(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                letterSpacing: -0.1,
+                              ),
+                            ),
                     ),
                   ),
                 ),
@@ -292,7 +355,7 @@ class _BiddingModalState extends State<BiddingModal> {
 
         return GestureDetector(
           key: Key('bid-$bidValue'),
-          onTap: isForbidden
+          onTap: isForbidden || _isSubmitting
               ? null
               : () => setState(() => _selected = bidValue),
           child: AnimatedContainer(

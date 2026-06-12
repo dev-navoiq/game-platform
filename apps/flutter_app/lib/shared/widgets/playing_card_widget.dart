@@ -13,6 +13,11 @@ class PlayingCardWidget extends StatelessWidget {
   final String? skinId;
   final CardSkinTheme? theme;
 
+  /// Overall card width. Default 62 (legacy hand size). Hand strip uses 80;
+  /// trick zone uses 96.
+  final double width;
+  final double height;
+
   const PlayingCardWidget({
     super.key,
     required this.suit,
@@ -23,6 +28,8 @@ class PlayingCardWidget extends StatelessWidget {
     this.onTap,
     this.skinId,
     this.theme,
+    this.width = 62,
+    this.height = 90,
   });
 
   CardSkinTheme get _theme => theme ?? CardSkinTheme.classic;
@@ -94,11 +101,17 @@ class PlayingCardWidget extends StatelessWidget {
         child: GestureDetector(
           onTap: isPlayable ? onTap : null,
           child: Container(
-            width: 62,
-            height: 90,
+            width: width,
+            height: height,
+            // Hard-clip any child overflow inside the card's rounded box.
+            // The face Column can spill by 1-2px at the larger trick-zone
+            // size depending on platform font metrics; without clipping
+            // those spills render as the yellow "RenderFlex overflowed"
+            // stripes the user sees.
+            clipBehavior: Clip.hardEdge,
             decoration: BoxDecoration(
               color: _theme.cardFaceColor,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(9 * width / 62),
               border: isSelected
                   ? Border.all(color: AppColors.accent, width: 2.5)
                   : Border.all(color: _theme.cardBorderColor),
@@ -149,28 +162,28 @@ class PlayingCardWidget extends StatelessWidget {
   }
 
   Widget _buildFace() {
+    final s = width / 62; // proportional scale from legacy 62-wide baseline
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: 5 * s, vertical: 4 * s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Rank + suit on same line, larger and bolder
           Row(
             children: [
               Text(
                 rank,
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 18 * s,
                   fontWeight: FontWeight.w800,
                   color: _suitColor,
                   height: 1.1,
                 ),
               ),
-              const SizedBox(width: 1),
+              SizedBox(width: 1 * s),
               Text(
                 _suitSymbol,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 14 * s,
                   fontWeight: FontWeight.bold,
                   color: _suitColor,
                   height: 1.1,
@@ -178,18 +191,28 @@ class PlayingCardWidget extends StatelessWidget {
               ),
             ],
           ),
-          const Spacer(),
-          // Large center suit symbol
-          Center(
-            child: Text(
-              _suitSymbol,
-              style: TextStyle(
-                fontSize: 30,
-                color: _suitColor.withOpacity(0.85),
+          // Big centre suit takes the remaining vertical space. Using
+          // Expanded + FittedBox.scaleDown removes the Spacer/Center
+          // pattern that produced the user-reported "yellow lines at 1/3
+          // and 2/3" — those were RenderFlex overflow stripes drawn at the
+          // boundaries where the Spacers couldn't get their requested
+          // height. FittedBox guarantees the symbol shrinks to fit, so the
+          // Column can never overflow.
+          Expanded(
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  _suitSymbol,
+                  style: TextStyle(
+                    fontSize: 30 * s,
+                    color: _suitColor.withOpacity(0.85),
+                    height: 1.0,
+                  ),
+                ),
               ),
             ),
           ),
-          const Spacer(),
         ],
       ),
     );

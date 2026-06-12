@@ -2,16 +2,70 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/currency_display.dart';
 import '../../../shared/widgets/daily_challenge_card.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/friend_activity_card.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
+import '../../../shared/widgets/glass_container.dart';
 import '../../friends/providers/friends_providers.dart';
 import 'widgets/favorites_section.dart';
 import 'widgets/game_tile_card.dart';
+
+/// Active-room snapshot derived from `profiles.current_activity`. Surfaced
+/// on the home screen as a "Resume Game" card so a player who forfeited
+/// (their slot is bot-subbed in the room) or hit a phone restart mid-game
+/// can drop back in. A null value means no resumable room — the card hides.
+class ResumeRoomInfo {
+  final String roomId;
+  final String? roomCode;
+  final String? gameType;
+  // 'in_game' | 'in_lobby' | 'spectating' — from current_activity.type.
+  final String type;
+
+  const ResumeRoomInfo({
+    required this.roomId,
+    required this.type,
+    this.roomCode,
+    this.gameType,
+  });
+}
+
+/// Looks up the current user's `current_activity` and exposes a
+/// [ResumeRoomInfo] if there's a room worth resuming. autoDispose so the
+/// home screen refetches each time it's pushed back onto.
+final resumeRoomProvider =
+    FutureProvider.autoDispose<ResumeRoomInfo?>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return null;
+
+  final supabase = ref.read(supabaseServiceProvider);
+  try {
+    final profile = await supabase.getProfile();
+    final activity = profile['current_activity'] as Map<String, dynamic>?;
+    if (activity == null) return null;
+
+    final type = activity['type'] as String?;
+    final roomId = activity['room_id'] as String?;
+    if (roomId == null || type == null) return null;
+    if (!['in_game', 'in_lobby', 'spectating'].contains(type)) return null;
+
+    return ResumeRoomInfo(
+      roomId: roomId,
+      type: type,
+      roomCode: activity['room_code'] as String?,
+      gameType: activity['game_type'] as String?,
+    );
+  } catch (_) {
+    // Auth/network blip — hide the card rather than showing an error chip.
+    // The user can pull-to-refresh once we add that, or restart the app.
+    return null;
+  }
+});
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -52,6 +106,9 @@ class HomeScreen extends ConsumerWidget {
             bottom: 100,
           ),
           children: [
+            // Resume Game card (shows when current_activity points at a room).
+            const _ResumeGameCard(),
+
             // Friends Activity strip
             const _FriendsActivityStrip(),
 
@@ -67,6 +124,118 @@ class HomeScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// Glass card that appears at the top of the home screen when the current
+/// user has an in-progress room (via `profiles.current_activity`). Tapping
+/// it invokes the join-room edge function in reclaim mode (clears the
+/// substitute bot, flips `disconnected_at` back to null) and routes the
+/// player into the room or game screen depending on its current phase.
+class _ResumeGameCard extends ConsumerWidget {
+  const _ResumeGameCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final infoAsync = ref.watch(resumeRoomProvider);
+    final info = infoAsync.valueOrNull;
+    if (info == null) return const SizedBox.shrink();
+
+    final subtitle = switch (info.type) {
+      'in_game' => 'A game is in progress${info.gameType != null ? ' • ${_friendlyGameType(info.gameType!)}' : ''}',
+      'in_lobby' => 'You\'re waiting in a lobby',
+      'spectating' => 'You\'re spectating a game',
+      _ => 'Tap to rejoin',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassContainer(
+        onTap: () => _resume(context, ref, info),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            const Icon(Icons.play_circle_fill,
+                color: AppColors.accent, size: 36),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Resume Game',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resume(
+    BuildContext context,
+    WidgetRef ref,
+    ResumeRoomInfo info,
+  ) async {
+    final supabase = ref.read(supabaseServiceProvider);
+    // Always call join-room — server reclaims the slot if disconnected_at
+    // is set (the forfeit/disconnect case), otherwise returns ALREADY_IN_ROOM
+    // which we treat as a no-op (the user is still actively seated, e.g.
+    // they had the app open in two places). Either way, the next step is
+    // navigation.
+    try {
+      await supabase.joinRoom(
+        roomId: info.roomId,
+        asSpectator: info.type == 'spectating',
+      );
+    } catch (e) {
+      // ALREADY_IN_ROOM, network blip, etc — log and proceed. If the room
+      // is gone (abandoned), the room/game screen will surface that.
+      print('[ResumeGameCard] joinRoom returned non-fatal: $e');
+    }
+
+    if (!context.mounted) return;
+
+    // Refresh the resume card so it updates after we navigate back.
+    ref.invalidate(resumeRoomProvider);
+
+    if (info.type == 'in_game' || info.type == 'spectating') {
+      context.push(AppRoutes.gamePath(info.roomId));
+    } else {
+      context.push(AppRoutes.roomPath(info.roomId));
+    }
+  }
+
+  static String _friendlyGameType(String raw) {
+    return switch (raw) {
+      'twenty_nine' => '29',
+      'oh_hell' => 'Oh Hell',
+      'hearts' => 'Hearts',
+      'spades' => 'Spades',
+      'bridge' => 'Bridge',
+      'chess' => 'Chess',
+      'ludo' => 'Ludo',
+      'sequence' => 'Sequence',
+      _ => raw,
+    };
   }
 }
 

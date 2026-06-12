@@ -64,9 +64,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   /// Whether the local user is the host of this room.
   /// `_members` is populated by the snapshot — until it loads, treat the
   /// user as a non-host so we don't briefly flash host controls to a joiner.
+  ///
+  /// We compare by id against the live auth user (NOT the snapshot's cached
+  /// `isCurrentUser` flag). The snapshot computes that flag from
+  /// `_client.auth.currentUser?.id` at fetch time; if auth.currentUser
+  /// briefly returns null during anonymous-session restore, every member
+  /// gets `isCurrentUser=false` and the user is permanently mis-identified
+  /// as a joiner until the next snapshot. The id comparison here is
+  /// stable across that timing window.
   bool get _isLocalHost {
+    final myId = ref.read(supabaseServiceProvider).currentUser?.id;
+    if (myId == null) return false;
     for (final m in _members) {
-      if (m.isCurrentUser) return m.isHost;
+      if (m.id == myId) return m.isHost;
     }
     return false;
   }
@@ -184,19 +194,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         roomId: widget.roomId,
         difficulty: difficulty,
       );
-      // We don't update _members here — the game_rooms realtime subscription
-      // will fire and `_loadSnapshot` will pick up the new bot — but we do
-      // ack the click with a snackbar because the realtime delivery can take
-      // a beat and silence reads as a failed click.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Added a $difficulty bot'),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      // No success snackbar — it covers the Add Bot / Start Game buttons
+      // and the realtime subscription updates the seat list within a tick
+      // (an empty seat flips to the new bot, which is the natural ack).
+      // The button stays disabled (spinner) until this future resolves so
+      // a slow round-trip can't be double-tapped.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -249,6 +251,29 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       final result = await supabase.startGame(roomId: widget.roomId);
 
       if (mounted) {
+        // The edge function returns 4xx as a JSON body { error, code } with
+        // no exception — detect it before treating the result as success.
+        // The 'ALREADY_STARTED' code in particular surfaces when forfeit
+        // didn't clean up properly (pre-2026-06-11 bug) and the room is
+        // still status='playing'. With slot-substitution-on-forfeit now in
+        // place this is rare, but keep the handler as a fail-loud guard.
+        final errorCode = result['code'] as String?;
+        if (errorCode != null) {
+          _navigatedToGame = false;
+          final message = switch (errorCode) {
+            'ALREADY_STARTED' =>
+              'This room already has a game in progress. Try rejoining from the home screen.',
+            'NOT_ENOUGH_PLAYERS' =>
+              'Need at least 2 players (humans + bots) to start.',
+            'NOT_HOST' => 'Only the host can start the game.',
+            _ => result['error'] as String? ?? 'Could not start game.',
+          };
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+          return;
+        }
+
         // Set game type and initial state before navigating
         final gameType = result['game_type'] as String?;
         final stateData = result['state'] as Map<String, dynamic>?;
@@ -271,6 +296,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       }
     } catch (e) {
       if (mounted) {
+        _navigatedToGame = false;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to start game: $e')),
         );

@@ -85,11 +85,27 @@ class SupabaseService {
     return response.data as Map<String, dynamic>;
   }
 
-  Future<void> leaveRoom({required String roomId}) async {
-    await _client.from('room_players').delete().match({
-      'room_id': roomId,
-      'user_id': _client.auth.currentUser!.id,
-    });
+  /// Leave a room via the `leave-room` edge function.
+  ///
+  /// The edge function handles the lifecycle correctly: in a lobby room it
+  /// removes the row; in a 'playing' room it parks the slot (sets
+  /// `disconnected_at`) and appends a substitute bot inheriting the user's
+  /// ID so the table keeps moving. It also transfers host if needed and
+  /// abandons the room when no live humans remain.
+  ///
+  /// [reason] is forwarded as analytics + future UX hint. Default `'left'`
+  /// covers voluntary lobby exits; the Forfeit button passes `'forfeited'`.
+  Future<void> leaveRoom({
+    required String roomId,
+    String reason = 'left',
+  }) async {
+    await _client.functions.invoke(
+      'leave-room',
+      body: {
+        'room_id': roomId,
+        'reason': reason,
+      },
+    );
   }
 
   /// Fetch the shareable 6-character room code for a given room UUID.
@@ -153,11 +169,16 @@ class SupabaseService {
         .eq('id', roomId)
         .single();
 
+    // Disambiguate the embedded join: as of the 2026-06-09 migration,
+    // room_players has TWO foreign keys to profiles — user_id (the seat
+    // owner) and original_user_id (set when a bot subs in). PostgREST
+    // returns PGRST201 if we ask for `profiles(...)` without naming which
+    // relationship to follow. Force the user_id FK.
     final players = await _client
         .from('room_players')
         .select(
           'user_id, seat_index, is_ready, is_spectator, '
-          'profiles(display_name, username)',
+          'profiles!room_players_user_id_fkey(display_name, username)',
         )
         .eq('room_id', roomId)
         .order('seat_index');

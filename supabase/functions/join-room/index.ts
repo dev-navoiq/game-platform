@@ -40,8 +40,69 @@ serve(async (req) => {
       return errorResponse('Room not found', 404, 'ROOM_NOT_FOUND');
     }
 
-    // ── Check room status ─────────────────────────────────────────────────
     const asSpectator = body.as_spectator || false;
+
+    // ── Reclaim path ─────────────────────────────────────────────────────
+    // Always check first whether the user is already in the room. A row
+    // with disconnected_at set is a forfeited/disconnected slot waiting to
+    // be reclaimed — let them back in regardless of room.status (we want
+    // rejoin to work during a 'playing' game). A row with disconnected_at
+    // null means they're actively in the room from another device → error.
+    const { data: existing } = await admin
+      .from('room_players')
+      .select('id, seat_index, is_spectator, disconnected_at')
+      .eq('room_id', room.id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.disconnected_at) {
+        // Reclaim the slot: flip disconnected_at to null, drop the
+        // substitute bot from config.bots (bot inherited their user_id, so
+        // we filter by id == user.id).
+        const bots = (room.config?.bots as { id: string }[]) ?? [];
+        const filteredBots = bots.filter((b) => b.id !== user.id);
+
+        await admin
+          .from('room_players')
+          .update({ disconnected_at: null })
+          .eq('id', existing.id);
+
+        await admin
+          .from('game_rooms')
+          .update({
+            config: { ...(room.config ?? {}), bots: filteredBots },
+          })
+          .eq('id', room.id);
+
+        // Reflect the rejoin in profile activity so the home screen "Resume
+        // Game" card disappears.
+        await admin
+          .from('profiles')
+          .update({
+            current_activity: {
+              type: room.status === 'playing' ? 'in_game' : 'in_lobby',
+              game_type: room.game_type,
+              room_id: room.id,
+              room_code: room.code,
+              joinable: false,
+            },
+          })
+          .eq('id', user.id);
+
+        return jsonResponse({
+          room_id: room.id,
+          seat_index: existing.seat_index,
+          is_spectator: existing.is_spectator,
+          reclaimed: true,
+        });
+      }
+      // Active row → user is already in this room (possibly on another
+      // device). Don't double-seat them.
+      return errorResponse('Already in this room', 400, 'ALREADY_IN_ROOM');
+    }
+
+    // ── Check room status (only for fresh joins) ─────────────────────────
     if (!asSpectator && room.status !== 'waiting') {
       return errorResponse(
         'Game already started. Join as spectator?',
@@ -63,18 +124,6 @@ serve(async (req) => {
 
     if (block) {
       return errorResponse('You are blocked from this room', 403, 'BLOCKED');
-    }
-
-    // ── Check user not already in room ────────────────────────────────────
-    const { data: existing } = await admin
-      .from('room_players')
-      .select('id')
-      .eq('room_id', room.id)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (existing) {
-      return errorResponse('Already in this room', 400, 'ALREADY_IN_ROOM');
     }
 
     // ── Private room password check ───────────────────────────────────────

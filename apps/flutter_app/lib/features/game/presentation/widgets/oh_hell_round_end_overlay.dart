@@ -86,23 +86,10 @@ class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
     widget.onContinue();
   }
 
-  // Forwarders so existing layout below can stay readable.
-  int get roundNumber => widget.roundNumber;
-  int get cardsThisRound => widget.cardsThisRound;
-  List<String> get playerOrder => widget.playerOrder;
-  String get localPlayerId => widget.localPlayerId;
-  Map<String, int> get bids => widget.bids;
-  Map<String, int> get tricksWon => widget.tricksWon;
-  Map<String, int> get roundPoints => widget.roundPoints;
-  Map<String, int> get scores => widget.scores;
-  List<Map<String, int>> get roundHistory => widget.roundHistory;
-  bool get isGameOver => widget.isGameOver;
-
   @override
   Widget build(BuildContext context) {
-    final emojis = PlayerAvatar.emojiMap(playerOrder);
-    final localMadeBid = (tricksWon[localPlayerId] ?? 0) ==
-        (bids[localPlayerId] ?? -1);
+    final localMadeBid = (widget.tricksWon[widget.localPlayerId] ?? 0) ==
+        (widget.bids[widget.localPlayerId] ?? -1);
 
     return Container(
       color: Colors.black.withOpacity(0.7),
@@ -127,20 +114,18 @@ class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildHeader(localMadeBid),
-                const SizedBox(height: 14),
                 Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildPerRoundTable(emojis),
-                        if (roundHistory.length > 1) ...[
-                          const SizedBox(height: 16),
-                          _buildHistoryStrip(),
-                        ],
-                      ],
-                    ),
+                  child: OhHellScoreTable(
+                    roundNumber: widget.roundNumber,
+                    cardsThisRound: widget.cardsThisRound,
+                    playerOrder: widget.playerOrder,
+                    localPlayerId: widget.localPlayerId,
+                    bids: widget.bids,
+                    tricksWon: widget.tricksWon,
+                    roundPoints: widget.roundPoints,
+                    scores: widget.scores,
+                    roundHistory: widget.roundHistory,
+                    isGameOver: widget.isGameOver,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -153,7 +138,96 @@ class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
     );
   }
 
-  Widget _buildHeader(bool localMadeBid) {
+  Widget _buildContinueButton() {
+    final showCountdown = !widget.isGameOver && _countdown > 0;
+    final label = widget.isGameOver
+        ? 'Play Again'
+        : showCountdown
+            ? 'Next Round (${_countdown}s)'
+            : 'Next Round';
+    return GestureDetector(
+      onTap: _fire,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.accent,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.accent.withOpacity(0.35),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Score-table body for an Oh Hell round-end.
+///
+/// Data-only: renders the header, per-round table (one row per player with
+/// bid/won/+pts/total), and the multi-round history strip. Safe to embed
+/// in a bottom sheet — content is wrapped in a SingleChildScrollView.
+class OhHellScoreTable extends StatelessWidget {
+  final int roundNumber;
+  final int cardsThisRound;
+  final List<String> playerOrder;
+  final String localPlayerId;
+  final Map<String, int> bids;
+  final Map<String, int> tricksWon;
+  final Map<String, int> roundPoints;
+  final Map<String, int> scores;
+  final List<Map<String, int>> roundHistory;
+  final bool isGameOver;
+
+  const OhHellScoreTable({
+    super.key,
+    required this.roundNumber,
+    required this.cardsThisRound,
+    required this.playerOrder,
+    required this.localPlayerId,
+    required this.bids,
+    required this.tricksWon,
+    required this.roundPoints,
+    required this.scores,
+    required this.roundHistory,
+    this.isGameOver = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final emojis = PlayerAvatar.emojiMap(playerOrder);
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildHeader(),
+          const SizedBox(height: 14),
+          _buildPerRoundTable(emojis),
+          if (roundHistory.length > 1) ...[
+            const SizedBox(height: 16),
+            _buildHistoryStrip(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
     final title = isGameOver
         ? 'Game Over'
         : 'Round $roundNumber';
@@ -366,44 +440,6 @@ class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildContinueButton() {
-    final showCountdown = !isGameOver && _countdown > 0;
-    final label = isGameOver
-        ? 'Play Again'
-        : showCountdown
-            ? 'Next Round (${_countdown}s)'
-            : 'Next Round';
-    return GestureDetector(
-      onTap: _fire,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.accent,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.accent.withOpacity(0.35),
-              blurRadius: 14,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ),
       ),
     );
   }

@@ -2,6 +2,10 @@
 .dart_tool/
 .packages
 build/
+# Plain `build/` doesn't catch the build symlink we point at
+# /tmp/flutter_build_gameplatform/, nor Finder-created duplicates like
+# "build 2/". Match the prefix on anything under apps/flutter_app/.
+apps/flutter_app/build*
 *.dart.js
 *.js.deps
 *.js.map
@@ -63,3 +67,6 @@ prompts.zip
 
 # FVM Version Cache
 .fvm/
+
+# Claude Code agent worktrees (auto-generated, large, never to be committed)
+.claude/worktrees/

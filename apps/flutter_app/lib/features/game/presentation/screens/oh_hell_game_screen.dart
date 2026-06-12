@@ -6,10 +6,16 @@ import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 
 import '../../../../core/utils/player_avatar.dart';
+import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
+import '../../../../shared/animations/celebrations/winner_jump_animation.dart';
+import '../../../../shared/animations/gameplay/bidding_pulse.dart';
 import '../../../../shared/animations/gameplay/ohell_bust_animation.dart';
+import '../../../../shared/widgets/glass_bottom_sheet.dart';
 import '../../../lobby/models/room_member.dart';
 import '../../providers/game_provider.dart';
 import '../../providers/game_session_providers.dart';
+import '../../services/ready_broadcast_controller.dart';
+import '../../services/round_advance_guard.dart';
 import '../widgets/bid_pill.dart';
 import '../widgets/bidding_modal.dart';
 import '../widgets/card_hand.dart';
@@ -19,10 +25,17 @@ import '../widgets/game_hud.dart';
 import '../widgets/oh_hell_round_end_overlay.dart';
 import '../widgets/game_table.dart';
 import '../widgets/player_node.dart';
+import '../widgets/round_end_celebration_layer.dart';
+import '../widgets/round_end_ribbon.dart';
 import '../widgets/score_display.dart';
 import '../widgets/seat_layout.dart';
 import '../widgets/trick_zone.dart';
 import '../widgets/turn_timer.dart';
+
+/// Stable global key on the trick zone — used by CardHand to fly played
+/// cards toward where they'll land. Only one Oh Hell screen mounts at a time,
+/// so a top-level static key is safe.
+final GlobalKey _ohHellTrickZoneKey = GlobalKey();
 
 /// Oh Hell game screen — reference implementation for card game screens.
 ///
@@ -49,6 +62,10 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   final Set<String> _bustedAnimated = {};
   int? _lastRoundNumber;
 
+  /// One GlobalKey per seat — fed into PlayerNode and TrickZone so opponent
+  /// card flights know where each player sits.
+  final Map<String, GlobalKey> _seatKeys = {};
+
   /// Currently active bust: playerId of the seat the flames spew from.
   /// Cleared when the animation completes.
   String? _activeBustPlayerId;
@@ -68,12 +85,18 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   String? _heldWinnerId;
   String? _heldWinnerName;
   Timer? _heldTrickTimer;
-  static const Duration _heldTrickDuration = Duration(seconds: 5);
+  static const Duration _heldTrickDuration = Duration(milliseconds: 2200);
+  // Trick-winner celebration is delayed until AFTER the cards finish
+  // collecting (~950ms collect after hold). Mirrors 29 + Bridge.
+  String? _celebrationWinnerId;
+  Timer? _celebrationStartTimer;
+  Timer? _celebrationClearTimer;
 
   /// Tracks the previous tricksWon + currentTrick so we can spot the
   /// trick-completion edge without needing server-side phase changes.
   Map<String, int> _prevTricksWon = const {};
   List<TrickCard> _prevTrick = const [];
+  Map<String, List<PlayingCard>> _prevHandsCards = const {};
 
   /// Approximate time the [CardFanAnimation] needs to stagger N cards into
   /// view: 60ms per card + 300ms tail for the last card to settle.
@@ -89,26 +112,238 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     });
   }
 
+  bool _wasRoundEnd = false;
+  Timer? _readyTicker;
+  int _secondsElapsed = 0;
+  static const int _countdownLimit = 30;
+
   @override
   void dispose() {
     _dealTimer?.cancel();
     _heldTrickTimer?.cancel();
+    _celebrationStartTimer?.cancel();
+    _celebrationClearTimer?.cancel();
+    _readyTicker?.cancel();
     super.dispose();
+  }
+
+  /// Build the `({String id, bool isBot})` records the guard expects.
+  /// `isBot` is sourced from [roomMembersProvider] — the engine state only
+  /// knows IDs.
+  List<({String id, bool isBot})> _playerRecords(Map<String, RoomMember> members) {
+    return [
+      for (final id in widget.state.playerOrder)
+        (id: id, isBot: members[id]?.isBot ?? false),
+    ];
+  }
+
+  void _syncAutoAdvance(bool isRoundEnd, Map<String, RoomMember> members) {
+    if (isRoundEnd && !_wasRoundEnd) {
+      _wasRoundEnd = true;
+      _secondsElapsed = 0;
+
+      final botIds = _playerRecords(members)
+          .where((p) => p.isBot)
+          .map((p) => p.id)
+          .toList();
+
+      // Subscribe only after the round actually ends — avoids noise on the
+      // active-round channel.
+      ref.read(readyBroadcastControllerProvider.notifier).subscribe(
+            roomId: widget.roomId,
+            roundNumber: widget.state.roundNumber,
+            botPlayerIds: botIds,
+          );
+
+      _readyTicker?.cancel();
+      _readyTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _secondsElapsed += 1);
+        _maybeFireNextRound();
+      });
+    } else if (!isRoundEnd && _wasRoundEnd) {
+      _wasRoundEnd = false;
+      _readyTicker?.cancel();
+      _readyTicker = null;
+      _secondsElapsed = 0;
+      ref.read(readyBroadcastControllerProvider.notifier).reset();
+    }
+  }
+
+  void _maybeFireNextRound() {
+    // Once the ticker is cancelled we've already fired (or the round
+    // ended) — never fire a second time for the same round.
+    if (_readyTicker == null) return;
+    final readySet = ref.read(readyBroadcastControllerProvider);
+    final members = ref.read(roomMembersProvider);
+    final records = _playerRecords(members);
+
+    if (RoundAdvanceGuard.shouldAdvance(
+      players: records,
+      readyPlayerIds: readySet,
+      secondsElapsed: _secondsElapsed,
+      countdownLimit: _countdownLimit,
+    )) {
+      _readyTicker?.cancel();
+      _readyTicker = null;
+      _startNextRound(ref);
+    }
+  }
+
+  /// Oh Hell: per-round winner is the single player with the highest
+  /// round-points score for the just-ended round. Returns an empty set
+  /// for ties.
+  Set<String> _ohHellWinners(OhHellState state) {
+    if (state.roundHistory.isEmpty) return const {};
+    final last = state.roundHistory.last;
+    if (last.isEmpty) return const {};
+    int? best;
+    final winners = <String>{};
+    for (final entry in last.entries) {
+      if (best == null || entry.value > best) {
+        best = entry.value;
+        winners
+          ..clear()
+          ..add(entry.key);
+      } else if (entry.value == best) {
+        winners.add(entry.key);
+      }
+    }
+    if (winners.length > 1) return const {};
+    return winners;
+  }
+
+  String _ohHellRibbonMessage(OhHellState state, Set<String> winnerIds, Map<String, RoomMember> members) {
+    if (winnerIds.isEmpty) return 'Round ${state.roundNumber - 1} ended in a tie';
+    final winnerId = winnerIds.first;
+    final pts = state.roundHistory.isNotEmpty
+        ? (state.roundHistory.last[winnerId] ?? 0)
+        : 0;
+    final name = PlayerAvatar.nameFor(
+      playerId: winnerId,
+      localPlayerId: widget.localPlayerId,
+      seatIndex: state.playerOrder.indexOf(winnerId),
+      displayName: members[winnerId]?.displayName,
+    );
+    return 'Round won by $name — +$pts pts';
+  }
+
+  void _openOhHellScoreboard(BuildContext context, OhHellState state, WidgetRef ref) {
+    GlassBottomSheet.show<void>(
+      context: context,
+      title: state.phase == GamePhase.gameEnd
+          ? 'Game Over'
+          : 'Round ${state.roundNumber - 1}',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            OhHellScoreTable(
+              roundNumber: state.roundNumber - 1,
+              cardsThisRound: state.cardsThisRound,
+              playerOrder: state.playerOrder,
+              localPlayerId: widget.localPlayerId,
+              bids: state.bids,
+              tricksWon: state.tricksWon,
+              roundPoints: state.roundHistory.isNotEmpty
+                  ? state.roundHistory.last
+                  : const {},
+              scores: state.scores,
+              roundHistory: state.roundHistory,
+              isGameOver: state.phase == GamePhase.gameEnd,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: GestureDetector(
+                onTap: () {
+                  _readyTicker?.cancel();
+                  _readyTicker = null;
+                  Navigator.of(context).pop();
+                  _startNextRound(ref);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC47B2B),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Center(
+                    child: Text(
+                      state.phase == GamePhase.gameEnd
+                          ? 'Play Again'
+                          : 'Next Round',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _checkForTrickEnd(OhHellState state, Map<String, RoomMember> members) {
     // Need a prior frame to compare against; first build seeds the cache.
     final prevTrick = _prevTrick;
     final prevTricksWon = _prevTricksWon;
+    final prevHands = _prevHandsCards;
     _prevTrick = state.currentTrick;
     _prevTricksWon = state.tricksWon;
+    _prevHandsCards = {
+      for (final entry in state.hands.entries)
+        entry.key: List<PlayingCard>.from(entry.value.cards),
+    };
 
     // A trick "just completed" when the previous frame had a full trick and
-    // the new frame's currentTrick is empty (or smaller). The winner is the
-    // player whose tricksWon went up between frames.
-    final wasFull = prevTrick.length == state.playerOrder.length;
+    // the new frame's currentTrick is empty. The engine collapses play-4th
+    // + clear-trick into one state update, so we accept "nearly full" too
+    // and reconstruct the missing card via hand-diff (see 29 screen for the
+    // rationale).
     final isEmpty = state.currentTrick.isEmpty;
-    if (!wasFull || !isEmpty) return;
+    final playerCount = state.playerOrder.length;
+    final wasFull = prevTrick.length == playerCount;
+    final wasNearlyFull = prevTrick.length == playerCount - 1;
+    if (!isEmpty) return;
+    if (!wasFull && !wasNearlyFull) return;
+
+    List<TrickCard> fullTrick;
+    if (wasFull) {
+      fullTrick = prevTrick;
+    } else {
+      String? playerWhoPlayed;
+      PlayingCard? fourthCard;
+      for (final pid in state.playerOrder) {
+        final prevCards = prevHands[pid] ?? const <PlayingCard>[];
+        final currCards = state.hands[pid]?.cards ?? const <PlayingCard>[];
+        if (prevCards.length - currCards.length != 1) continue;
+        final currSet = currCards.toSet();
+        final missing =
+            prevCards.where((c) => !currSet.contains(c)).toList();
+        if (missing.length == 1) {
+          playerWhoPlayed = pid;
+          fourthCard = missing.first;
+          break;
+        }
+      }
+      if (playerWhoPlayed == null || fourthCard == null) return;
+      final seatIndex = state.playerOrder.indexOf(playerWhoPlayed);
+      fullTrick = [
+        ...prevTrick,
+        TrickCard(
+          playerId: playerWhoPlayed,
+          card: fourthCard,
+          seatIndex: seatIndex,
+        ),
+      ];
+    }
 
     String? winnerId;
     for (final pid in state.playerOrder) {
@@ -129,23 +364,37 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     );
 
     _heldTrickTimer?.cancel();
-    // Schedule for after build to avoid setState-in-build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Update synchronously — these fields are read later in the same
+    // build pass via the TrickZone construction. The earlier postFrame
+    // path cost one frame of empty trick zone between engine clear and
+    // held set, which the user perceived as a flash.
+    _heldTrick = fullTrick;
+    _heldWinnerId = winnerId;
+    _heldWinnerName = winnerName;
+    _celebrationStartTimer?.cancel();
+    _celebrationClearTimer?.cancel();
+    if (_celebrationWinnerId != null) _celebrationWinnerId = null;
+    _heldTrickTimer = Timer(_heldTrickDuration, () {
       if (!mounted) return;
       setState(() {
-        _heldTrick = prevTrick;
-        _heldWinnerId = winnerId;
-        _heldWinnerName = winnerName;
-      });
-      _heldTrickTimer = Timer(_heldTrickDuration, () {
-        if (!mounted) return;
-        setState(() {
-          _heldTrick = null;
-          _heldWinnerId = null;
-          _heldWinnerName = null;
-        });
+        _heldTrick = null;
+        _heldWinnerId = null;
+        _heldWinnerName = null;
       });
     });
+    // Celebrate AFTER collect finishes (2200ms hold + ~950ms collect).
+    _celebrationStartTimer = Timer(
+      const Duration(milliseconds: 3150),
+      () {
+        if (!mounted) return;
+        setState(() => _celebrationWinnerId = winnerId);
+        _celebrationClearTimer =
+            Timer(const Duration(milliseconds: 1300), () {
+          if (!mounted) return;
+          setState(() => _celebrationWinnerId = null);
+        });
+      },
+    );
   }
 
   void _checkForBust(OhHellState state) {
@@ -197,6 +446,17 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     );
   }
 
+  Set<PlayingCard> _legalCardsFor(String playerId) {
+    final hand = widget.state.hands[playerId];
+    if (hand == null) return const {};
+    if (widget.state.currentTrick.isEmpty) return hand.cards.toSet();
+    final leadSuit = widget.state.currentTrick.first.suit;
+    if (hand.hasSuit(leadSuit)) {
+      return hand.cards.where((c) => c.suit == leadSuit).toSet();
+    }
+    return hand.cards.toSet();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
@@ -224,10 +484,29 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     final cards = localHand?.cards ?? [];
     final playerEmojis = PlayerAvatar.emojiMap(state.playerOrder);
 
+    final isRoundEnd = state.phase == GamePhase.roundEnd ||
+        state.phase == GamePhase.gameEnd;
+    final winnerPlayerIds =
+        isRoundEnd ? _ohHellWinners(state) : const <String>{};
+    final showPulse = state.phase == GamePhase.bidding &&
+        state.currentPlayerId == localPlayerId;
+
+    _syncAutoAdvance(isRoundEnd, members);
+
+    final playerRecords = _playerRecords(members);
+    final isPaused = isRoundEnd && !RoundAdvanceGuard.hasAnyHumans(playerRecords);
+    final readySet = ref.watch(readyBroadcastControllerProvider);
+    final remainingSeconds = (_countdownLimit - _secondsElapsed).clamp(0, _countdownLimit);
+    final isLocalReady = readySet.contains(localPlayerId);
+    // chipsRow removed — per-player ready chips now live inside each PlayerNode.
+
     return Stack(
       children: [
         // Game table background
-        GameTable(
+        RoundEndCelebrationLayer(
+          winnerPlayerIds: winnerPlayerIds,
+          seatKeys: _seatKeys,
+          child: GameTable(
           child: SafeArea(
             child: Column(
               children: [
@@ -275,26 +554,46 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                           seatIndex: seat.seatIndex,
                           displayName: member?.displayName,
                         );
+                        final seatKey = _seatKeys.putIfAbsent(
+                            playerId, () => GlobalKey());
+                        final node = PlayerNode(
+                          name: displayName,
+                          emoji: playerEmojis[playerId] ?? '🎮',
+                          won: won,
+                          bid: bid,
+                          isActive: isPlayerActive,
+                          hasPlayed: hasPlayed,
+                          isDealer: isDealer,
+                          isBot: member?.isBot ?? false,
+                          isSmall: seat.isSmall,
+                          socialMode: state.socialMode,
+                          showBidPill: true,
+                          hasBid: state.bids.containsKey(playerId),
+                          roomId: roomId,
+                          playerId: playerId,
+                          nodeKey: seatKey,
+                          isTrickWinnerPulsing:
+                              _celebrationWinnerId == playerId,
+                          isReady: isRoundEnd
+                              ? readySet.contains(playerId)
+                              : null,
+                        );
+                        final wrapped = isRoundEnd
+                            ? (winnerPlayerIds.contains(playerId)
+                                ? WinnerJumpAnimation(
+                                    key: ValueKey('winner-$playerId-${state.roundNumber}'),
+                                    child: node,
+                                  )
+                                : LoserSadAnimation(
+                                    key: ValueKey('loser-$playerId-${state.roundNumber}'),
+                                    child: node,
+                                  ))
+                            : node;
                         return Align(
                           alignment: seat.alignment,
                           child: Padding(
                             padding: const EdgeInsets.all(8),
-                            child: PlayerNode(
-                              name: displayName,
-                              emoji: playerEmojis[playerId] ?? '🎮',
-                              won: won,
-                              bid: bid,
-                              isActive: isPlayerActive,
-                              hasPlayed: hasPlayed,
-                              isDealer: isDealer,
-                              isBot: member?.isBot ?? false,
-                              isSmall: seat.isSmall,
-                              socialMode: state.socialMode,
-                              showBidPill: true,
-                              hasBid: state.bids.containsKey(playerId),
-                              roomId: roomId,
-                              playerId: playerId,
-                            ),
+                            child: wrapped,
                           ),
                         );
                       }),
@@ -303,22 +602,27 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                       // the post-win pause so the player can see what just
                       // happened, otherwise show the live trick.
                       Center(
-                        child: TrickZone(
-                          currentTrick: _heldTrick ?? state.currentTrick,
-                          playerOrder: state.playerOrder,
-                          playerEmojis: playerEmojis,
-                          winningPlayerId: _heldWinnerId,
-                          trumpSuit: Suit.hearts,
+                        child: KeyedSubtree(
+                          key: _ohHellTrickZoneKey,
+                          child: TrickZone(
+                            currentTrick: _heldTrick ?? state.currentTrick,
+                            playerOrder: state.playerOrder,
+                            playerEmojis: playerEmojis,
+                            winningPlayerId: _heldWinnerId,
+                            trumpSuit: Suit.hearts,
+                            seatKeys: _seatKeys,
+                            localPlayerId: localPlayerId,
+                            lastTrickWinnerId: _heldWinnerId,
+                            trickHold: const Duration(milliseconds: 2200),
+                            fullTrickSize: state.playerOrder.length,
+                          ),
                         ),
                       ),
 
-                      // Trick winner banner — sits just above the trick zone
-                      // for the duration of the hold.
-                      if (_heldWinnerName != null)
-                        Align(
-                          alignment: const Alignment(0, -0.55),
-                          child: _TrickWinnerBanner(name: _heldWinnerName!),
-                        ),
+                      // Trick winner banner removed — the winning card's
+                      // bright/dimmed treatment plus the winner's
+                      // PlayerNode jump animation communicate the result
+                      // without a text overlay.
 
                       // Turn timer
                       if (isMyTurn && state.phase == GamePhase.playing)
@@ -396,10 +700,32 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
                 // Player hand
                 if (!isSpectator)
-                  CardHand(
-                    cards: cards,
-                    isPlayable: isMyTurn && state.phase == GamePhase.playing,
-                    onCardTap: (card) => _playCard(ref, card),
+                  BiddingPulse(
+                    isActive: showPulse,
+                    child: CardHand(
+                      cards: cards,
+                      isPlayable: isMyTurn && state.phase == GamePhase.playing,
+                      validCards: isMyTurn && state.phase == GamePhase.playing
+                          ? _legalCardsFor(localPlayerId)
+                          : null,
+                      flightTargetKey: _ohHellTrickZoneKey,
+                      localEmoji: playerEmojis[localPlayerId],
+                      onCardTap: (card) => _playCard(ref, card),
+                      onIllegalTap: (_) {
+                        final msg = isMyTurn
+                            ? "You must follow suit if you can."
+                            : "Wait for your turn.";
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                      },
+                    ),
                   ),
 
                 // Actions
@@ -414,27 +740,37 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
             ),
           ),
         ),
+        ),
 
-        // Round-end / game-end scoreboard. Single overlay for both states
-        // — the difference is only the button label and whether we cycle
-        // through the next round or restart the session.
-        if (state.phase == GamePhase.roundEnd || state.phase == GamePhase.gameEnd)
-          OhHellRoundEndOverlay(
-            roundNumber: state.roundNumber - 1,
-            cardsThisRound: state.roundHistory.isNotEmpty
-                ? state.cardsThisRound
-                : state.cardsThisRound,
-            playerOrder: state.playerOrder,
-            localPlayerId: localPlayerId,
-            bids: state.bids,
-            tricksWon: state.tricksWon,
-            roundPoints: state.roundHistory.isNotEmpty
-                ? state.roundHistory.last
-                : const {},
-            scores: state.scores,
-            roundHistory: state.roundHistory,
-            isGameOver: state.phase == GamePhase.gameEnd,
-            onContinue: () => _startNextRound(ref),
+        // Round-end / game-end ribbon (non-blocking). The full scoreboard
+        // opens in a glass bottom-sheet on tap. When the room is bot-only
+        // (no human players left) the ribbon pauses with a waiting message
+        // and omits the ready coordination UI entirely.
+        if (isRoundEnd)
+          Align(
+            alignment: Alignment.topCenter,
+            child: isPaused
+                ? RoundEndRibbon(
+                    message:
+                        '${_ohHellRibbonMessage(state, winnerPlayerIds, members)} • Waiting for a player to join...',
+                    onShowScoreboard: () =>
+                        _openOhHellScoreboard(context, state, ref),
+                  )
+                : RoundEndRibbon(
+                    message: _ohHellRibbonMessage(state, winnerPlayerIds, members),
+                    onShowScoreboard: () =>
+                        _openOhHellScoreboard(context, state, ref),
+                    countdownSeconds: remainingSeconds,
+                    isLocalReady: isLocalReady,
+                    onReadyTap: isLocalReady
+                        ? null
+                        : () {
+                            ref
+                                .read(readyBroadcastControllerProvider.notifier)
+                                .markReady(localPlayerId);
+                            _maybeFireNextRound();
+                          },
+                  ),
           ),
       ],
     );
@@ -473,48 +809,3 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 }
 
-/// Small accent banner shown above the trick zone while a completed trick
-/// is being held in place so the player can see who just won.
-class _TrickWinnerBanner extends StatelessWidget {
-  final String name;
-
-  const _TrickWinnerBanner({required this.name});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.55),
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.6),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.emoji_events, size: 14, color: Color(0xFFFFD180)),
-          const SizedBox(width: 6),
-          Text(
-            'Trick won by $name',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
