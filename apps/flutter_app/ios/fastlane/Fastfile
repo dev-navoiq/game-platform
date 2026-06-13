@@ -47,14 +47,16 @@ platform :ios do
       readonly: true,
       api_key: api_key,
     )
-    # The IPA itself is built outside fastlane via `flutter build ipa --release`.
+    # The IPA itself is built outside fastlane via scripts/build-ios-release.sh
+    # (which enforces --dart-define=ENV=staging|production — never call
+    # `flutter build ipa` directly for release, you'll ship a dev-pointed build).
     # Glob the IPA name — Xcode derives it from CFBundleName, which we change
     # when we rename the app (was flutter_app.ipa, now Gathr.ipa, may change
     # again). Resolve relative to the Fastfile location, not Ruby's cwd
     # (fastlane runs from ios/fastlane/, but the IPA is under ios/../build/).
     ipa_dir = File.expand_path('../../build/ios/ipa', __dir__)
     ipa_path = Dir[File.join(ipa_dir, '*.ipa')].first
-    UI.user_error!("No IPA found in #{ipa_dir}. Run `fvm flutter build ipa --release` first.") if ipa_path.nil?
+    UI.user_error!("No IPA found in #{ipa_dir}. Run `scripts/build-ios-release.sh` from the repo root first.") if ipa_path.nil?
 
     upload_to_testflight(
       api_key: api_key,
