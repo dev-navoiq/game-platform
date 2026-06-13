@@ -3,6 +3,8 @@
 -- Session 16: Favorites, History & Replay
 -- ─────────────────────────────────────────────────────────────────────────────
 
+set search_path = public, extensions;
+
 -- User favorite games
 create table user_favorites (
   id           uuid primary key default uuid_generate_v4(),

@@ -3,6 +3,8 @@
 -- Session 15: OTA Updates & Feature Flags
 -- ─────────────────────────────────────────────────────────────────────────────
 
+set search_path = public, extensions;
+
 create table feature_flags (
   id                       uuid primary key default uuid_generate_v4(),
   flag_key                 text unique not null,

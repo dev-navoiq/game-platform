@@ -6,8 +6,13 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- EXTENSIONS
 -- ─────────────────────────────────────────────────────────────────────────────
-create extension if not exists "uuid-ossp";
-create extension if not exists "pgcrypto";
+-- On Supabase-managed projects extensions live in `extensions` schema, not
+-- `public`. Add it to search_path so unqualified calls (e.g. uuid_generate_v4)
+-- resolve during this migration on a fresh project.
+set search_path = public, extensions;
+
+create extension if not exists "uuid-ossp" with schema extensions;
+create extension if not exists "pgcrypto" with schema extensions;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- ENUMS
