@@ -14,6 +14,8 @@ const MIN_BID = 15;
 const MAX_BID = 28;
 const SPECIAL_BID = 29;
 const HIGH_BID_THRESHOLD = 20;
+const ROYAL_WEDDING_ADJUSTMENT = 4;
+const SCORECARD_MAX = 6;
 
 function baseGamePointsForBid(bid: number): number {
   if (bid === SPECIAL_BID) return 4;
@@ -46,6 +48,15 @@ interface TwentyNineState {
   doubledBy?: string | null;
   redoubledBy?: string | null;
   trumpRevealerThisTrick?: string | null;
+  // Twenty-Nine bids on 4 cards; the rest are held back here until trump
+  // is declared. Flat list of 16 cards (4 per seat, in playerOrder).
+  pendingDeck?: Card[];
+  // Per-team red/black scorecard pips (0–6).
+  redPips?: Record<number, number>;
+  blackPips?: Record<number, number>;
+  // Royal Wedding adjustments to the round threshold.
+  bidAdjustment?: number;
+  royalWeddingClaimedByTeam?: number[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -112,9 +123,59 @@ export function validateTwentyNineMove(
       return validateDouble(state, move);
     case 'redouble':
       return validateRedouble(state, move);
+    case 'claimRoyalWedding':
+      return validateClaimRoyalWedding(state, move);
     default:
       return { valid: false, error: 'Unknown move type', error_code: 'UNKNOWN_MOVE' };
   }
+}
+
+function validateClaimRoyalWedding(
+  state: TwentyNineState,
+  move: MovePayload,
+): ValidationResult {
+  if (state.phase !== 'playing') {
+    return { valid: false, error: 'Not playing phase', error_code: 'WRONG_PHASE' };
+  }
+  if (!state.trumpSuit) {
+    return { valid: false, error: 'No trump declared', error_code: 'NO_TRUMP_DECLARED' };
+  }
+  // Must be at the start of a trick — claim happens before the lead card.
+  if (state.currentTrick.length > 0) {
+    return { valid: false, error: 'Trick in progress', error_code: 'TRICK_IN_PROGRESS' };
+  }
+
+  const myTeam = teamForPlayer(state, move.player_id);
+  const claimed = state.royalWeddingClaimedByTeam ?? [];
+  if (claimed.includes(myTeam)) {
+    return { valid: false, error: 'Team already claimed', error_code: 'TEAM_ALREADY_CLAIMED' };
+  }
+
+  if ((state.tricksWon[myTeam] ?? 0) < 1) {
+    return { valid: false, error: 'No trick won yet', error_code: 'NO_TRICK_WON_YET' };
+  }
+
+  // K + Q of trump must both be in hand.
+  const hand = state.hands[move.player_id] ?? [];
+  const trump = state.trumpSuit;
+  const hasK = hand.some((c) => c.suit === trump && c.rank === 'king');
+  const hasQ = hand.some((c) => c.suit === trump && c.rank === 'queen');
+  if (!hasK || !hasQ) {
+    return { valid: false, error: 'No K+Q of trump', error_code: 'NO_KING_QUEEN_OF_TRUMP' };
+  }
+
+  // Bidder team needs the bid to be ≥ 20 to qualify for the reduction.
+  const bidderTeam = state.bidderId ? teamForPlayer(state, state.bidderId) : null;
+  const isBidderTeam = bidderTeam === myTeam;
+  if (isBidderTeam && (state.currentBid ?? 0) < HIGH_BID_THRESHOLD) {
+    return {
+      valid: false,
+      error: 'Bid below high threshold',
+      error_code: 'BID_BELOW_HIGH_THRESHOLD',
+    };
+  }
+
+  return { valid: true };
 }
 
 function validateDouble(state: TwentyNineState, move: MovePayload): ValidationResult {
@@ -276,11 +337,35 @@ export function applyTwentyNineMove(
       return applyDouble(state, move) as unknown as Record<string, unknown>;
     case 'redouble':
       return applyRedouble(state, move) as unknown as Record<string, unknown>;
+    case 'claimRoyalWedding':
+      return applyClaimRoyalWedding(state, move) as unknown as Record<string, unknown>;
     case 'newRound':
       return applyNewRound(state) as unknown as Record<string, unknown>;
     default:
       return stateJson;
   }
+}
+
+function applyClaimRoyalWedding(
+  state: TwentyNineState,
+  move: MovePayload,
+): TwentyNineState {
+  const myTeam = teamForPlayer(state, move.player_id);
+  const bidderTeam = state.bidderId ? teamForPlayer(state, state.bidderId) : null;
+  const isBidderTeam = bidderTeam === myTeam;
+  const delta = isBidderTeam
+    ? -ROYAL_WEDDING_ADJUSTMENT
+    : ROYAL_WEDDING_ADJUSTMENT;
+
+  return {
+    ...state,
+    bidAdjustment: (state.bidAdjustment ?? 0) + delta,
+    royalWeddingClaimedByTeam: [
+      ...(state.royalWeddingClaimedByTeam ?? []),
+      myTeam,
+    ],
+    turnNumber: state.turnNumber + 1,
+  };
 }
 
 function applyDouble(state: TwentyNineState, move: MovePayload): TwentyNineState {
@@ -361,12 +446,35 @@ function applyDeclareTrump(
   move: MovePayload,
 ): TwentyNineState {
   const firstPlayer = state.playerOrder[(state.dealerIndex + 1) % 4];
+
+  // Second deal: take 4 cards per seat from pendingDeck (16 total) and
+  // append to each hand. If pendingDeck is absent (legacy state from before
+  // this change shipped), leave hands as-is.
+  const newHands: Record<string, Card[]> = {};
+  const pending = state.pendingDeck ?? [];
+  if (pending.length === state.playerOrder.length * 4) {
+    let cursor = 0;
+    for (const pid of state.playerOrder) {
+      newHands[pid] = [
+        ...(state.hands[pid] ?? []),
+        ...pending.slice(cursor, cursor + 4),
+      ];
+      cursor += 4;
+    }
+  } else {
+    for (const pid of state.playerOrder) {
+      newHands[pid] = state.hands[pid] ?? [];
+    }
+  }
+
   return {
     ...state,
     phase: 'playing',
     trumpSuit: move.data.suit as string,
     currentPlayerId: firstPlayer,
     turnNumber: state.turnNumber + 1,
+    hands: newHands,
+    pendingDeck: [],
   };
 }
 
@@ -439,13 +547,15 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
 
-  // Deal 8 cards to each player
+  // Deal first 4 cards to each player; hold the remaining 16 in pendingDeck
+  // until trump is declared.
   const hands: Record<string, Card[]> = {};
   let cardIndex = 0;
   for (const pid of state.playerOrder) {
-    hands[pid] = deck.slice(cardIndex, cardIndex + 8);
-    cardIndex += 8;
+    hands[pid] = deck.slice(cardIndex, cardIndex + 4);
+    cardIndex += 4;
   }
+  const pendingDeck = deck.slice(cardIndex, cardIndex + 16);
 
   // Rotate dealer
   const newDealerIndex = (state.dealerIndex + 1) % 4;
@@ -478,6 +588,11 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
     trumpRevealerThisTrick: null,
     sessionScores: restartingSession ? { 0: 0, 1: 0 } : state.sessionScores,
     roundNumber: restartingSession ? 1 : state.roundNumber,
+    pendingDeck,
+    bidAdjustment: 0,
+    royalWeddingClaimedByTeam: [],
+    redPips: restartingSession ? { 0: 0, 1: 0 } : (state.redPips ?? { 0: 0, 1: 0 }),
+    blackPips: restartingSession ? { 0: 0, 1: 0 } : (state.blackPips ?? { 0: 0, 1: 0 }),
   };
 }
 
@@ -528,25 +643,36 @@ function completeRound(
   teamPoints: Record<number, number>,
 ): TwentyNineState {
   const bidTeam = teamForPlayer(state, state.bidderId!);
+  const otherTeam = bidTeam === 0 ? 1 : 0;
   const bidTeamPoints = teamPoints[bidTeam] ?? 0;
   const bid = state.currentBid!;
 
-  // Bid of 29 is met when bidding team gets all 28 card points
-  const threshold = bid === SPECIAL_BID ? 28 : bid;
+  // Bid of 29 is met when bidding team gets all 28 card points.
+  // Apply Royal Wedding adjustment to threshold.
+  const baseThreshold = bid === SPECIAL_BID ? 28 : bid;
+  const threshold = baseThreshold + (state.bidAdjustment ?? 0);
   const bidMet = bidTeamPoints >= threshold;
 
   const multiplier = state.doublingMultiplier ?? 1;
   const awarded = baseGamePointsForBid(bid) * multiplier;
+
   const newScores = { ...state.sessionScores };
+  const newRed = { ...(state.redPips ?? { 0: 0, 1: 0 }) };
+  const newBlack = { ...(state.blackPips ?? { 0: 0, 1: 0 }) };
   if (bidMet) {
     newScores[bidTeam] = (newScores[bidTeam] ?? 0) + awarded;
+    newRed[bidTeam] = (newRed[bidTeam] ?? 0) + awarded;
+    newBlack[otherTeam] = (newBlack[otherTeam] ?? 0) + awarded;
   } else {
-    const otherTeam = bidTeam === 0 ? 1 : 0;
     newScores[otherTeam] = (newScores[otherTeam] ?? 0) + awarded;
+    newRed[otherTeam] = (newRed[otherTeam] ?? 0) + awarded;
+    newBlack[bidTeam] = (newBlack[bidTeam] ?? 0) + awarded;
   }
 
-  // First team to 6 game-points wins
-  const gameOver = Object.values(newScores).some((s) => s >= 6);
+  // Session ends when any team's red OR black scorecard fills.
+  const gameOver =
+    Object.values(newRed).some((s) => s >= SCORECARD_MAX) ||
+    Object.values(newBlack).some((s) => s >= SCORECARD_MAX);
 
   return {
     ...state,
@@ -556,6 +682,8 @@ function completeRound(
     tricksWon,
     teamPoints,
     sessionScores: newScores,
+    redPips: newRed,
+    blackPips: newBlack,
     roundNumber: state.roundNumber + 1,
     turnNumber: state.turnNumber + 1,
   };

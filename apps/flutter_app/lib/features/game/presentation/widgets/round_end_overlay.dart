@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/colors.dart';
+import 'twenty_nine_scorecards.dart';
 
 /// Overlay shown at the end of a round in Twenty-Nine.
 ///
@@ -185,6 +186,15 @@ class TwentyNineScoreTable extends StatelessWidget {
   final Map<int, int> sessionScores;
   final int roundNumber;
 
+  /// Optional: Royal Wedding adjustment applied to the bid threshold this
+  /// round. Negative when the bidder team reduced the threshold.
+  final int? bidAdjustment;
+
+  /// Optional: per-team red/black pip totals. When supplied, the table
+  /// renders the scorecards instead of the legacy "match score" row.
+  final Map<int, int>? redPips;
+  final Map<int, int>? blackPips;
+
   const TwentyNineScoreTable({
     super.key,
     required this.winningTeam,
@@ -195,6 +205,9 @@ class TwentyNineScoreTable extends StatelessWidget {
     required this.bidMet,
     required this.sessionScores,
     required this.roundNumber,
+    this.bidAdjustment,
+    this.redPips,
+    this.blackPips,
   });
 
   @override
@@ -257,6 +270,19 @@ class TwentyNineScoreTable extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if ((bidAdjustment ?? 0) != 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    (bidAdjustment ?? 0) < 0
+                        ? 'Royal Wedding: target ${bid + bidAdjustment!}'
+                        : 'Royal Wedding: target ${bid + bidAdjustment!}',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: const Color(0xFF8B5CF6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   bidMet
@@ -282,38 +308,72 @@ class TwentyNineScoreTable extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Match Score:  ', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
-                Text(
-                  '${sessionScores[localTeam] ?? 0}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.accent,
+          if (redPips != null && blackPips != null) ...[
+            const SizedBox(height: 4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                children: [
+                  TwentyNineScorecards(
+                    redPips: redPips!,
+                    blackPips: blackPips!,
+                    localTeam: localTeam,
                   ),
-                ),
-                Text('  -  ', style: GoogleFonts.inter(fontSize: 14, color: Colors.grey)),
-                Text(
-                  '${sessionScores[localTeam == 0 ? 1 : 0] ?? 0}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.red.shade400,
+                  const SizedBox(height: 4),
+                  Text(
+                    'Red 6 = wins · Black 6 = losses · first to 6 either side',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: Colors.grey,
+                    ),
                   ),
-                ),
-                Text('  (first to 6)', style: GoogleFonts.inter(fontSize: 10, color: Colors.grey)),
-              ],
+                ],
+              ),
             ),
-          ),
+          ] else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Match Score:  ',
+                      style:
+                          GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
+                  Text(
+                    '${sessionScores[localTeam] ?? 0}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                  Text('  -  ',
+                      style:
+                          GoogleFonts.inter(fontSize: 14, color: Colors.grey)),
+                  Text(
+                    '${sessionScores[localTeam == 0 ? 1 : 0] ?? 0}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.red.shade400,
+                    ),
+                  ),
+                  Text('  (first to 6)',
+                      style:
+                          GoogleFonts.inter(fontSize: 10, color: Colors.grey)),
+                ],
+              ),
+            ),
         ],
       ),
     );

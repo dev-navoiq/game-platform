@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/colors.dart';
-import '../../../../shared/animations/transitions/modal_transitions.dart';
+import '../../../../shared/widgets/minimizable_modal_shell.dart';
+import 'bid_action_chip.dart';
 
 /// Bid selection panel for trick-taking card games.
 ///
@@ -23,6 +24,18 @@ class BiddingModal extends StatefulWidget {
   /// by a double or redouble — only Pass / Redouble remain.
   final bool bidGridEnabled;
   final String? trumpInfo;
+
+  /// Optional list of other players' most-recent bidding actions, rendered
+  /// as a row above the bid grid so the user can see who said what without
+  /// minimizing the modal.
+  final List<({String label, BidActionChip chip})>? opponentActions;
+
+  /// If true, surfaces a separate "Bid 29" button — the "capture all 28
+  /// card points" special bid that's always legal in 29 regardless of the
+  /// current high bid. Falls outside the grid so it never gets crowded out
+  /// when the grid runs out of valid integers (minBid > 28).
+  final bool showBid29Button;
+
   final void Function(int bid) onBidSelected;
   final VoidCallback? onPass;
   final VoidCallback? onDouble;
@@ -38,6 +51,8 @@ class BiddingModal extends StatefulWidget {
     this.showRedoubleButton = false,
     this.bidGridEnabled = true,
     this.trumpInfo,
+    this.opponentActions,
+    this.showBid29Button = false,
     required this.onBidSelected,
     this.onPass,
     this.onDouble,
@@ -79,58 +94,92 @@ class _BiddingModalState extends State<BiddingModal> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ModalEntryTransition(
-        child: Container(
-          width: 280,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.92),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withOpacity(0.9)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.22),
-                blurRadius: 40,
-                offset: const Offset(0, 12),
-              ),
-            ],
+    return MinimizableModalShell(
+      title: 'Place Your Bid',
+      minimizedLabel: 'Place Your Bid',
+      minimizedDetail: widget.bidGridEnabled
+          ? 'Min ${widget.minBid}'
+          : 'Action required',
+      minimizedIcon: Icons.gavel_rounded,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'How many tricks will you win?',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: AppColors.textMuted,
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Title
-              Text(
-                'Place Your Bid',
-                style: GoogleFonts.poppins(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 3),
 
-              Text(
-                'How many tricks will you win?',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
-                ),
+          if (widget.trumpInfo != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              'Trump: ${widget.trumpInfo}',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accent,
               ),
+            ),
+          ],
 
-              if (widget.trumpInfo != null) ...[
-                const SizedBox(height: 3),
-                Text(
-                  'Trump: ${widget.trumpInfo}',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.accent,
+          const SizedBox(height: 10),
+
+              // Other players' actions so far this round.
+              if (widget.opponentActions != null &&
+                  widget.opponentActions!.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.accent.withOpacity(0.18),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'So far',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          for (final entry in widget.opponentActions!)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  entry.label.length > 10
+                                      ? '${entry.label.substring(0, 10)}…'
+                                      : entry.label,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10.5,
+                                    color: AppColors.textDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                entry.chip,
+                              ],
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 8),
               ],
-
-              const SizedBox(height: 10),
 
               // Forbidden bid warning
               if (widget.forbiddenBid != null)
@@ -161,6 +210,51 @@ class _BiddingModalState extends State<BiddingModal> {
                   opacity: _isSubmitting ? 0.4 : 1,
                   child: _buildBidGrid(),
                 ),
+
+              // Special "Bid 29" — always-legal max bid. Surfaces separately
+              // so it stays reachable even when the grid runs out (minBid>28).
+              if (widget.bidGridEnabled && widget.showBid29Button) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  key: const Key('bid-29'),
+                  onTap: _isSubmitting
+                      ? null
+                      : () {
+                          _markSubmitting();
+                          widget.onBidSelected(29);
+                        },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFD52F47), Color(0xFFE08A2A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFD52F47).withOpacity(0.4),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Bid 29 — take all 28 points',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
               // Double / Redouble row
               if (widget.showDoubleButton || widget.showRedoubleButton) ...[
@@ -269,63 +363,61 @@ class _BiddingModalState extends State<BiddingModal> {
                 ),
               ],
 
-              if (widget.bidGridEnabled) ...[
-                const SizedBox(height: 10),
-                GestureDetector(
-                  key: const Key('bid-confirm'),
-                  onTap: _selected == null || _isSubmitting
+          if (widget.bidGridEnabled) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              key: const Key('bid-confirm'),
+              onTap: _selected == null || _isSubmitting
+                  ? null
+                  : () {
+                      _markSubmitting();
+                      widget.onBidSelected(_selected!);
+                    },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _selected == null
+                      ? AppColors.accent.withOpacity(0.4)
+                      : AppColors.accent,
+                  borderRadius: BorderRadius.circular(13),
+                  boxShadow: _selected == null
                       ? null
-                      : () {
-                          _markSubmitting();
-                          widget.onBidSelected(_selected!);
-                        },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _selected == null
-                          ? AppColors.accent.withOpacity(0.4)
-                          : AppColors.accent,
-                      borderRadius: BorderRadius.circular(13),
-                      boxShadow: _selected == null
-                          ? null
-                          : [
-                              BoxShadow(
-                                color: AppColors.accent.withOpacity(0.35),
-                                blurRadius: 14,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                    ),
-                    child: Center(
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              key: Key('bid-confirm-spinner'),
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white),
-                              ),
-                            )
-                          : Text(
-                              'Confirm Bid',
-                              style: GoogleFonts.inter(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                                letterSpacing: -0.1,
-                              ),
-                            ),
-                    ),
-                  ),
+                      : [
+                          BoxShadow(
+                            color: AppColors.accent.withOpacity(0.35),
+                            blurRadius: 14,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                 ),
-              ],
-            ],
-          ),
-        ),
+                child: Center(
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          key: Key('bid-confirm-spinner'),
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          'Confirm Bid',
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            letterSpacing: -0.1,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -335,7 +427,21 @@ class _BiddingModalState extends State<BiddingModal> {
     final bidCount = rawCount.clamp(0, 30);
 
     if (bidCount <= 0) {
-      return const Text('No valid bids', style: TextStyle(color: Colors.grey));
+      // Grid is exhausted (bots ratcheted the bid past maxBid). If the 29
+      // special is still surfaced, point at it; otherwise just say so.
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Text(
+          widget.showBid29Button
+              ? 'Grid is maxed — Pass, or take the special 29 bid below.'
+              : 'No valid bids — you must Pass.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 11.5,
+            color: AppColors.textMuted,
+          ),
+        ),
+      );
     }
 
     return GridView.builder(

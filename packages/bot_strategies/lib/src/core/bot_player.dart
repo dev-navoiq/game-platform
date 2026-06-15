@@ -49,9 +49,19 @@ abstract class BotPlayer<TState extends GameState, TMove extends GameMove> {
 
   /// Returns true with probability [difficulty.accuracy].
   /// When false the bot should make a suboptimal (random) move.
+  ///
+  /// Useful for *card play* at lower difficulties — picking a slightly worse
+  /// card occasionally feels like a human mistake. **Do not** use this gate
+  /// for bidding/auction decisions: a uniformly random valid bid can be
+  /// absurdly high (e.g. bid 28 in Twenty-Nine), which feels like a bug,
+  /// not a beginner mistake. Bidding code paths should branch on
+  /// [policyTier] instead.
   bool shouldPlayOptimally() {
     return random.nextDouble() < difficulty.accuracy;
   }
+
+  /// Convenience accessor for the bot's [PolicyTier].
+  PolicyTier get policyTier => difficulty.policyTier;
 }
 
 /// A move paired with its evaluation score.

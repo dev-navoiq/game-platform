@@ -102,6 +102,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final gameState = ref.watch(gameStateProvider);
     final gameType = ref.watch(gameTypeProvider);
 
+    // Surface bot-move rejections that the controller couldn't recover from
+    // (anything but VERSION_CONFLICT, which it retries internally). Without
+    // this hook a rejection leaves the table sitting in silence; with it,
+    // the user gets a snackbar telling them the code (NOT_YOUR_TURN /
+    // WRONG_PHASE / FORBIDDEN_BID) and can decide whether to forfeit.
+    ref.listen<String?>(botMoveErrorProvider, (prev, next) {
+      if (next == null || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      // Clear so the same message doesn't replay on the next rebuild.
+      ref.read(botMoveErrorProvider.notifier).state = null;
+    });
+
     if (_timedOut && gameState == null) {
       return Scaffold(
         body: Center(

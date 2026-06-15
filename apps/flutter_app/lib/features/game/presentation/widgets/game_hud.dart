@@ -18,6 +18,14 @@ class GameHud extends StatelessWidget {
   final RoomSocialMode socialMode;
   final bool isSpectator;
   final VoidCallback? onMenuTap;
+  /// When non-null, render a scoreboard icon button in the HUD that opens
+  /// the score sheet. Replaces the larger "Show scoreboard" button that
+  /// used to live in the round-end ribbon.
+  final VoidCallback? onScoreboardTap;
+  /// When non-null, renders an exit icon button that triggers forfeit /
+  /// leave. Moved here from the bottom GameActions row to free up vertical
+  /// space near the player's hand.
+  final VoidCallback? onForfeitTap;
 
   const GameHud({
     super.key,
@@ -29,6 +37,8 @@ class GameHud extends StatelessWidget {
     this.socialMode = RoomSocialMode.full,
     this.isSpectator = false,
     this.onMenuTap,
+    this.onScoreboardTap,
+    this.onForfeitTap,
   });
 
   @override
@@ -118,6 +128,48 @@ class GameHud extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+
+          // Scoreboard icon (sibling to the menu button)
+          if (onScoreboardTap != null) ...[
+            GestureDetector(
+              onTap: onScoreboardTap,
+              child: GlassContainer(
+                borderRadius: 17,
+                padding: EdgeInsets.zero,
+                child: const SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: Icon(
+                    Icons.leaderboard_outlined,
+                    color: AppColors.textDark,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+
+          // Forfeit / exit icon (sibling to scoreboard + menu)
+          if (onForfeitTap != null) ...[
+            GestureDetector(
+              onTap: onForfeitTap,
+              child: GlassContainer(
+                borderRadius: 17,
+                padding: EdgeInsets.zero,
+                child: const SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: Icon(
+                    Icons.exit_to_app,
+                    color: AppColors.textDark,
+                    size: 18,
+                  ),
                 ),
               ),
             ),

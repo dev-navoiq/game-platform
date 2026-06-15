@@ -2,6 +2,7 @@ import 'package:game_core/game_core.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
 import '../core/bot_player.dart';
+import '../core/difficulty.dart';
 import '../core/personality.dart';
 
 /// AI player for Twenty-Nine (4-player, 2v2, 32-card trick-taking).
@@ -21,13 +22,22 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
   ) {
     if (validMoves.isEmpty) return null;
 
+    // Bidding and trump selection always use the tier-based policy. A
+    // uniform-random choice from valid moves would happily pick "bid 28"
+    // or declare a void as trump — that doesn't feel like a beginner
+    // mistake, it feels broken.
+    if (state.phase == GamePhase.bidding) {
+      return _selectBiddingMove(state, validMoves);
+    }
+    if (state.phase == GamePhase.trumpSelection) {
+      return _selectTrumpMove(state, validMoves);
+    }
+
     if (!shouldPlayOptimally()) {
       return selectRandom(validMoves);
     }
 
     return switch (state.phase) {
-      GamePhase.bidding => _selectBiddingMove(state, validMoves),
-      GamePhase.trumpSelection => _selectTrumpMove(state, validMoves),
       GamePhase.playing => _selectPlayingMove(state, validMoves),
       _ => validMoves.first,
     };
@@ -39,13 +49,99 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
     TwentyNineState state,
     List<TwentyNineMove> moves,
   ) {
+    return switch (policyTier) {
+      PolicyTier.beginner => _beginnerBidding(state, moves),
+      PolicyTier.medium => _mediumBidding(state, moves),
+      PolicyTier.strong => _strongBidding(state, moves),
+    };
+  }
+
+  /// Beginner bidding policy — conservative + naive.
+  ///
+  /// Counts immediate point-cards in hand (J=3, 9=2, A=1, 10=1), assumes a
+  /// flat ~11-point partner contribution, and bids the smallest legal value
+  /// if the estimate covers it. Passes otherwise. Never doubles, never
+  /// bids 29, never tries to outsmart the auction — predictable enough for
+  /// new players to read.
+  TwentyNineMove _beginnerBidding(
+    TwentyNineState state,
+    List<TwentyNineMove> moves,
+  ) {
+    final passMoves = moves.whereType<PassMove>().toList();
+    final bidMoves = moves
+        .whereType<BidMove>()
+        .where((b) => b.bidValue != TwentyNineConfig.specialBid)
+        .toList();
+
+    final hand = state.hands[playerId]!;
+    var ownPoints = 0;
+    for (final card in hand.cards) {
+      ownPoints += TwentyNineConfig.getCardPoints(card);
+    }
+    const partnerAssumption = 11;
+    final target = ownPoints + partnerAssumption;
+    final minBid = state.minimumBid;
+
+    if (bidMoves.isEmpty || target < minBid) {
+      return passMoves.isNotEmpty ? passMoves.first : moves.first;
+    }
+
+    // Always bid the floor. Beginners don't push the auction.
+    final smallest = bidMoves
+        .reduce((a, b) => a.bidValue < b.bidValue ? a : b);
+    return smallest;
+  }
+
+  /// Medium bidding policy — hand-evaluation heuristic.
+  ///
+  /// Uses [_estimateBid] (long-suit / trump-control / side-winners model)
+  /// and bids the smallest legal value ≤ target. Conservative double rules.
+  TwentyNineMove _mediumBidding(
+    TwentyNineState state,
+    List<TwentyNineMove> moves,
+  ) {
+    return _heuristicBid(state, moves, partnerBoost: 0, confidenceMargin: -2);
+  }
+
+  /// Strong bidding policy — heuristic + partner-bid inference.
+  ///
+  /// Same evaluation as medium, plus: if partner has already entered the
+  /// auction at value `pb`, assume partner contributes roughly `pb - 14`
+  /// extra captured points (clamped 0..4). Slightly tighter safety margin
+  /// because the model is more aware of context.
+  TwentyNineMove _strongBidding(
+    TwentyNineState state,
+    List<TwentyNineMove> moves,
+  ) {
+    final partnerBid = _partnerLastBid(state);
+    final partnerBoost = partnerBid == null
+        ? 0
+        : (partnerBid - 14).clamp(0, 4);
+    return _heuristicBid(
+      state,
+      moves,
+      partnerBoost: partnerBoost,
+      confidenceMargin: -1,
+    );
+  }
+
+  /// Shared heuristic-bid core for medium/strong. [partnerBoost] adds to the
+  /// target when partner has already raised; [confidenceMargin] is the
+  /// safety subtraction applied to the raw estimate (more negative = more
+  /// conservative).
+  TwentyNineMove _heuristicBid(
+    TwentyNineState state,
+    List<TwentyNineMove> moves, {
+    required int partnerBoost,
+    required int confidenceMargin,
+  }) {
     final bidMoves = moves.whereType<BidMove>().toList();
     final passMoves = moves.whereType<PassMove>().toList();
     final doubleMoves = moves.whereType<DoubleMove>().toList();
     final redoubleMoves = moves.whereType<RedoubleMove>().toList();
 
     final hand = state.hands[playerId]!;
-    final estimate = _estimateBid(hand);
+    final estimate = _estimateBid(hand, confidenceMargin: confidenceMargin);
 
     // Double/redouble opportunities: only when opponent (or partner) has
     // bid clearly above what we estimate the bidding team can realistically
@@ -63,24 +159,21 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
       return passMoves.isNotEmpty ? passMoves.first : moves.first;
     }
 
-    // Personality tweak: ±1 bid point. riskTolerance ranges 0.2–0.8,
-    // so this shifts target by roughly -1 (cautious) to +1 (quick).
+    // Personality tweak: ±1 bid point. riskTolerance ranges 0.2–0.8.
     final riskAdjust = ((personality.riskTolerance - 0.5) * 2).round();
-    final target = estimate + riskAdjust;
+    final target = estimate + riskAdjust + partnerBoost;
     final minBid = state.minimumBid;
 
-    // Only enter the auction if we actually have the cards for it.
     if (target < minBid) {
       return passMoves.isNotEmpty ? passMoves.first : bidMoves.first;
     }
-
-    // Don't chase the auction higher than our estimate — if the current bid
-    // already exceeds what we want, pass.
     if (state.currentBid >= target) {
       return passMoves.isNotEmpty ? passMoves.first : bidMoves.first;
     }
 
-    // Bid the smallest value that is both ≥ minBid and ≤ target.
+    // Bid the smallest legal value ≤ target. Special bid (29) is never
+    // chosen by the heuristic path — it's reserved for hands that can
+    // truly run the table, and our estimator caps below that.
     final clampedTarget = target.clamp(minBid, TwentyNineConfig.maxBid);
     final bestBid = bidMoves
         .where((b) => b.bidValue != TwentyNineConfig.specialBid)
@@ -94,6 +187,19 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
     return passMoves.isNotEmpty ? passMoves.first : bidMoves.first;
   }
 
+  /// Most recent bid value placed by our partner this auction, or null if
+  /// partner hasn't bid yet. Used by strong-tier auction inference.
+  int? _partnerLastBid(TwentyNineState state) {
+    final partner = state.getPartner(playerId);
+    if (partner == null) return null;
+    // The state doesn't expose a full auction log, but [bidderId] +
+    // [currentBid] together tell us who placed the current standing bid.
+    if (state.bidderId == partner && state.currentBid > 0) {
+      return state.currentBid;
+    }
+    return null;
+  }
+
   /// Estimate how many card-points (out of 28) our partnership can realistically
   /// take with this hand, assuming a suit we are long in is trump.
   ///
@@ -101,7 +207,11 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
   ///   • A weak hand (no Js/9s, no long suit) → ~14 (will pass the auction).
   ///   • An average hand → ~16–18.
   ///   • A strong hand (J+9 of trump, long suit, outside aces) → ~22–26.
-  int _estimateBid(Hand hand) {
+  ///
+  /// [confidenceMargin] is added to the raw expected value before rounding —
+  /// pass a *negative* number to be more conservative. Medium tier passes -2,
+  /// strong tier passes -1 (slightly more confident in its evaluation).
+  int _estimateBid(Hand hand, {int confidenceMargin = -2}) {
     if (hand.cards.isEmpty) return 0;
 
     // Count point-cards in hand and short/long suit structure.
@@ -179,9 +289,9 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
     final captureFraction = (control / 6.0).clamp(0.0, 0.7);
     final expected = ownPoints + remaining * captureFraction + 1.5;
 
-    // Bots must not bid what they merely *hope* to make — subtract a safety
+    // Bots must not bid what they merely *hope* to make — apply a safety
     // margin so the auction settles near a realistic contract.
-    return (expected - 2).round();
+    return (expected + confidenceMargin).round();
   }
 
   // ── Trump selection ──────────────────────────────────────────────────────

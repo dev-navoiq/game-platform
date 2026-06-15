@@ -9,6 +9,19 @@ final supabaseServiceProvider = Provider<SupabaseService>((ref) {
   return SupabaseService(Supabase.instance.client);
 });
 
+/// Server-side rejection of a move (validate-move 4xx). Carries the
+/// structured `code` (e.g. NOT_YOUR_TURN, WRONG_PHASE, VERSION_CONFLICT,
+/// FORBIDDEN_BID) so the bot move controller can decide whether to retry
+/// vs. log-and-skip, and so the UI can show actionable text.
+class MoveRejection implements Exception {
+  final String code;
+  final String message;
+  const MoveRejection({required this.code, required this.message});
+
+  @override
+  String toString() => 'MoveRejection($code): $message';
+}
+
 class SupabaseService {
   final SupabaseClient _client;
 
@@ -294,14 +307,49 @@ class SupabaseService {
     required String roomId,
     required dynamic move,
   }) async {
-    final response = await _client.functions.invoke(
-      'validate-move',
-      body: {
-        'room_id': roomId,
-        'move': move is Map ? move : (move as dynamic).toJson(),
-      },
-    );
-    return response.data as Map<String, dynamic>;
+    final body = {
+      'room_id': roomId,
+      'move': move is Map ? move : (move as dynamic).toJson(),
+    };
+    try {
+      final response = await _client.functions.invoke(
+        'validate-move',
+        body: body,
+      );
+      final data = (response.data as Map<String, dynamic>?) ?? const {};
+      // Rule-level validation rejections (validate-move returns 400 with
+      // jsonResponse(validationResult)) carry `error_code` rather than
+      // `code`. Detect & raise so the bot path retries / logs / surfaces.
+      if (data['valid'] == false ||
+          data['error_code'] is String ||
+          data['code'] is String) {
+        throw MoveRejection(
+          code: (data['error_code'] as String?) ??
+              (data['code'] as String?) ??
+              'UNKNOWN',
+          message: (data['error'] as String?) ?? 'Move rejected',
+        );
+      }
+      return data;
+    } on FunctionException catch (e) {
+      // supabase_flutter throws FunctionException for non-2xx responses
+      // from edge functions. The body is in e.details. Normalize to
+      // MoveRejection so callers don't have to special-case the transport.
+      final details = e.details;
+      if (details is Map) {
+        throw MoveRejection(
+          code: (details['error_code'] as String?) ??
+              (details['code'] as String?) ??
+              'HTTP_${e.status}',
+          message:
+              (details['error'] as String?) ?? e.reasonPhrase ?? 'Move rejected',
+        );
+      }
+      throw MoveRejection(
+        code: 'HTTP_${e.status}',
+        message: e.reasonPhrase ?? 'Move rejected',
+      );
+    }
   }
 
   Future<Map<String, dynamic>> reconcileState({

@@ -11,6 +11,7 @@ import '../../providers/game_provider.dart';
 import '../../providers/game_session_providers.dart';
 import '../../services/ready_broadcast_controller.dart';
 import '../../services/round_advance_guard.dart';
+import '../widgets/bid_action_chip.dart';
 import '../widgets/bidding_modal.dart';
 import '../widgets/card_hand.dart';
 import '../widgets/card_sort.dart';
@@ -23,14 +24,16 @@ import '../../../../shared/widgets/rewarded_ad_modal.dart';
 import '../widgets/game_table.dart';
 import '../widgets/player_node.dart';
 import '../widgets/round_end_celebration_layer.dart';
+import '../widgets/between_rounds_ready_icon.dart';
 import '../widgets/round_end_ribbon.dart';
-import '../widgets/score_display.dart';
 import '../widgets/seat_layout.dart';
 import '../widgets/trick_zone.dart';
 import '../widgets/round_end_overlay.dart';
 import '../widgets/trump_indicator.dart';
 import '../widgets/trump_reveal_overlay.dart';
 import '../widgets/turn_timer.dart';
+import '../widgets/twenty_nine_scorecards.dart';
+import '../../../../shared/animations/celebrations/doubling_burst.dart';
 import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
 import '../../../../shared/animations/celebrations/winner_jump_animation.dart';
 import '../../../../shared/animations/gameplay/bidding_pulse.dart';
@@ -97,6 +100,16 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   Timer? _readyTicker;
   int _secondsElapsed = 0;
   static const int _countdownLimit = 30;
+
+  /// Most-recent bidding action per playerId for the current round. Persists
+  /// across modal minimize/restore so the chips stay accurate. Cleared on
+  /// every new round.
+  final Map<String, BidActionChip> _bidHistory = {};
+  int _bidHistoryRound = -1;
+  int _lastBidSeen = 0;
+  int _lastMultiplierSeen = 1;
+  String? _lastBidderSeen;
+  Set<int> _lastRoyalWeddingTeams = const {};
 
   @override
   void dispose() {
@@ -169,6 +182,107 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     }
   }
 
+  /// Sync the per-player bidding history map against the latest engine
+  /// state. We watch a handful of fields that the engine flips when a
+  /// player's most recent action changes: [currentBid] / [bidderId] for
+  /// bids, [doublingMultiplier] for double/redouble, [passCount] for
+  /// passes, and [royalWeddingClaimedByTeam] for the K+Q claim.
+  ///
+  /// This intentionally tracks only the *most recent* action per player —
+  /// for 29 with at most one full bidding rotation this is enough to
+  /// answer "what did everyone do?" without a full event log.
+  void _updateBidHistory(TwentyNineState state) {
+    // Reset between rounds.
+    if (_bidHistoryRound != state.roundNumber) {
+      _bidHistoryRound = state.roundNumber;
+      _bidHistory.clear();
+      _lastBidSeen = 0;
+      _lastMultiplierSeen = 1;
+      _lastBidderSeen = null;
+      _lastRoyalWeddingTeams = const {};
+    }
+
+    // New bid placed.
+    if (state.bidderId != null &&
+        (state.bidderId != _lastBidderSeen ||
+            state.currentBid != _lastBidSeen)) {
+      _bidHistory[state.bidderId!] =
+          BidActionChip(action: BidAction.bid, value: state.currentBid);
+      _lastBidSeen = state.currentBid;
+      _lastBidderSeen = state.bidderId;
+    }
+
+    // Double / redouble.
+    if (state.doublingMultiplier != _lastMultiplierSeen) {
+      if (state.doublingMultiplier == 2 && state.doubledBy != null) {
+        _bidHistory[state.doubledBy!] =
+            const BidActionChip(action: BidAction.doubled);
+      } else if (state.doublingMultiplier == 4 &&
+          state.redoubledBy != null) {
+        _bidHistory[state.redoubledBy!] =
+            const BidActionChip(action: BidAction.redoubled);
+      }
+      _lastMultiplierSeen = state.doublingMultiplier;
+    }
+
+    // Royal Wedding claim — represent it on the chip belonging to the
+    // current player when the team count increases. We can't tell which
+    // player on the team claimed, but they're the only one whose
+    // bidAdjustment-related state changed.
+    final claimed = state.royalWeddingClaimedByTeam;
+    if (claimed.length > _lastRoyalWeddingTeams.length) {
+      final newTeams = claimed.difference(_lastRoyalWeddingTeams);
+      for (final team in newTeams) {
+        // Mark every player on the claiming team — visually that's
+        // honest, since the announcement benefits both partners.
+        for (final pid in state.playerOrder) {
+          if (state.teamForPlayer(pid) == team) {
+            _bidHistory[pid] =
+                const BidActionChip(action: BidAction.royalWedding);
+          }
+        }
+      }
+      _lastRoyalWeddingTeams = Set<int>.from(claimed);
+    }
+
+    // Passes are inferred: during bidding phase, any player who already
+    // had a turn but hasn't appeared in history yet has passed. This
+    // assumes turn order goes round once (true for 29).
+    if (state.phase == GamePhase.bidding) {
+      final firstBidderIdx = (state.dealerIndex + 1) % 4;
+      final currentIdx = state.playerOrder.indexOf(state.currentPlayerId);
+      var idx = firstBidderIdx;
+      while (idx != currentIdx) {
+        final pid = state.playerOrder[idx];
+        _bidHistory.putIfAbsent(
+          pid,
+          () => const BidActionChip(action: BidAction.pass),
+        );
+        idx = (idx + 1) % 4;
+        if (idx == firstBidderIdx) break;
+      }
+    }
+  }
+
+  /// Build the (label, chip) pairs the bidding modal renders so the local
+  /// player can see what everyone else has done without dismissing the
+  /// modal.
+  List<({String label, BidActionChip chip})> _opponentActionsForModal(
+      TwentyNineState state) {
+    final members = ref.read(roomMembersProvider);
+    final result = <({String label, BidActionChip chip})>[];
+    final seatStart = (state.dealerIndex + 1) % 4;
+    for (var i = 0; i < state.playerOrder.length; i++) {
+      final pid = state.playerOrder[(seatStart + i) % 4];
+      if (pid == widget.localPlayerId) continue;
+      final chip = _bidHistory[pid];
+      if (chip == null) continue;
+      final name = members[pid]?.displayName ?? 'Player ${i + 1}';
+      result.add((label: name, chip: chip));
+    }
+    return result;
+  }
+
   Set<String> _winnerIdsForRound(TwentyNineState state, int winningTeam) {
     final ids = <String>{};
     for (final pid in state.playerOrder) {
@@ -184,7 +298,8 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     final won = winningTeam == localTeam;
     final biddingTeam = state.bidWinnerTeam ?? 0;
     final bidTeamPts = state.teamPoints[biddingTeam] ?? 0;
-    final threshold = state.currentBid == 29 ? 28 : state.currentBid;
+    final baseThreshold = state.currentBid == 29 ? 28 : state.currentBid;
+    final threshold = baseThreshold + state.bidAdjustment;
     final bidMet = bidTeamPts >= threshold;
     final teamLabel = winningTeam == localTeam ? 'Your team' : 'Opponents';
     final outcome = bidMet ? 'made $threshold' : 'broke the bid';
@@ -199,7 +314,8 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     final localTeam = state.teamForPlayer(widget.localPlayerId);
     final biddingTeam = state.bidWinnerTeam ?? 0;
     final bidTeamPts = state.teamPoints[biddingTeam] ?? 0;
-    final threshold = state.currentBid == 29 ? 28 : state.currentBid;
+    final baseThreshold = state.currentBid == 29 ? 28 : state.currentBid;
+    final threshold = baseThreshold + state.bidAdjustment;
     final bidMet = bidTeamPts >= threshold;
     GlassBottomSheet.show<void>(
       context: context,
@@ -218,6 +334,9 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
               bidMet: bidMet,
               sessionScores: state.sessionScores,
               roundNumber: state.roundNumber - 1,
+              bidAdjustment: state.bidAdjustment,
+              redPips: state.redPips,
+              blackPips: state.blackPips,
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -318,15 +437,19 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     }
     if (winnerTeam == null) return;
 
-    String? winnerId;
-    for (final tc in fullTrick) {
-      if (state.teamForPlayer(tc.playerId) == winnerTeam) {
-        if (winnerId == null) {
-          winnerId = tc.playerId;
-        }
-      }
-    }
+    // Find the specific player who won the trick — not just any teammate.
+    // The previous code picked the first member of the winning team in
+    // fullTrick iteration order, which credited the wrong player whenever
+    // the actual winner was the partner. We replicate the trick-winner
+    // rule here: highest trump if any was played, else highest card in
+    // the lead suit.
+    final winnerId = _determineTrickWinnerId(fullTrick, state.trumpSuit);
     if (winnerId == null) return;
+    // Sanity guard: if the engine's tricksWon delta points at a different
+    // team than the card-rule winner, the engine is the source of truth
+    // (it knows about partnered tricks etc.). Bail rather than pulse the
+    // wrong seat.
+    if (state.teamForPlayer(winnerId) != winnerTeam) return;
 
     // Update synchronously — we're in build but these private fields are
     // read later in the same build pass (the TrickZone construction below
@@ -370,6 +493,54 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
 
   List<TrickCard>? _heldTrickForCollect;
 
+  /// Determine which player won a completed trick. Mirrors the server-side
+  /// `determineTrickWinner` in `_shared/game_rules/twenty_nine.ts`:
+  ///   • If trump is set, highest trump wins.
+  ///   • Otherwise, highest card in the lead suit wins.
+  ///
+  /// Returns the winning player's id, or null on an empty trick. We keep
+  /// this local instead of importing from the engine package so the screen
+  /// doesn't pull a dependency just for the celebration label — the rule
+  /// is small and stable.
+  String? _determineTrickWinnerId(List<TrickCard> trick, Suit? trumpSuit) {
+    if (trick.isEmpty) return null;
+    final leadSuit = trick.first.card.suit;
+    TrickCard winner = trick.first;
+
+    for (var i = 1; i < trick.length; i++) {
+      final cur = trick[i];
+
+      if (trumpSuit != null) {
+        final curIsTrump = cur.card.suit == trumpSuit;
+        final winIsTrump = winner.card.suit == trumpSuit;
+        if (curIsTrump && !winIsTrump) {
+          winner = cur;
+          continue;
+        }
+        if (winIsTrump && !curIsTrump) continue;
+        if (curIsTrump && winIsTrump) {
+          if (TwentyNineConfig.cardStrength(cur.card) >
+              TwentyNineConfig.cardStrength(winner.card)) {
+            winner = cur;
+          }
+          continue;
+        }
+      }
+
+      // Neither trump: only lead-suit cards can beat the current winner.
+      if (cur.card.suit != leadSuit) continue;
+      if (winner.card.suit != leadSuit) {
+        winner = cur;
+        continue;
+      }
+      if (TwentyNineConfig.cardStrength(cur.card) >
+          TwentyNineConfig.cardStrength(winner.card)) {
+        winner = cur;
+      }
+    }
+    return winner.playerId;
+  }
+
   Set<PlayingCard> _legalCardsFor(String playerId) {
     final state = widget.state;
     final hand = state.hands[playerId];
@@ -407,6 +578,7 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     final state = widget.state;
     final members = ref.watch(roomMembersProvider);
     _detectTrickWinner(state);
+    _updateBidHistory(state);
     final isMyTurn = state.currentPlayerId == widget.localPlayerId;
     final isSpectator = !state.playerOrder.contains(widget.localPlayerId);
     print('[29Screen] phase=${state.phase} isMyTurn=$isMyTurn bid=${state.currentBid} minBid=${state.minimumBid}');
@@ -421,7 +593,11 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     final localHand = state.hands[widget.localPlayerId];
     final cards = localHand?.cards ?? [];
 
-    final isRoundEnd = state.phase == GamePhase.roundEnd;
+    // GameOverDialog was removed in favour of letting the round-end ribbon
+    // and per-player jump/sad animations carry the outcome. Treating
+    // gameEnd as round-end keeps both alive through game over.
+    final isRoundEnd = state.phase == GamePhase.roundEnd ||
+        state.phase == GamePhase.gameEnd;
     final winningTeamForRound = isRoundEnd ? _roundWinningTeam(state) : null;
     final winnerPlayerIds = (isRoundEnd && winningTeamForRound != null)
         ? _winnerIdsForRound(state, winningTeamForRound)
@@ -476,6 +652,11 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                   roundNumber: state.roundNumber,
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  onScoreboardTap: () => _openTwentyNineScoreboard(
+                    context,
+                    state,
+                    winningTeamForRound ?? 0,
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -536,11 +717,19 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                     ),
                   ),
 
-                // Team score display
-                TeamScoreDisplay(
-                  team0Score: state.sessionScores[0] ?? 0,
-                  team1Score: state.sessionScores[1] ?? 0,
-                  localTeam: localTeam,
+                // Slim integer scoreboard during play. Full card scorecard
+                // (red 6 / black 6) appears only on the round-end overlay so
+                // the table stays uncluttered mid-game.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Center(
+                    child: _InlineMatchScore(
+                      localScore: state.redPips[localTeam] ?? 0,
+                      opponentScore:
+                          state.redPips[localTeam == 0 ? 1 : 0] ?? 0,
+                      target: 6,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -585,17 +774,28 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                               ? readySet.contains(playerId)
                               : null,
                         );
+                        final actionChip = _bidHistory[playerId];
+                        final nodeWithChip = actionChip == null
+                            ? node
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  node,
+                                  const SizedBox(height: 3),
+                                  actionChip,
+                                ],
+                              );
                         final wrapped = isRoundEnd
                             ? (winnerPlayerIds.contains(playerId)
                                 ? WinnerJumpAnimation(
                                     key: ValueKey('winner-$playerId-${state.roundNumber}'),
-                                    child: node,
+                                    child: nodeWithChip,
                                   )
                                 : LoserSadAnimation(
                                     key: ValueKey('loser-$playerId-${state.roundNumber}'),
-                                    child: node,
+                                    child: nodeWithChip,
                                   ))
-                            : node;
+                            : nodeWithChip;
                         return Align(
                           alignment: seat.alignment,
                           child: Padding(
@@ -721,10 +921,16 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
             return BiddingModal(
               minBid: state.minimumBid,
               maxBid: 28,
-              showPassButton: state.currentBid > 0,
+              // 29 allows the very first bidder to pass too — engine validates.
+              showPassButton: true,
               showDoubleButton: canDouble,
               showRedoubleButton: canRedouble,
               bidGridEnabled: state.doublingMultiplier == 1,
+              // The "29 = take all 28 pts" special bid is always legal; surfacing
+              // it explicitly stops the modal from looking like only Pass is
+              // available when bots ratchet the grid out (minBid > 28).
+              showBid29Button: true,
+              opponentActions: _opponentActionsForModal(state),
               onBidSelected: (bid) => _placeBid(bid),
               onPass: () => _pass(),
               onDouble: () => _double(),
@@ -743,61 +949,87 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
             onComplete: () => setState(() => _showTrumpReveal = false),
           ),
 
-        // Round end ribbon (non-blocking) — bottom-sheet for the full
-        // scoreboard, RoundEndCelebrationLayer above paints confetti/trophy.
-        // When the room is bot-only (no human players left) the ribbon
-        // pauses with a waiting message and omits the ready coordination UI.
-        if (isRoundEnd && winningTeamForRound != null)
-          Align(
-            alignment: Alignment.topCenter,
-            child: isPaused
-                ? RoundEndRibbon(
-                    message:
-                        '${_twentyNineRibbonMessage(state, winningTeamForRound)} • Waiting for a player to join...',
-                    onShowScoreboard: () => _openTwentyNineScoreboard(
-                      context,
-                      state,
-                      winningTeamForRound,
-                    ),
-                  )
-                : RoundEndRibbon(
-                    message: _twentyNineRibbonMessage(state, winningTeamForRound),
-                    onShowScoreboard: () => _openTwentyNineScoreboard(
-                      context,
-                      state,
-                      winningTeamForRound,
-                    ),
-                    countdownSeconds: remainingSeconds,
-                    isLocalReady: isLocalReady,
-                    onReadyTap: isLocalReady
-                        ? null
-                        : () {
-                            ref
-                                .read(readyBroadcastControllerProvider.notifier)
-                                .markReady(widget.localPlayerId);
-                            _maybeFireNextRound();
-                          },
+        // Doubled / Redoubled burst — fires whenever doublingMultiplier
+        // climbs (1 → 2 → 4). Sits above all gameplay layers, blocks no
+        // input, clears itself after ~1.4s.
+        Positioned.fill(
+          child: DoublingBurst(
+            multiplier: state.doublingMultiplier,
+            round: state.roundNumber,
+          ),
+        ),
+
+        // Royal Wedding button — surfaces when the local player is on the
+        // lead, holds K+Q of trump, their team has won ≥1 trick and the
+        // claim hasn't been used yet. The engine's getValidMoves is the
+        // source of truth; we just ask "is the move legal right now?".
+        if (_canClaimRoyalWedding(state, isMyTurn))
+          Positioned(
+            left: 16,
+            bottom: 168,
+            child: GestureDetector(
+              key: const Key('royal-wedding-claim'),
+              onTap: () => _claimRoyalWedding(),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFFC084FC)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.5),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.favorite, color: Colors.white, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'Royal Wedding',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
 
-        // Game over
-        if (state.isGameOver)
-          GameOverDialog(
-            isWinner: _isLocalWinner(),
-            finalScores: {
-              'Team 1': state.sessionScores[0] ?? 0,
-              'Team 2': state.sessionScores[1] ?? 0,
-            },
-            coinsEarned: _isLocalWinner() ? 50 : 10,
-            xpEarned: _isLocalWinner() ? 30 : 10,
-            onDoubleCoins: () {
-              RewardedAdModal.show(context: context);
-            },
-            // Reuses the newRound move — the server resets sessionScores
-            // when the move arrives in gameEnd phase (see applyNewRound).
-            onPlayAgain: () => _startNextRound(),
-            onLeave: () => Navigator.of(context).pop(),
+        // RoundEndRibbon removed entirely.
+
+        // Compact ready icon above the hand.
+        if (isRoundEnd && !isPaused && !isSpectator)
+          Positioned(
+            right: 16,
+            bottom: 168,
+            child: BetweenRoundsReadyIcon(
+              secondsLeft: remainingSeconds,
+              isReady: isLocalReady,
+              onTap: () {
+                ref
+                    .read(readyBroadcastControllerProvider.notifier)
+                    .markReady(widget.localPlayerId);
+                _maybeFireNextRound();
+              },
+            ),
           ),
+
+        // GameOverDialog removed — the per-player winner-jump / loser-sad
+        // animations on the round-end ribbon communicate the outcome, and
+        // the scoreboard is accessible via the ribbon's button. Play Again
+        // / Leave should live on a small icon row (see follow-up).
       ],
     );
   }
@@ -958,6 +1190,43 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     );
   }
 
+  void _claimRoyalWedding() {
+    ref.read(gameStateProvider.notifier).sendMove(
+      roomId: widget.roomId,
+      move: {
+        'type': 'claimRoyalWedding',
+        'player_id': widget.localPlayerId,
+      },
+    );
+  }
+
+  /// Whether the Royal Wedding button should appear. Mirrors the server
+  /// validator so the button is only visible when the move would succeed.
+  bool _canClaimRoyalWedding(TwentyNineState state, bool isMyTurn) {
+    if (state.phase != GamePhase.playing) return false;
+    if (state.trumpSuit == null) return false;
+    if (state.currentTrick.isNotEmpty) return false;
+    if (!isMyTurn) return false;
+
+    final myTeam = state.teamForPlayer(widget.localPlayerId);
+    if (state.royalWeddingClaimedByTeam.contains(myTeam)) return false;
+    if ((state.tricksWon[myTeam] ?? 0) < 1) return false;
+
+    final hand = state.hands[widget.localPlayerId];
+    if (hand == null) return false;
+    final trump = state.trumpSuit!;
+    final hasK =
+        hand.cards.any((c) => c.suit == trump && c.rank == Rank.king);
+    final hasQ =
+        hand.cards.any((c) => c.suit == trump && c.rank == Rank.queen);
+    if (!hasK || !hasQ) return false;
+
+    final isBidderTeam = state.bidWinnerTeam == myTeam;
+    if (isBidderTeam && state.currentBid < 20) return false;
+
+    return true;
+  }
+
   /// The local player is allowed to reveal the hidden trump when it is their
   /// turn to play, they have no card of the lead suit in hand, and trump is
   /// still closed.
@@ -983,7 +1252,8 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   int _roundWinningTeam(TwentyNineState state) {
     final biddingTeam = state.bidWinnerTeam ?? 0;
     final bidTeamPts = state.teamPoints[biddingTeam] ?? 0;
-    final threshold = state.currentBid == 29 ? 28 : state.currentBid;
+    final baseThreshold = state.currentBid == 29 ? 28 : state.currentBid;
+    final threshold = baseThreshold + state.bidAdjustment;
     final bidMet = bidTeamPts >= threshold;
     return bidMet ? biddingTeam : (biddingTeam == 0 ? 1 : 0);
   }
@@ -1009,5 +1279,51 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
       case Suit.spades:
         return '♠';
     }
+  }
+}
+
+/// Mid-game integer scoreboard. The full red/black card scorecard appears
+/// only at round end (less visual noise during play).
+class _InlineMatchScore extends StatelessWidget {
+  final int localScore;
+  final int opponentScore;
+  final int target;
+
+  const _InlineMatchScore({
+    required this.localScore,
+    required this.opponentScore,
+    required this.target,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Match  ',
+              style: TextStyle(color: Colors.white60, fontSize: 11)),
+          Text('$localScore',
+              style: const TextStyle(
+                  color: Color(0xFFC47B2B),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800)),
+          const Text('  –  ',
+              style: TextStyle(color: Colors.white38, fontSize: 13)),
+          Text('$opponentScore',
+              style: const TextStyle(
+                  color: Color(0xFFD52F47),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800)),
+          Text('   first to $target',
+              style: const TextStyle(color: Colors.white54, fontSize: 10)),
+        ],
+      ),
+    );
   }
 }

@@ -184,6 +184,16 @@ class _TrickZoneState extends State<TrickZone> {
     }
 
     // Trick collect animation — runs after the trick is complete.
+    //
+    // Clear `_lastWinnerIdDispatched` when the parent clears its held
+    // winner (currentTrick has rolled back to the next round's first card
+    // OR the held snapshot has expired). Without this clear, if the same
+    // player wins two tricks in a row, the second swoop is suppressed by
+    // the `!= _lastWinnerIdDispatched` dedupe — cards just vanish.
+    if (widget.lastTrickWinnerId == null) {
+      _lastWinnerIdDispatched = null;
+    }
+
     if (widget.lastTrickWinnerId != null &&
         widget.lastTrickWinnerId != _lastWinnerIdDispatched &&
         widget.currentTrick.length >= widget.fullTrickSize) {
@@ -246,6 +256,13 @@ class _TrickZoneState extends State<TrickZone> {
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) {
+        // _OpponentCardFlight returns a Positioned which must be a direct
+        // child of a Stack (the Overlay provides one). The Material
+        // ancestor for Text widgets is added INSIDE _OpponentCardFlight's
+        // build — wrapping it externally with Material would put a
+        // non-Stack ancestor between Overlay.Stack and Positioned, causing
+        // Flutter to throw "Positioned must be a child of Stack" every
+        // frame.
         return _OpponentCardFlight(
           startCenter: startCenter,
           endCenter: endCenter,
@@ -337,13 +354,18 @@ class _TrickZoneState extends State<TrickZone> {
           width: overlaySize.width,
           height: overlaySize.height,
           child: IgnorePointer(
-            child: _TrickCollectOverlay(
-              cards: cards,
-              cardPositions: localPositions,
-              winnerOffset: winnerOffset,
-              onComplete: () {
-                collectEntry.remove();
-              },
+            // Material ancestor — see _startOpponentFlight for the
+            // rationale (yellow debug underlines on Text without Material).
+            child: Material(
+              type: MaterialType.transparency,
+              child: _TrickCollectOverlay(
+                cards: cards,
+                cardPositions: localPositions,
+                winnerOffset: winnerOffset,
+                onComplete: () {
+                  collectEntry.remove();
+                },
+              ),
             ),
           ),
         );
@@ -503,13 +525,19 @@ class _OpponentCardFlightState extends State<_OpponentCardFlight>
           left: dx - TrickZone._cardW / 2,
           top: dy - TrickZone._cardH / 2,
           child: IgnorePointer(
-            child: _TrickCardWithBadge(
-              trickCard: widget.trickCard,
-              emoji: widget.emoji,
-              rotation: 0,
-              isWinning: false,
-              isTrump: widget.trumpSuit != null &&
-                  widget.trickCard.card.suit == widget.trumpSuit,
+            // Material ancestor so Text widgets in the card don't render
+            // their yellow "debug underline" stripes. Transparency type
+            // means it adds no visible background.
+            child: Material(
+              type: MaterialType.transparency,
+              child: _TrickCardWithBadge(
+                trickCard: widget.trickCard,
+                emoji: widget.emoji,
+                rotation: 0,
+                isWinning: false,
+                isTrump: widget.trumpSuit != null &&
+                    widget.trickCard.card.suit == widget.trumpSuit,
+              ),
             ),
           ),
         );

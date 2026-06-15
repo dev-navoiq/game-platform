@@ -27,10 +27,26 @@ void main() {
       expect(initialState.phase, GamePhase.bidding);
     });
 
-    test('each player has 8 cards', () {
+    test('each player starts with 4 cards (first deal); 16 wait in pendingDeck', () {
       for (final id in playerIds) {
-        expect(initialState.hands[id]?.size, 8);
+        expect(initialState.hands[id]?.size, 4);
       }
+      expect(initialState.pendingDeck.length, 16);
+    });
+
+    test('declareTrump deals the second 4 cards into each hand', () {
+      var state = initialState;
+      state = rules.applyMove(state, BidMove(playerId: 'p2', bidValue: 16)).newState;
+      state = rules.applyMove(state, PassMove(playerId: 'p3')).newState;
+      state = rules.applyMove(state, PassMove(playerId: 'p4')).newState;
+      state = rules.applyMove(state, PassMove(playerId: 'p1')).newState;
+      final suit = state.hands['p2']!.cards.first.suit;
+      state = rules.applyMove(state, DeclareTrumpMove(playerId: 'p2', suit: suit)).newState;
+      for (final id in playerIds) {
+        expect(state.hands[id]?.size, 8);
+      }
+      expect(state.pendingDeck, isEmpty);
+      expect(state.phase, GamePhase.playing);
     });
 
     test('first bidder is player left of dealer (p2)', () {
@@ -257,10 +273,12 @@ void main() {
   // ── Game End ──────────────────────────────────────────────────────────────
 
   group('Game End', () {
-    test('game ends when team reaches 6 game-points', () {
+    test('game ends when a team\'s red scorecard fills (6 pips)', () {
       final state = TwentyNineState(
         phase: GamePhase.gameEnd,
         sessionScores: {0: 6, 1: 4},
+        redPips: {0: 6, 1: 4},
+        blackPips: {0: 4, 1: 6},
         hands: {},
         dealerIndex: 0,
         playerOrder: playerIds,
@@ -268,16 +286,147 @@ void main() {
       expect(rules.isGameOver(state), isTrue);
     });
 
-    test('winners are the team with 6 game-points', () {
+    test('winners are the team with the full red scorecard', () {
       final state = TwentyNineState(
         phase: GamePhase.gameEnd,
         sessionScores: {0: 6, 1: 4},
+        redPips: {0: 6, 1: 4},
+        blackPips: {0: 4, 1: 6},
         hands: {},
         dealerIndex: 0,
         playerOrder: playerIds,
       );
       // Team 0 = p1 + p3
       expect(rules.getWinners(state), containsAll(['p1', 'p3']));
+    });
+  });
+
+  // ── Royal Wedding (K + Q of trump) ────────────────────────────────────────
+
+  group('Royal Wedding', () {
+    /// Build a "between tricks" state where the claimant leads the next
+    /// trick with K+Q of [trump] in hand and one trick already won by their
+    /// team.
+    TwentyNineState royalWeddingFixture({
+      required Suit trump,
+      required int currentBid,
+      required String claimant,
+      required int claimantTeamTricksWon,
+    }) {
+      final claimantTeam = playerIds.indexOf(claimant) % 2;
+      final otherTeam = (claimantTeam + 1) % 2;
+      return TwentyNineState(
+        phase: GamePhase.playing,
+        currentPlayerId: claimant,
+        hands: {
+          for (final id in playerIds)
+            id: id == claimant
+                ? Hand([
+                    PlayingCard(trump, Rank.king),
+                    PlayingCard(trump, Rank.queen),
+                    PlayingCard(Suit.diamonds, Rank.ten),
+                  ])
+                : Hand([PlayingCard(Suit.clubs, Rank.eight)]),
+        },
+        currentTrick: const [],
+        trumpSuit: trump,
+        trumpRevealed: true,
+        currentBid: currentBid,
+        bidderId: 'p2',
+        trumpSelector: 'p2',
+        dealerIndex: 0,
+        playerOrder: playerIds,
+        tricksWon: {
+          claimantTeam: claimantTeamTricksWon,
+          otherTeam: 0,
+        },
+      );
+    }
+
+    test('bidder-team claim with bid ≥ 20 reduces threshold by 4', () {
+      // p2 (team 1) bid 20, but we set p1 as claimant here for simplicity —
+      // p1 is on team 0 (defenders), so this is the defender path.
+      // Use a bidder-team claimant by making p2 the bidder + claimant.
+      final state = royalWeddingFixture(
+        trump: Suit.spades,
+        currentBid: 20,
+        claimant: 'p2',
+        claimantTeamTricksWon: 1,
+      );
+      // Validate move passes.
+      final move = ClaimRoyalWeddingMove(playerId: 'p2');
+      expect(rules.validateMove(state, move), isNull);
+      // Apply: bidAdjustment should drop by 4 (negative).
+      final next = rules.applyMove(state, move).newState;
+      expect(next.bidAdjustment, -4);
+      expect(next.royalWeddingClaimedByTeam, contains(1));
+    });
+
+    test('bidder-team claim with bid < 20 is rejected', () {
+      final state = royalWeddingFixture(
+        trump: Suit.spades,
+        currentBid: 18,
+        claimant: 'p2',
+        claimantTeamTricksWon: 1,
+      );
+      final move = ClaimRoyalWeddingMove(playerId: 'p2');
+      expect(rules.validateMove(state, move), 'BID_BELOW_HIGH_THRESHOLD');
+    });
+
+    test('defender claim raises threshold by 4', () {
+      // p1 on team 0; bidder p2 on team 1.
+      final state = royalWeddingFixture(
+        trump: Suit.spades,
+        currentBid: 16,
+        claimant: 'p1',
+        claimantTeamTricksWon: 1,
+      );
+      final move = ClaimRoyalWeddingMove(playerId: 'p1');
+      expect(rules.validateMove(state, move), isNull);
+      final next = rules.applyMove(state, move).newState;
+      expect(next.bidAdjustment, 4);
+      expect(next.royalWeddingClaimedByTeam, contains(0));
+    });
+
+    test('claim rejected when team has won zero tricks', () {
+      final state = royalWeddingFixture(
+        trump: Suit.spades,
+        currentBid: 22,
+        claimant: 'p2',
+        claimantTeamTricksWon: 0,
+      );
+      final move = ClaimRoyalWeddingMove(playerId: 'p2');
+      expect(rules.validateMove(state, move), 'NO_TRICK_WON_YET');
+    });
+
+    test('claim rejected mid-trick', () {
+      final state = royalWeddingFixture(
+        trump: Suit.spades,
+        currentBid: 22,
+        claimant: 'p2',
+        claimantTeamTricksWon: 1,
+      ).copyWith(
+        currentTrick: [
+          TrickCard(
+            playerId: 'p1',
+            card: PlayingCard(Suit.hearts, Rank.eight),
+            seatIndex: 0,
+          ),
+        ],
+      );
+      final move = ClaimRoyalWeddingMove(playerId: 'p2');
+      expect(rules.validateMove(state, move), 'TRICK_IN_PROGRESS');
+    });
+
+    test('each team may only claim once per round', () {
+      final state = royalWeddingFixture(
+        trump: Suit.spades,
+        currentBid: 22,
+        claimant: 'p2',
+        claimantTeamTricksWon: 1,
+      ).copyWith(royalWeddingClaimedByTeam: {1});
+      final move = ClaimRoyalWeddingMove(playerId: 'p2');
+      expect(rules.validateMove(state, move), 'TEAM_ALREADY_CLAIMED');
     });
   });
 

@@ -2,6 +2,7 @@ import 'package:game_bridge/game_bridge.dart';
 import 'package:game_core/game_core.dart';
 
 import '../core/bot_player.dart';
+import '../core/difficulty.dart';
 
 /// Standard American Yellow Card (SAYC) Bridge bot.
 ///
@@ -28,13 +29,18 @@ class BridgeBot extends BotPlayer<BridgeState, BridgeMove> {
   ) {
     if (validMoves.isEmpty) return null;
 
+    // Auction calls are *always* tier-based — never a uniform-random pick
+    // from valid moves. A random call is almost always nonsense (4NT slam
+    // invitation, redouble on a misfit) and reads as broken, not weak.
+    if (state.phase == GamePhase.bidding) {
+      return _selectAuctionCall(state, validMoves);
+    }
+
     if (!shouldPlayOptimally()) {
       return selectRandom(validMoves);
     }
 
     switch (state.phase) {
-      case GamePhase.bidding:
-        return _selectAuctionCall(state, validMoves);
       case GamePhase.playing:
         return _selectCardPlay(state, validMoves);
       case GamePhase.roundEnd:
@@ -58,6 +64,142 @@ class BridgeBot extends BotPlayer<BridgeState, BridgeMove> {
   // ╚══════════════════════════════════════════════════════════════════════════╝
 
   BridgeMove _selectAuctionCall(BridgeState state, List<BridgeMove> moves) {
+    if (policyTier == PolicyTier.beginner) {
+      return _beginnerAuctionCall(state, moves);
+    }
+    return _heuristicAuctionCall(state, moves);
+  }
+
+  /// Beginner bidding policy — a stripped SAYC for new players. Covers only
+  /// the highest-frequency situations:
+  ///   • Opening: pass <12 HCP, 1NT with 15-17 balanced, 2NT with 20-21
+  ///     balanced, 2♣ with 22+, otherwise 1 of longest major (5+) or
+  ///     better minor. No weak twos, no preempts.
+  ///   • Responding to partner: simple raises / 1NT / direct game with
+  ///     trump support. No Stayman, no transfers, no Blackwood.
+  ///   • Competitive: passes. No overcalls, no doubles.
+  BridgeMove _beginnerAuctionCall(BridgeState state, List<BridgeMove> moves) {
+    final hand = state.hands[playerId];
+    if (hand == null) return _passOrFirst(moves);
+
+    final mySeat = state.playerOrder.indexOf(playerId);
+    if (mySeat < 0) return _passOrFirst(moves);
+
+    final history = state.auctionHistory;
+    final partnerSeat = (mySeat + 2) % 4;
+    final partnerLastBid = history
+        .where((c) => c.seatIndex == partnerSeat && c.isBid)
+        .toList()
+        .reversedOrNull;
+    final highestBid = _highestBid(history);
+    final hcp = hcpOfHand(hand);
+    final lengths = _suitLengths(hand);
+
+    // Partner has opened — pick a simple response.
+    if (partnerLastBid != null) {
+      final pd = partnerLastBid.denomination!;
+      final pl = partnerLastBid.level!;
+
+      // After 1NT — no Stayman/transfers at this tier. Game/invite/pass.
+      if (pl == 1 && pd == BridgeDenomination.noTrump) {
+        if (hcp >= 10) {
+          final game = _firstBidMatching(moves, 3, BridgeDenomination.noTrump);
+          if (game != null) return game;
+        }
+        if (hcp >= 8) {
+          final inv = _firstBidMatching(moves, 2, BridgeDenomination.noTrump);
+          if (inv != null) return inv;
+        }
+        return _passOrFirst(moves);
+      }
+
+      // After 1 of a major: prefer raise with support, else 1NT, else pass.
+      if (pl == 1 && pd.isMajor) {
+        final support = lengths[pd.suit!] ?? 0;
+        if (hcp >= 13 && support >= 3) {
+          final game = _firstBidMatching(moves, 4, pd);
+          if (game != null) return game;
+        }
+        if (hcp >= 6 && support >= 3) {
+          final raise = _firstBidMatching(moves, 2, pd);
+          if (raise != null) return raise;
+        }
+        if (hcp >= 6) {
+          final nt = _firstBidMatching(moves, 1, BridgeDenomination.noTrump);
+          if (nt != null) return nt;
+        }
+        return _passOrFirst(moves);
+      }
+
+      // After 1 of a minor: bid a 4+ major if we have one, else 1NT.
+      if (pl == 1 && pd.isMinor) {
+        if (hcp < 6) return _passOrFirst(moves);
+        for (final s in [Suit.hearts, Suit.spades]) {
+          if ((lengths[s] ?? 0) >= 4) {
+            final bid = _firstBidMatching(moves, 1, _denomForSuit(s));
+            if (bid != null) return bid;
+          }
+        }
+        final nt = _firstBidMatching(moves, 1, BridgeDenomination.noTrump);
+        if (nt != null) return nt;
+        return _passOrFirst(moves);
+      }
+
+      return _passOrFirst(moves);
+    }
+
+    // No partner bid + opponents have entered → just pass at this tier.
+    if (highestBid != null) return _passOrFirst(moves);
+
+    // Opening seat (or fourth-seat opening).
+    if (hcp < 12) return _passOrFirst(moves);
+
+    final balanced = _isBalanced(lengths);
+    if (hcp >= 22) {
+      final bid = _firstBidMatching(moves, 2, BridgeDenomination.clubs);
+      if (bid != null) return bid;
+    }
+    if (hcp >= 20 && hcp <= 21 && balanced) {
+      final bid = _firstBidMatching(moves, 2, BridgeDenomination.noTrump);
+      if (bid != null) return bid;
+    }
+    if (hcp >= 15 && hcp <= 17 && balanced) {
+      final bid = _firstBidMatching(moves, 1, BridgeDenomination.noTrump);
+      if (bid != null) return bid;
+    }
+
+    final spades = lengths[Suit.spades] ?? 0;
+    final hearts = lengths[Suit.hearts] ?? 0;
+    if (spades >= 5 && spades >= hearts) {
+      final bid = _firstBidMatching(moves, 1, BridgeDenomination.spades);
+      if (bid != null) return bid;
+    }
+    if (hearts >= 5 && hearts > spades) {
+      final bid = _firstBidMatching(moves, 1, BridgeDenomination.hearts);
+      if (bid != null) return bid;
+    }
+
+    final clubs = lengths[Suit.clubs] ?? 0;
+    final diamonds = lengths[Suit.diamonds] ?? 0;
+    BridgeDenomination minor;
+    if (diamonds > clubs) {
+      minor = BridgeDenomination.diamonds;
+    } else if (clubs > diamonds) {
+      minor = BridgeDenomination.clubs;
+    } else {
+      minor = clubs >= 4
+          ? BridgeDenomination.diamonds
+          : BridgeDenomination.clubs;
+    }
+    final bid = _firstBidMatching(moves, 1, minor);
+    if (bid != null) return bid;
+
+    return _passOrFirst(moves);
+  }
+
+  /// Heuristic (medium/strong) auction policy.
+  BridgeMove _heuristicAuctionCall(
+      BridgeState state, List<BridgeMove> moves) {
     final hand = state.hands[playerId];
     if (hand == null) return _passOrFirst(moves);
 
@@ -434,6 +576,14 @@ class BridgeBot extends BotPlayer<BridgeState, BridgeMove> {
     final partnerSuit = partnerLastBid.denomination;
     final partnerLevel = partnerLastBid.level!;
 
+    // ── After we opened 1NT and partner responded at the 2-level ──
+    if (openedSuit == BridgeDenomination.noTrump &&
+        myLastBid.level == 1 &&
+        partnerLevel == 2) {
+      final rebid = _rebidAfter1NT(moves, lengths, partnerSuit!);
+      if (rebid != null) return rebid;
+    }
+
     // After single raise of our major (1M-2M).
     if (openedSuit != null &&
         openedSuit.isMajor &&
@@ -461,6 +611,56 @@ class BridgeBot extends BotPlayer<BridgeState, BridgeMove> {
         final bid = _firstBidMatching(moves, 2, openedSuit);
         if (bid != null) return bid;
       }
+    }
+
+    return null;
+  }
+
+  /// Opener's rebid after a 2-level response to our 1NT opening.
+  ///
+  ///   • 1NT-2♣ (Stayman) → 2♥ with 4+ hearts, 2♠ with 4+ spades but no
+  ///     hearts, 2♦ otherwise (denying 4-card majors).
+  ///   • 1NT-2♦ (Jacoby transfer to ♥) → accept with 2♥.
+  ///   • 1NT-2♥ (Jacoby transfer to ♠) → accept with 2♠.
+  ///   • 1NT-2NT (invitational) → bid 3NT with 17 HCP, pass with 15-16.
+  ///
+  /// Returns null if the partner call isn't one of these (e.g. 2♠ natural,
+  /// 3-level jumps) — fall through to the rest of the rebid logic.
+  BridgeMove? _rebidAfter1NT(
+    List<BridgeMove> moves,
+    Map<Suit, int> lengths,
+    BridgeDenomination partnerSuit,
+  ) {
+    final hearts = lengths[Suit.hearts] ?? 0;
+    final spades = lengths[Suit.spades] ?? 0;
+
+    if (partnerSuit == BridgeDenomination.clubs) {
+      // Stayman response.
+      if (hearts >= 4) {
+        final bid = _firstBidMatching(moves, 2, BridgeDenomination.hearts);
+        if (bid != null) return bid;
+      }
+      if (spades >= 4) {
+        final bid = _firstBidMatching(moves, 2, BridgeDenomination.spades);
+        if (bid != null) return bid;
+      }
+      final bid = _firstBidMatching(moves, 2, BridgeDenomination.diamonds);
+      if (bid != null) return bid;
+      return null;
+    }
+
+    if (partnerSuit == BridgeDenomination.diamonds) {
+      // Transfer to hearts.
+      final bid = _firstBidMatching(moves, 2, BridgeDenomination.hearts);
+      if (bid != null) return bid;
+      return null;
+    }
+
+    if (partnerSuit == BridgeDenomination.hearts) {
+      // Transfer to spades.
+      final bid = _firstBidMatching(moves, 2, BridgeDenomination.spades);
+      if (bid != null) return bid;
+      return null;
     }
 
     return null;

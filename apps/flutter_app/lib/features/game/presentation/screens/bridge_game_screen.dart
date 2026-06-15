@@ -31,6 +31,7 @@ import '../widgets/game_hud.dart';
 import '../widgets/game_table.dart';
 import '../widgets/player_node.dart';
 import '../widgets/round_end_celebration_layer.dart';
+import '../widgets/between_rounds_ready_icon.dart';
 import '../widgets/round_end_ribbon.dart';
 import '../widgets/seat_layout.dart';
 import '../widgets/trick_zone.dart';
@@ -405,6 +406,9 @@ class _BridgeGameScreenState extends ConsumerState<BridgeGameScreen> {
                       : _denomGlyph(state.contract!.denomination),
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  onScoreboardTap: lastDeal == null
+                      ? null
+                      : () => _openScoreboard(context, lastDeal),
                 ),
                 _DebugStrip(state: state, localPlayerId: localPlayerId),
                 const SizedBox(height: 4),
@@ -628,30 +632,23 @@ class _BridgeGameScreenState extends ConsumerState<BridgeGameScreen> {
         ),
         ),
 
-        if (isRoundEnd && lastDeal != null)
-          Align(
-            key: const Key('bridge-round-end-overlay'),
-            alignment: Alignment.topCenter,
-            child: isPaused
-                ? RoundEndRibbon(
-                    message:
-                        '${_ribbonMessage(lastDeal)} • Waiting for a player to join...',
-                    onShowScoreboard: () => _openScoreboard(context, lastDeal),
-                  )
-                : RoundEndRibbon(
-                    message: _ribbonMessage(lastDeal),
-                    onShowScoreboard: () => _openScoreboard(context, lastDeal),
-                    countdownSeconds: remainingSeconds,
-                    isLocalReady: isLocalReady,
-                    onReadyTap: isLocalReady
-                        ? null
-                        : () {
-                            ref
-                                .read(readyBroadcastControllerProvider.notifier)
-                                .markReady(localPlayerId);
-                            _maybeFireNextRound();
-                          },
-                  ),
+        // RoundEndRibbon removed entirely.
+
+        // Compact ready icon above the hand.
+        if (isRoundEnd && !isPaused && !isSpectator)
+          Positioned(
+            right: 16,
+            bottom: 168,
+            child: BetweenRoundsReadyIcon(
+              secondsLeft: remainingSeconds,
+              isReady: isLocalReady,
+              onTap: () {
+                ref
+                    .read(readyBroadcastControllerProvider.notifier)
+                    .markReady(localPlayerId);
+                _maybeFireNextRound();
+              },
+            ),
           ),
       ],
     );

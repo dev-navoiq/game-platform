@@ -83,6 +83,29 @@ class TwentyNineState extends GameState {
   /// required to play a trump card on this very trick (if they hold one).
   final String? trumpRevealerThisTrick;
 
+  /// Cards held back for the second deal. Twenty-Nine bids on the first 4
+  /// cards; the remaining 4 cards per player are dealt once trump is
+  /// declared. Stored as a flat list of 16 cards (4 per seat, in seat order
+  /// starting from playerOrder[0]). Empty once the second deal has happened.
+  final List<PlayingCard> pendingDeck;
+
+  /// Cumulative "wins" pips per team (red 6 scorecard). 0–6.
+  /// First team to reach 6 wins the session.
+  final Map<int, int> redPips;
+
+  /// Cumulative "losses" pips per team (black 6 scorecard). 0–6. A team
+  /// reaching 6 here also ends the session — they've lost.
+  final Map<int, int> blackPips;
+
+  /// Net adjustment to this round's bid threshold from Royal Wedding claims.
+  /// Negative when the bidding team claims (easier to make the bid),
+  /// positive when defenders claim (harder).
+  final int bidAdjustment;
+
+  /// Teams (0/1) that have already announced Royal Wedding this round.
+  /// Each team can announce at most once per round.
+  final Set<int> royalWeddingClaimedByTeam;
+
   TwentyNineState({
     required this.phase,
     String? currentPlayerId,
@@ -107,6 +130,11 @@ class TwentyNineState extends GameState {
     this.doubledBy,
     this.redoubledBy,
     this.trumpRevealerThisTrick,
+    this.pendingDeck = const [],
+    this.redPips = const {0: 0, 1: 0},
+    this.blackPips = const {0: 0, 1: 0},
+    this.bidAdjustment = 0,
+    this.royalWeddingClaimedByTeam = const {},
   }) : _currentPlayerId = currentPlayerId;
 
   // ── Computed helpers ────────────────────────────────────────────────────────
@@ -166,6 +194,11 @@ class TwentyNineState extends GameState {
     String? redoubledBy,
     String? trumpRevealerThisTrick,
     bool clearTrumpRevealer = false,
+    List<PlayingCard>? pendingDeck,
+    Map<int, int>? redPips,
+    Map<int, int>? blackPips,
+    int? bidAdjustment,
+    Set<int>? royalWeddingClaimedByTeam,
   }) {
     return TwentyNineState(
       phase: phase ?? this.phase,
@@ -193,6 +226,12 @@ class TwentyNineState extends GameState {
       trumpRevealerThisTrick: clearTrumpRevealer
           ? null
           : (trumpRevealerThisTrick ?? this.trumpRevealerThisTrick),
+      pendingDeck: pendingDeck ?? this.pendingDeck,
+      redPips: redPips ?? this.redPips,
+      blackPips: blackPips ?? this.blackPips,
+      bidAdjustment: bidAdjustment ?? this.bidAdjustment,
+      royalWeddingClaimedByTeam:
+          royalWeddingClaimedByTeam ?? this.royalWeddingClaimedByTeam,
     );
   }
 
@@ -224,6 +263,11 @@ class TwentyNineState extends GameState {
         'doubledBy': doubledBy,
         'redoubledBy': redoubledBy,
         'trumpRevealerThisTrick': trumpRevealerThisTrick,
+        'pendingDeck': pendingDeck.map((c) => c.toJson()).toList(),
+        'redPips': redPips.map((k, v) => MapEntry(k.toString(), v)),
+        'blackPips': blackPips.map((k, v) => MapEntry(k.toString(), v)),
+        'bidAdjustment': bidAdjustment,
+        'royalWeddingClaimedByTeam': royalWeddingClaimedByTeam.toList(),
       };
 
   factory TwentyNineState.fromJson(Map<String, dynamic> json) {
@@ -262,6 +306,21 @@ class TwentyNineState extends GameState {
       doubledBy: json['doubledBy'] as String?,
       redoubledBy: json['redoubledBy'] as String?,
       trumpRevealerThisTrick: json['trumpRevealerThisTrick'] as String?,
+      pendingDeck: (json['pendingDeck'] as List?)
+              ?.map((c) => PlayingCard.fromJson(c as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      redPips: (json['redPips'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
+          const {0: 0, 1: 0},
+      blackPips: (json['blackPips'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(int.parse(k), v as int)) ??
+          const {0: 0, 1: 0},
+      bidAdjustment: (json['bidAdjustment'] as int?) ?? 0,
+      royalWeddingClaimedByTeam:
+          ((json['royalWeddingClaimedByTeam'] as List?)?.cast<int>() ??
+                  const <int>[])
+              .toSet(),
     );
   }
 
@@ -289,5 +348,10 @@ class TwentyNineState extends GameState {
         doubledBy,
         redoubledBy,
         trumpRevealerThisTrick,
+        pendingDeck,
+        redPips,
+        blackPips,
+        bidAdjustment,
+        royalWeddingClaimedByTeam,
       ];
 }

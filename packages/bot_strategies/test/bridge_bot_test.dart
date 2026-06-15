@@ -812,6 +812,281 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // Opener rebids after 1NT — Stayman + Jacoby transfers
+  // ──────────────────────────────────────────────────────────────────────────
+
+  group('Opener rebid after 1NT', () {
+    BridgeState afterMyOneNTAndPartnerCall({
+      required Hand openerHand,
+      required int level,
+      required BridgeDenomination denom,
+    }) {
+      // We (seat 0) opened 1NT, RHO (seat 1) passed, partner (seat 2) bid
+      // [level][denom], LHO (seat 3) passed. Now back to us for rebid.
+      return _stateAfterAuction(openerHand, biddingSeat: 0, history: [
+        _call(0, 'bid', 1, BridgeDenomination.noTrump),
+        _call(1, 'pass'),
+        _call(2, 'bid', level, denom),
+        _call(3, 'pass'),
+      ]);
+    }
+
+    test('1NT-2C-2H with 4 hearts (Stayman)', () {
+      final hand = _hand([
+        _c(Suit.spades, [Rank.ace, Rank.king, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.jack, Rank.eight, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.two]),
+        _c(Suit.clubs, [Rank.queen, Rank.six, Rank.three]),
+      ]);
+      final state = afterMyOneNTAndPartnerCall(
+        openerHand: hand,
+        level: 2,
+        denom: BridgeDenomination.clubs,
+      );
+      final bot = makeBot('p0');
+      final move = bot.selectMove(state, rules.getValidMoves(state, 'p0'))
+          as BridgeBidMove;
+      expect(move.level, 2);
+      expect(move.denomination, BridgeDenomination.hearts);
+    });
+
+    test('1NT-2C-2S with 4 spades but only 3 hearts (Stayman)', () {
+      final hand = _hand([
+        _c(Suit.spades, [Rank.ace, Rank.king, Rank.eight, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.jack, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.two]),
+        _c(Suit.clubs, [Rank.queen, Rank.six, Rank.three]),
+      ]);
+      final state = afterMyOneNTAndPartnerCall(
+        openerHand: hand,
+        level: 2,
+        denom: BridgeDenomination.clubs,
+      );
+      final bot = makeBot('p0');
+      final move = bot.selectMove(state, rules.getValidMoves(state, 'p0'))
+          as BridgeBidMove;
+      expect(move.level, 2);
+      expect(move.denomination, BridgeDenomination.spades);
+    });
+
+    test('1NT-2C-2D denying a 4-card major (Stayman)', () {
+      final hand = _hand([
+        _c(Suit.spades, [Rank.ace, Rank.king, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.eight, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.queen, Rank.six, Rank.three]),
+      ]);
+      final state = afterMyOneNTAndPartnerCall(
+        openerHand: hand,
+        level: 2,
+        denom: BridgeDenomination.clubs,
+      );
+      final bot = makeBot('p0');
+      final move = bot.selectMove(state, rules.getValidMoves(state, 'p0'))
+          as BridgeBidMove;
+      expect(move.level, 2);
+      expect(move.denomination, BridgeDenomination.diamonds);
+    });
+
+    test('1NT-2D accepts transfer to hearts', () {
+      // Doesn't matter what the opener holds — accept the transfer.
+      final hand = _hand([
+        _c(Suit.spades, [Rank.ace, Rank.king, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.eight, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.queen, Rank.six, Rank.three]),
+      ]);
+      final state = afterMyOneNTAndPartnerCall(
+        openerHand: hand,
+        level: 2,
+        denom: BridgeDenomination.diamonds,
+      );
+      final bot = makeBot('p0');
+      final move = bot.selectMove(state, rules.getValidMoves(state, 'p0'))
+          as BridgeBidMove;
+      expect(move.level, 2);
+      expect(move.denomination, BridgeDenomination.hearts);
+    });
+
+    test('1NT-2H accepts transfer to spades', () {
+      final hand = _hand([
+        _c(Suit.spades, [Rank.ace, Rank.king, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.eight, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.queen, Rank.six, Rank.three]),
+      ]);
+      final state = afterMyOneNTAndPartnerCall(
+        openerHand: hand,
+        level: 2,
+        denom: BridgeDenomination.hearts,
+      );
+      final bot = makeBot('p0');
+      final move = bot.selectMove(state, rules.getValidMoves(state, 'p0'))
+          as BridgeBidMove;
+      expect(move.level, 2);
+      expect(move.denomination, BridgeDenomination.spades);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Beginner tier — stripped-down SAYC
+  // ──────────────────────────────────────────────────────────────────────────
+
+  group('Beginner tier', () {
+    BridgeBot beginner(String pid) => BridgeBot(
+          playerId: pid,
+          name: 'BeginnerBot',
+          difficulty: BotDifficulty.beginner,
+          random: Random(42),
+        );
+
+    test('PolicyTier mapping puts beginner+easy into beginner bucket', () {
+      expect(BotDifficulty.beginner.policyTier, PolicyTier.beginner);
+      expect(BotDifficulty.easy.policyTier, PolicyTier.beginner);
+      expect(BotDifficulty.medium.policyTier, PolicyTier.medium);
+      expect(BotDifficulty.hard.policyTier, PolicyTier.strong);
+      expect(BotDifficulty.master.policyTier, PolicyTier.strong);
+    });
+
+    test('passes with <12 HCP — no weak twos, no preempts', () {
+      // 8 HCP, 6-card heart suit — medium tier would open weak 2H.
+      final hand = _hand([
+        _c(Suit.spades, [Rank.eight, Rank.five, Rank.three]),
+        _c(Suit.hearts,
+            [Rank.king, Rank.queen, Rank.nine, Rank.seven, Rank.four, Rank.two]),
+        _c(Suit.diamonds, [Rank.king, Rank.nine]),
+        _c(Suit.clubs, [Rank.jack, Rank.four]),
+      ]);
+      final state = _stateBidding(hand, playerIdx: 0);
+      final move = beginner('p0').selectMove(state, rules.getValidMoves(state, 'p0'));
+      expect(move, isA<BridgePassMove>());
+    });
+
+    test('opens 1NT with 15-17 balanced', () {
+      final hand = _hand([
+        _c(Suit.spades, [Rank.ace, Rank.king, Rank.four, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.eight, Rank.seven]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.two]),
+        _c(Suit.clubs, [Rank.queen, Rank.nine, Rank.three]),
+      ]);
+      final state = _stateBidding(hand, playerIdx: 0);
+      final move = beginner('p0')
+          .selectMove(state, rules.getValidMoves(state, 'p0')) as BridgeBidMove;
+      expect(move.level, 1);
+      expect(move.denomination, BridgeDenomination.noTrump);
+    });
+
+    test('opens 1 of longest major with 12+ HCP', () {
+      final hand = _hand([
+        _c(Suit.spades,
+            [Rank.ace, Rank.king, Rank.eight, Rank.five, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.seven, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.jack, Rank.four]),
+      ]);
+      final state = _stateBidding(hand, playerIdx: 0);
+      final move = beginner('p0')
+          .selectMove(state, rules.getValidMoves(state, 'p0')) as BridgeBidMove;
+      expect(move.level, 1);
+      expect(move.denomination, BridgeDenomination.spades);
+    });
+
+    test('does not Stayman over partner 1NT (responds 3NT with 10+ HCP)', () {
+      // 12 HCP, 4-3-3-3 with 4 hearts — medium would Stayman, beginner bids 3NT.
+      final hand = _hand([
+        _c(Suit.spades, [Rank.king, Rank.eight, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.jack, Rank.seven, Rank.three]),
+        _c(Suit.diamonds, [Rank.ace, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.king, Rank.six, Rank.three]),
+      ]);
+      final state = _stateAfterAuction(hand, biddingSeat: 0, history: [
+        _call(2, 'bid', 1, BridgeDenomination.noTrump),
+        _call(3, 'pass'),
+      ]);
+      final move = beginner('p0')
+          .selectMove(state, rules.getValidMoves(state, 'p0')) as BridgeBidMove;
+      expect(move.level, 3);
+      expect(move.denomination, BridgeDenomination.noTrump);
+    });
+
+    test('does not overcall — passes with strong 5-card suit over opponent open',
+        () {
+      // 10 HCP, 5+ spades — medium would overcall 1S, beginner passes.
+      final hand = _hand([
+        _c(Suit.spades,
+            [Rank.king, Rank.queen, Rank.jack, Rank.eight, Rank.three]),
+        _c(Suit.hearts, [Rank.seven, Rank.five, Rank.three]),
+        _c(Suit.diamonds, [Rank.queen, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.nine, Rank.six]),
+      ]);
+      final state = _stateAfterAuction(hand,
+          biddingSeat: 1,
+          history: [_call(0, 'bid', 1, BridgeDenomination.hearts)]);
+      final move =
+          beginner('p1').selectMove(state, rules.getValidMoves(state, 'p1'));
+      expect(move, isA<BridgePassMove>());
+    });
+
+    test('simple raise of partner major with 6-9 HCP and 3+ support', () {
+      // 8 HCP, 3-card hearts support.
+      final hand = _hand([
+        _c(Suit.spades, [Rank.king, Rank.eight, Rank.three]),
+        _c(Suit.hearts, [Rank.queen, Rank.seven, Rank.three]),
+        _c(Suit.diamonds, [Rank.king, Rank.jack, Rank.nine, Rank.two]),
+        _c(Suit.clubs, [Rank.nine, Rank.six, Rank.three]),
+      ]);
+      final state = _stateAfterAuction(hand, biddingSeat: 0, history: [
+        _call(2, 'bid', 1, BridgeDenomination.hearts),
+        _call(3, 'pass'),
+      ]);
+      final move = beginner('p0')
+          .selectMove(state, rules.getValidMoves(state, 'p0')) as BridgeBidMove;
+      expect(move.level, 2);
+      expect(move.denomination, BridgeDenomination.hearts);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Auction noise regression — bots never make absurd calls
+  // ──────────────────────────────────────────────────────────────────────────
+
+  group('Auction noise regression', () {
+    // shouldPlayOptimally() at easy difficulty is 0.5 — pre-fix this gave
+    // 50% chance of a uniform-random call, which could be "redouble" or
+    // "4NT slam invite" out of nowhere. Verify the fix routes around it.
+    test('easy tier never picks absurd opening calls across 200 hands', () {
+      final rng = Random(31415);
+      final allCards = [
+        for (final s in Suit.values)
+          for (final r in Rank.values) PlayingCard(s, r),
+      ];
+      for (var t = 0; t < 200; t++) {
+        final shuffled = List<PlayingCard>.from(allCards)..shuffle(rng);
+        final hand = Hand(shuffled.take(13).toList());
+        final state = _stateBidding(hand, playerIdx: 0);
+        final easyBot = BridgeBot(
+          playerId: 'p0',
+          name: 'Easy',
+          difficulty: BotDifficulty.easy,
+          random: Random(t),
+        );
+        final moves = rules.getValidMoves(state, 'p0');
+        final move = easyBot.selectMove(state, moves);
+        // First call of the auction — only Pass or 1-level opening is sane.
+        // Beginner tier never opens at 2-level except 2C (22+ HCP).
+        if (move is BridgeBidMove) {
+          expect(move.level, lessThanOrEqualTo(2),
+              reason:
+                  'Easy bot opened ${move.level}${move.denomination} on hand $hand');
+          // Redouble is impossible at the start of the auction anyway,
+          // but guard against it nonetheless.
+        }
+        expect(move, isNot(isA<BridgeRedoubleMove>()));
+      }
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Factory wiring
   // ──────────────────────────────────────────────────────────────────────────
 

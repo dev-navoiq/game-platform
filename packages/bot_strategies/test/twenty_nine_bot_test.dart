@@ -112,6 +112,232 @@ void main() {
     });
   });
 
+  group('TwentyNineBot bidding tiers', () {
+    late TwentyNineRules rules;
+    final players = ['bot1', 'p2', 'p3', 'p4']; // bot1 + p3 are partners.
+
+    setUp(() {
+      rules = TwentyNineRules();
+    });
+
+    TwentyNineBot bot(BotDifficulty d) => TwentyNineBot(
+          playerId: 'bot1',
+          name: 'TestBot',
+          difficulty: d,
+          random: Random(42),
+        );
+
+    TwentyNineState bidState({
+      required List<PlayingCard> botHand,
+      int currentBid = 0,
+      String? bidderId,
+    }) {
+      return TwentyNineState(
+        phase: GamePhase.bidding,
+        currentPlayerId: 'bot1',
+        playerOrder: players,
+        dealerIndex: 3,
+        hands: {
+          'bot1': Hand(botHand),
+          for (final p in players.skip(1)) p: Hand([]),
+        },
+        currentBid: currentBid,
+        bidderId: bidderId,
+      );
+    }
+
+    PlayingCard card(Rank r, Suit s) => PlayingCard(s, r);
+
+    // 29 only uses 7..A (32-card deck).
+    final deckRanks = [
+      Rank.seven, Rank.eight, Rank.nine, Rank.ten,
+      Rank.jack, Rank.queen, Rank.king, Rank.ace,
+    ];
+    final deck29 = [
+      for (final s in Suit.values)
+        for (final r in deckRanks) PlayingCard(s, r),
+    ];
+
+    group('PolicyTier mapping', () {
+      test('difficulty buckets into beginner/medium/strong tiers', () {
+        expect(BotDifficulty.beginner.policyTier, PolicyTier.beginner);
+        expect(BotDifficulty.easy.policyTier, PolicyTier.beginner);
+        expect(BotDifficulty.medium.policyTier, PolicyTier.medium);
+        expect(BotDifficulty.hard.policyTier, PolicyTier.strong);
+        expect(BotDifficulty.expert.policyTier, PolicyTier.strong);
+        expect(BotDifficulty.master.policyTier, PolicyTier.strong);
+      });
+    });
+
+    group('beginner', () {
+      test('passes on weak hand (no point cards)', () {
+        final state = bidState(botHand: [
+          card(Rank.king, Suit.spades),
+          card(Rank.queen, Suit.hearts),
+          card(Rank.eight, Suit.diamonds),
+          card(Rank.seven, Suit.clubs),
+        ]);
+        final moves = rules.getValidMoves(state, 'bot1');
+        final move = bot(BotDifficulty.beginner).selectMove(state, moves);
+        expect(move, isA<PassMove>());
+      });
+
+      test('bids the floor on a decent hand', () {
+        // 3 + 2 + 1 + 1 = 7 own points → target 18 ≥ 15 (floor) → bid 15.
+        final state = bidState(botHand: [
+          card(Rank.jack, Suit.spades),
+          card(Rank.nine, Suit.spades),
+          card(Rank.ace, Suit.hearts),
+          card(Rank.ten, Suit.diamonds),
+        ]);
+        final moves = rules.getValidMoves(state, 'bot1');
+        final move = bot(BotDifficulty.beginner).selectMove(state, moves);
+        expect(move, isA<BidMove>());
+        expect((move as BidMove).bidValue, 15);
+      });
+
+      test('never pushes the auction even on a monster hand', () {
+        // J+J+9+9 = 10 own points → target 21, but beginner always bids floor.
+        final state = bidState(botHand: [
+          card(Rank.jack, Suit.spades),
+          card(Rank.jack, Suit.hearts),
+          card(Rank.nine, Suit.spades),
+          card(Rank.nine, Suit.hearts),
+        ]);
+        final moves = rules.getValidMoves(state, 'bot1');
+        final move = bot(BotDifficulty.beginner).selectMove(state, moves);
+        expect(move, isA<BidMove>());
+        expect((move as BidMove).bidValue, 15);
+      });
+
+      test('passes when minBid above target', () {
+        final state = bidState(
+          botHand: [
+            card(Rank.king, Suit.spades),
+            card(Rank.queen, Suit.hearts),
+            card(Rank.eight, Suit.diamonds),
+            card(Rank.seven, Suit.clubs),
+          ],
+          currentBid: 18,
+          bidderId: 'p2',
+        );
+        final moves = rules.getValidMoves(state, 'bot1');
+        final move = bot(BotDifficulty.beginner).selectMove(state, moves);
+        expect(move, isA<PassMove>());
+      });
+
+      test('never picks 29 special bid; always bids the floor', () {
+        final rng = Random(99);
+        for (var t = 0; t < 100; t++) {
+          final hand =
+              (List<PlayingCard>.from(deck29)..shuffle(rng)).take(4).toList();
+          final state = bidState(botHand: hand);
+          final moves = rules.getValidMoves(state, 'bot1');
+          final move = bot(BotDifficulty.beginner).selectMove(state, moves);
+          if (move is BidMove) {
+            expect(move.bidValue, isNot(TwentyNineConfig.specialBid));
+            expect(move.bidValue, state.minimumBid);
+          }
+        }
+      });
+    });
+
+    group('medium and strong (no random over-bidding)', () {
+      test('medium never bids 28 or 29 across 400 random (hand, auction) trials', () {
+        // Vary [currentBid] across the auction range so we actually exercise
+        // the upper-bound path — at currentBid=0 the bot always bids the
+        // floor, which doesn't stress the over-bidding regression.
+        final rng = Random(1234);
+        for (var t = 0; t < 400; t++) {
+          final hand =
+              (List<PlayingCard>.from(deck29)..shuffle(rng)).take(4).toList();
+          final cb = rng.nextInt(13); // 0..12 → minBid ∈ 15..25.
+          final state = bidState(
+            botHand: hand,
+            currentBid: cb,
+            bidderId: cb > 0 ? 'p2' : null,
+          );
+          final moves = rules.getValidMoves(state, 'bot1');
+          final move = bot(BotDifficulty.medium).selectMove(state, moves);
+          if (move is BidMove) {
+            expect(move.bidValue, lessThanOrEqualTo(25),
+                reason:
+                    'Medium overbid: hand=$hand currentBid=$cb → ${move.bidValue}');
+            expect(move.bidValue, isNot(TwentyNineConfig.specialBid));
+          }
+        }
+      });
+
+      test('master never bids 28 or 29 across 400 random (hand, auction) trials', () {
+        final rng = Random(7777);
+        for (var t = 0; t < 400; t++) {
+          final hand =
+              (List<PlayingCard>.from(deck29)..shuffle(rng)).take(4).toList();
+          final cb = rng.nextInt(13);
+          final state = bidState(
+            botHand: hand,
+            currentBid: cb,
+            bidderId: cb > 0 ? 'p2' : null,
+          );
+          final moves = rules.getValidMoves(state, 'bot1');
+          final move = bot(BotDifficulty.master).selectMove(state, moves);
+          if (move is BidMove) {
+            expect(move.bidValue, lessThanOrEqualTo(26),
+                reason:
+                    'Master overbid: hand=$hand currentBid=$cb → ${move.bidValue}');
+            expect(move.bidValue, isNot(TwentyNineConfig.specialBid));
+          }
+        }
+      });
+
+      test('strong tier uses partner bid to push higher', () {
+        // Borderline hand — without partner inference strong would pass;
+        // with partner having bid 17 (partnerBoost ≈ 3), it should bid.
+        final borderlineHand = [
+          card(Rank.jack, Suit.spades),
+          card(Rank.king, Suit.spades),
+          card(Rank.queen, Suit.spades),
+          card(Rank.eight, Suit.hearts),
+        ];
+
+        final noPartner = bidState(
+          botHand: borderlineHand,
+          currentBid: 17,
+          bidderId: 'p2', // opponent
+        );
+        final withPartner = bidState(
+          botHand: borderlineHand,
+          currentBid: 17,
+          bidderId: 'p3', // partner
+        );
+
+        final strong = bot(BotDifficulty.hard);
+        final movesNoP = rules.getValidMoves(noPartner, 'bot1');
+        final movesWithP = rules.getValidMoves(withPartner, 'bot1');
+        final moveNoP = strong.selectMove(noPartner, movesNoP);
+        final moveWithP = strong.selectMove(withPartner, movesWithP);
+
+        // No partner inference → likely pass. With partner inference,
+        // either still pass or bid 18 — never overbid above 22.
+        if (moveWithP is BidMove) {
+          expect(moveWithP.bidValue, inInclusiveRange(18, 22));
+        }
+        if (moveNoP is BidMove) {
+          expect(moveNoP.bidValue, inInclusiveRange(18, 22));
+        }
+
+        // Stronger claim: strong tier's bid value is at least as high as
+        // medium tier's on the *same* hand-with-partner-bid scenario.
+        final medium = bot(BotDifficulty.medium);
+        final mediumWithP = medium.selectMove(withPartner, movesWithP);
+        if (moveWithP is BidMove && mediumWithP is BidMove) {
+          expect(moveWithP.bidValue,
+              greaterThanOrEqualTo(mediumWithP.bidValue));
+        }
+      });
+    });
+  });
+
   group('ThinkTimeCalculator', () {
     test('calculates reasonable durations', () {
       final duration = ThinkTimeCalculator.calculate(

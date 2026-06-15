@@ -8,6 +8,13 @@ enum BotDifficulty {
   master,
 }
 
+/// Coarse policy bucket each bot picks logic from.
+///
+/// Difficulty is the user-facing knob; bots branch on tier internally so
+/// each level runs a *different* policy rather than the same policy with
+/// more or less random noise on top.
+enum PolicyTier { beginner, medium, strong }
+
 extension BotDifficultyExtension on BotDifficulty {
   /// Probability (0–1) of making the optimal move.
   double get accuracy => switch (this) {
@@ -37,5 +44,17 @@ extension BotDifficultyExtension on BotDifficulty {
         BotDifficulty.hard => 'Hard',
         BotDifficulty.expert => 'Expert',
         BotDifficulty.master => 'Master',
+      };
+
+  /// Policy bucket: which logic branch the bot picks for non-trivial choices.
+  PolicyTier get policyTier => switch (this) {
+        BotDifficulty.beginner ||
+        BotDifficulty.easy =>
+          PolicyTier.beginner,
+        BotDifficulty.medium => PolicyTier.medium,
+        BotDifficulty.hard ||
+        BotDifficulty.expert ||
+        BotDifficulty.master =>
+          PolicyTier.strong,
       };
 }

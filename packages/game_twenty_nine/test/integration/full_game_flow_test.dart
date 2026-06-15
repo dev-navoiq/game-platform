@@ -21,11 +21,12 @@ void main() {
       state = rules.createInitialState(playerIds: playerIds, dealerIndex: 0);
     });
 
-    test('game starts in bidding phase with 8 cards each', () {
+    test('game starts in bidding phase with 4 cards each, 16 pending', () {
       expect(state.phase, GamePhase.bidding);
       for (final id in playerIds) {
-        expect(state.hands[id]?.size, 8);
+        expect(state.hands[id]?.size, 4);
       }
+      expect(state.pendingDeck.length, 16);
     });
 
     test('full bidding round leads to trump selection', () {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../../core/routing/routes.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_button.dart';
@@ -94,11 +96,16 @@ class GameActions extends ConsumerWidget {
     // ~300-600ms on a slow connection. The server is idempotent (a second
     // call returns `already_left=true`), so a network failure here doesn't
     // wedge the room — but the table animation can lag if the user pops
-    // before substitution lands. Trading that for a snappier pop because
-    // the table animation isn't the user-perceived outcome — the home
-    // screen showing up is.
+    // before nav lands. Trading that for a snappier pop because the table
+    // animation isn't the user-perceived outcome — the home screen showing
+    // up is.
     _dispatchLeave(ref, reason: 'forfeited');
-    onLeave?.call();
+    if (!context.mounted) return;
+    // Forfeit routes to home, not Navigator.pop. Pop would land on whatever
+    // is below (lobby for that game, or the create-room screen) — which the
+    // user just abandoned and would have to back out of. `context.go` wipes
+    // the route stack so the user is back at a clean starting point.
+    context.go(AppRoutes.home);
   }
 
   /// Fire-and-forget the leave-room edge function. Logs but does not surface
@@ -119,4 +126,63 @@ class GameActions extends ConsumerWidget {
       print('[GameActions] leaveRoom failed: $error');
     });
   }
+}
+
+/// Reusable forfeit/leave handler so the HUD icon (top-right) can trigger
+/// the same flow as the legacy bottom GameActions row. Pops a confirm
+/// dialog (skipped for spectators), dispatches leave-room, and navigates
+/// home so the user doesn't land back on the lobby they just abandoned.
+Future<void> confirmAndForfeitGame(
+  BuildContext context,
+  WidgetRef ref, {
+  required bool isSpectator,
+}) async {
+  void dispatch(String reason) {
+    final roomId = ref.read(currentRoomIdProvider);
+    if (roomId == null) return;
+    final supabase = ref.read(supabaseServiceProvider);
+    supabase.leaveRoom(roomId: roomId, reason: reason).catchError((error) {
+      // ignore: avoid_print
+      print('[confirmAndForfeitGame] leaveRoom failed: $error');
+    });
+  }
+
+  if (isSpectator) {
+    dispatch('left');
+    if (context.mounted) context.go(AppRoutes.home);
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppColors.feltMid,
+      title: Text(
+        'Forfeit Game?',
+        style: GoogleFonts.poppins(color: Colors.white),
+      ),
+      content: Text(
+        'A bot will take over your seat so others can keep playing. '
+        'You can rejoin from the home screen.',
+        style: GoogleFonts.inter(color: Colors.white70),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Stay', style: GoogleFonts.inter(color: Colors.white)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(
+            'Forfeit',
+            style: GoogleFonts.inter(color: AppColors.danger),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  dispatch('forfeited');
+  if (!context.mounted) return;
+  context.go(AppRoutes.home);
 }

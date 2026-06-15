@@ -159,6 +159,28 @@ class RevealTrumpMove extends TwentyNineMove {
       };
 }
 
+/// Announce the "Royal Wedding" (K + Q of trump). Reduces the bid threshold
+/// by 4 if the claimant is on the bidding team (and the bid was ≥ 20);
+/// raises it by 4 if the claimant is a defender. Can only be claimed once
+/// per team per round, after the team has won at least one trick, when the
+/// claimant is about to lead a new trick.
+class ClaimRoyalWeddingMove extends TwentyNineMove {
+  const ClaimRoyalWeddingMove({required super.playerId, super.timestamp});
+
+  @override
+  MoveType get type => MoveType.bid;
+
+  @override
+  List<Object?> get props => [playerId, 'royalWedding', timestamp];
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'claimRoyalWedding',
+        'playerId': playerId,
+        'timestamp': timestamp?.toIso8601String(),
+      };
+}
+
 /// Parse a move from its JSON representation.
 TwentyNineMove parseTwentyNineMove(Map<String, dynamic> json) {
   final type = json['type'] as String;
@@ -194,6 +216,8 @@ TwentyNineMove parseTwentyNineMove(Map<String, dynamic> json) {
       );
     case 'revealTrump':
       return RevealTrumpMove(playerId: playerId, timestamp: timestamp);
+    case 'claimRoyalWedding':
+      return ClaimRoyalWeddingMove(playerId: playerId, timestamp: timestamp);
     default:
       throw ArgumentError('Unknown TwentyNineMove type: $type');
   }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:bot_strategies/bot_strategies.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import 'package:game_twenty_nine/game_twenty_nine.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/di/providers.dart';
+import '../../../core/services/supabase_service.dart';
 import 'game_provider.dart';
 
 /// Info about bots in the current room.
@@ -22,6 +22,11 @@ class BotInfo {
 
 /// Provider that holds the list of bot player IDs for the current room.
 final roomBotsProvider = StateProvider<List<BotInfo>>((ref) => []);
+
+/// Last bot-move rejection the controller couldn't recover from. Watched by
+/// the game screen so the user gets a snackbar instead of an opaque stuck
+/// table. Cleared by the watcher after it surfaces the message.
+final botMoveErrorProvider = StateProvider<String?>((ref) => null);
 
 /// Provider for the bot move controller.
 final botMoveControllerProvider = Provider<BotMoveController>((ref) {
@@ -36,6 +41,15 @@ class BotMoveController {
   Timer? _moveTimer;
   bool _disposed = false;
   StreamSubscription<dynamic>? _roomSubscription;
+  // Provider subscriptions registered via _ref.listen, plus the room id they
+  // captured. The controller is a global Provider (not autoDispose) so the
+  // same instance is reused across game-screen mounts — without cleaning
+  // these up, every navigation stacks one more listener on top, and an
+  // OLD listener (still holding the OLD roomId in its closure) ends up
+  // dispatching the NEW game's bot move to the OLD room. The server then
+  // looks up that OLD room's config.bots — which is empty (post-forfeit
+  // cleanup) — and rejects the move with PLAYER_MISMATCH. The table sits.
+  final List<ProviderSubscription<dynamic>> _providerSubscriptions = [];
 
   // Cache bot instances by player ID.
   final Map<String, Object> _bots = {};
@@ -63,24 +77,36 @@ class BotMoveController {
   BotMoveController(this._ref);
 
   /// Start watching for bot turns. Call once when game screen loads.
+  ///
+  /// Safe to call multiple times: any prior listeners / subscriptions are
+  /// closed before new ones register so we never end up with two listeners
+  /// holding different roomIds in their closures (which previously caused
+  /// the new game's bot move to be dispatched to the old, abandoned room
+  /// → PLAYER_MISMATCH).
   void startWatching({required String roomId}) {
-    _ref.listen<GameState?>(gameStateProvider, (prev, next) {
-      if (_disposed || next == null) return;
-      _onStateChanged(next, roomId);
-    });
+    _closeSubscriptions();
+
+    _providerSubscriptions.add(
+      _ref.listen<GameState?>(gameStateProvider, (prev, next) {
+        if (_disposed || next == null) return;
+        _onStateChanged(next, roomId);
+      }),
+    );
     // Race fix: the room-status realtime subscription can navigate to the
     // game screen BEFORE the host's _startGame finishes populating
     // roomBotsProvider. Without this listener, the controller processes the
     // initial state with an empty bots list, silently bails, and never
     // rechecks — leaving the first bot's turn permanently stuck. Re-run
     // _onStateChanged whenever the bot list transitions to non-empty.
-    _ref.listen<List<BotInfo>>(roomBotsProvider, (prev, next) {
-      if (_disposed) return;
-      if ((prev?.isEmpty ?? true) && next.isNotEmpty) {
-        final current = _ref.read(gameStateProvider);
-        if (current != null) _onStateChanged(current, roomId);
-      }
-    });
+    _providerSubscriptions.add(
+      _ref.listen<List<BotInfo>>(roomBotsProvider, (prev, next) {
+        if (_disposed) return;
+        if ((prev?.isEmpty ?? true) && next.isNotEmpty) {
+          final current = _ref.read(gameStateProvider);
+          if (current != null) _onStateChanged(current, roomId);
+        }
+      }),
+    );
     // Subscribe to game_rooms so mid-game changes to config.bots (a human
     // forfeits → server appends a substitute bot inheriting their user_id)
     // and host transfers (current_host_id flips) propagate to this client.
@@ -97,6 +123,27 @@ class BotMoveController {
     if (current != null) {
       _onStateChanged(current, roomId);
     }
+  }
+
+  /// Close every active provider listener + realtime subscription. Used by
+  /// startWatching (before re-registering) and dispose (final cleanup).
+  /// Also clears the bot instance cache and any pending move state so a
+  /// fresh game doesn't inherit the previous one's _bots map / timer.
+  void _closeSubscriptions() {
+    for (final sub in _providerSubscriptions) {
+      try {
+        sub.close();
+      } catch (_) {/* already closed */}
+    }
+    _providerSubscriptions.clear();
+    _roomSubscription?.cancel();
+    _roomSubscription = null;
+    _moveTimer?.cancel();
+    _moveTimer = null;
+    _pendingMovePlayerId = null;
+    _bots.clear();
+    _prevTrickSize = 0;
+    _justCompletedTrick = false;
   }
 
   /// Listen for changes to the room's config.bots and current_host_id so
@@ -418,14 +465,60 @@ class BotMoveController {
       await _ref
           .read(gameStateProvider.notifier)
           .sendMove(roomId: roomId, move: movePayload);
+    } on MoveRejection catch (rejection) {
+      print(
+        '[BotMoveController] $gameType bot ${botInfo.id.substring(0, 8)} '
+        'rejected: $rejection',
+      );
+      // VERSION_CONFLICT means our state was stale — re-read fresh state
+      // and try once more. Other rejections fall into two buckets:
+      //   • benign races (NOT_YOUR_TURN, WRONG_PHASE) — the table has
+      //     already moved past where we computed the move, the next state
+      //     emission will trigger the right bot, so the user doesn't need
+      //     to see a snackbar that yells about a problem they can't act on.
+      //   • genuine logic errors (FORBIDDEN_BID, BID_TOO_HIGH, MUST_FOLLOW_SUIT,
+      //     PLAYER_MISMATCH) — the bot or config is broken; surface those so
+      //     the user knows the table may not advance.
+      if (rejection.code == 'VERSION_CONFLICT') {
+        await _retryAfterVersionConflict(botInfo, roomId, gameType);
+        return;
+      }
+      const benignRaces = {'NOT_YOUR_TURN', 'WRONG_PHASE'};
+      if (benignRaces.contains(rejection.code)) {
+        return;
+      }
+      // Surface to UI so the user sees the failure instead of an opaque
+      // stuck table. The game-screen listener clears this after showing.
+      _ref.read(botMoveErrorProvider.notifier).state =
+          'Bot move rejected (${rejection.code}). The table may not advance.';
     } catch (error) {
       print(
         '[BotMoveController] $gameType bot ${botInfo.id.substring(0, 8)} '
-        'sendMove rejected: $error',
+        'sendMove threw non-rejection: $error',
       );
-      // Future enhancement: typed MoveRejection + retry on VERSION_CONFLICT
-      // with fresh state. See prompts/2026-06-10-night-memo.md.
+      _ref.read(botMoveErrorProvider.notifier).state =
+          'Bot move failed to send. Check connection.';
     }
+  }
+
+  /// Re-read the freshest game state and re-schedule the bot turn so it
+  /// computes a move against the up-to-date version. Used only for
+  /// VERSION_CONFLICT — other rejection codes mean the move was wrong on
+  /// the merits and a retry won't change the outcome.
+  Future<void> _retryAfterVersionConflict(
+    BotInfo botInfo,
+    String roomId,
+    String gameType,
+  ) async {
+    if (_disposed) return;
+    final fresh = _ref.read(gameStateProvider);
+    if (fresh == null || fresh.currentPlayerId != botInfo.id) {
+      // Turn moved past this bot during the round-trip — nothing to retry.
+      return;
+    }
+    print('[BotMoveController] $gameType bot ${botInfo.id.substring(0, 8)} '
+        'retrying after VERSION_CONFLICT');
+    await _playBotMove(fresh, botInfo, roomId);
   }
 
   /// Convert a Dart [BridgeMove] to the snake_case JSON payload the edge
@@ -521,6 +614,10 @@ class BotMoveController {
           'type': 'redouble',
           'player_id': move.playerId,
         },
+      ClaimRoyalWeddingMove() => {
+          'type': 'claimRoyalWedding',
+          'player_id': move.playerId,
+        },
     };
   }
 
@@ -532,8 +629,6 @@ class BotMoveController {
 
   void dispose() {
     _disposed = true;
-    _moveTimer?.cancel();
-    _roomSubscription?.cancel();
-    _roomSubscription = null;
+    _closeSubscriptions();
   }
 }

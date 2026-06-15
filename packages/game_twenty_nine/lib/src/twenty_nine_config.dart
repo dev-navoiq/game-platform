@@ -13,6 +13,15 @@ class TwentyNineConfig {
   /// Classic 29 variants treat bids of 20 or more as naturally doubled.
   static const int highBidThreshold = 20;
 
+  /// Amount the round threshold shifts when Royal Wedding (K+Q of trump) is
+  /// announced. Subtracted for the bidder team, added for defenders.
+  static const int royalWeddingAdjustment = 4;
+
+  /// First team to reach this many "red" game-points wins the session.
+  /// Mirror in [TwentyNineConfig.scorecardMax]: black 6 reaching the same
+  /// value means the team has lost.
+  static const int scorecardMax = 6;
+
   /// Base game-point value for a won bid, before any double/redouble multiplier.
   /// Low bids (16–19): 1. High bids (20–28): 2. A won 29-bid: 4.
   static int baseGamePointsForBid(int bid) {

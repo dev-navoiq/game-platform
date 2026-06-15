@@ -155,7 +155,10 @@ function buildTwentyNineState(
 ): Record<string, unknown> {
   const deck = createStandard32Deck();
   shuffleDeck(deck);
-  const hands = dealHands(deck, playerIds, 8);
+  // Classic 29: deal 4 first; hold the remaining 16 in pendingDeck until
+  // trump is declared, then the engine deals the second 4 per seat.
+  const hands = dealHands(deck, playerIds, 4);
+  const pendingDeck = deck.slice(playerIds.length * 4, playerIds.length * 4 + 16);
   const firstBidder = playerIds[(dealerIndex + 1) % 4];
 
   return {
@@ -178,6 +181,11 @@ function buildTwentyNineState(
     turnNumber: 0,
     roundNumber: 1,
     socialMode,
+    pendingDeck,
+    bidAdjustment: 0,
+    royalWeddingClaimedByTeam: [],
+    redPips: { 0: 0, 1: 0 },
+    blackPips: { 0: 0, 1: 0 },
   };
 }
 

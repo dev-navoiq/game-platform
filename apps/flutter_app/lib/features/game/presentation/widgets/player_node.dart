@@ -7,6 +7,7 @@ import 'package:social_core/social_core.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/animations/gameplay/turn_indicator_animation.dart';
 import '../../../../shared/widgets/floating_chat_bubble.dart';
+import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
 import '../../../social/providers/social_providers.dart';
 import 'bid_pill.dart';
 
@@ -36,6 +37,17 @@ class PlayerNode extends ConsumerWidget {
   final GlobalKey? nodeKey;
   final bool isTrickWinnerPulsing;
 
+  /// Oh Hell only: the player won this trick BUT had already met or
+  /// exceeded their bid, so the extra trick is bad news. When true,
+  /// PlayerNode shows a brief sad shake instead of a celebratory jump,
+  /// and skips the gold pulse ring.
+  final bool isTrickWinnerBusted;
+
+  /// Brief shout-style speech bubble that appears above the avatar. Used
+  /// at game end to render "yay!" for winners and "oh hell" for losers.
+  /// `null` = no bubble.
+  final String? reactionEmote;
+
   /// Between-rounds ready state. `null` = hidden (round in progress).
   /// `true` = ready, `false` = waiting. Bots auto-ready so callers pass
   /// `true` for them.
@@ -62,6 +74,8 @@ class PlayerNode extends ConsumerWidget {
     this.playerId,
     this.nodeKey,
     this.isTrickWinnerPulsing = false,
+    this.isTrickWinnerBusted = false,
+    this.reactionEmote,
     this.isReady,
   });
 
@@ -97,8 +111,17 @@ class PlayerNode extends ConsumerWidget {
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Chat bubble above
-        if (showBubble)
+        // Game-end reaction bubble: rendered as a small accent pill above
+        // everything else so winners shouting "yay!" and losers wailing
+        // "oh hell" are unmistakable. Takes precedence over chat bubble.
+        if (reactionEmote != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _ReactionBubble(text: reactionEmote!),
+          ),
+
+        // Chat bubble above (hidden when reactionEmote is shown).
+        if (showBubble && reactionEmote == null)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: FloatingChatBubble(
@@ -156,12 +179,21 @@ class PlayerNode extends ConsumerWidget {
       ],
     );
 
-    // Trick winner jump — single bounce, fires once when
-    // [isTrickWinnerPulsing] toggles to true. The pulse ring keeps glowing
-    // around the avatar; this widget bounces the whole node up + down.
-    final celebrated = isTrickWinnerPulsing
-        ? _TrickWinnerJump(child: content)
-        : content;
+    // Trick-end reaction: celebrate (jump) when the player won and is
+    // still on-track, or regret (sad shake + droop) when they won the
+    // trick but had already met/exceeded their bid (Oh Hell). The pulse
+    // ring is skipped in the busted case — gold + glow read as celebration.
+    final Widget celebrated;
+    if (isTrickWinnerBusted) {
+      celebrated = LoserSadAnimation(
+        key: ValueKey('trick-busted-${playerId ?? name}'),
+        child: content,
+      );
+    } else if (isTrickWinnerPulsing) {
+      celebrated = _TrickWinnerJump(child: content);
+    } else {
+      celebrated = content;
+    }
 
     if (nodeKey != null) {
       return KeyedSubtree(key: nodeKey!, child: celebrated);
@@ -462,6 +494,41 @@ class _TrickWinnerJumpState extends State<_TrickWinnerJump>
         );
       },
       child: widget.child,
+    );
+  }
+}
+
+/// Glass-pill shout used at game end (`yay!`, `oh hell`). Visible-on-felt
+/// styling — accent gold body, dark text, soft glow.
+class _ReactionBubble extends StatelessWidget {
+  final String text;
+
+  const _ReactionBubble({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.accent,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.accent.withOpacity(0.45),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.poppins(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          letterSpacing: 0.4,
+        ),
+      ),
     );
   }
 }

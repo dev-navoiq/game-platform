@@ -26,6 +26,7 @@ import '../widgets/oh_hell_round_end_overlay.dart';
 import '../widgets/game_table.dart';
 import '../widgets/player_node.dart';
 import '../widgets/round_end_celebration_layer.dart';
+import '../widgets/between_rounds_ready_icon.dart';
 import '../widgets/round_end_ribbon.dart';
 import '../widgets/score_display.dart';
 import '../widgets/seat_layout.dart';
@@ -191,25 +192,32 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 
   /// Oh Hell: per-round winner is the single player with the highest
-  /// round-points score for the just-ended round. Returns an empty set
-  /// for ties.
+  /// At GAME end (state.phase == gameEnd) — players with the highest total
+  /// score win the game. They get the jump + "yay!" shout; everyone else
+  /// gets the sad shake + "oh hell" shout. Empty set for empty score map.
+  Set<String> _ohHellGameWinners(OhHellState state) {
+    if (state.scores.isEmpty) return const {};
+    final maxScore = state.scores.values
+        .fold<int>(-1 << 31, (a, b) => a > b ? a : b);
+    return {
+      for (final e in state.scores.entries)
+        if (e.value == maxScore) e.key,
+    };
+  }
+
+  /// Players who made their bid exactly this round. They get the jump
+  /// animation at round end; everyone else (overshot or undershot) gets
+  /// the sad shake. Multiple winners are valid — Oh Hell awards points to
+  /// every player who matched their bid.
   Set<String> _ohHellWinners(OhHellState state) {
-    if (state.roundHistory.isEmpty) return const {};
-    final last = state.roundHistory.last;
-    if (last.isEmpty) return const {};
-    int? best;
     final winners = <String>{};
-    for (final entry in last.entries) {
-      if (best == null || entry.value > best) {
-        best = entry.value;
-        winners
-          ..clear()
-          ..add(entry.key);
-      } else if (entry.value == best) {
-        winners.add(entry.key);
+    for (final pid in state.playerOrder) {
+      final bid = state.bids[pid];
+      final won = state.tricksWon[pid] ?? 0;
+      if (bid != null && bid == won) {
+        winners.add(pid);
       }
     }
-    if (winners.length > 1) return const {};
     return winners;
   }
 
@@ -382,9 +390,10 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
         _heldWinnerName = null;
       });
     });
-    // Celebrate AFTER collect finishes (2200ms hold + ~950ms collect).
+    // Celebrate AFTER the collect finishes with a small visual breath:
+    // 2200ms hold + ~950ms collect + 350ms beat = 3500ms.
     _celebrationStartTimer = Timer(
-      const Duration(milliseconds: 3150),
+      const Duration(milliseconds: 3500),
       () {
         if (!mounted) return;
         setState(() => _celebrationWinnerId = winnerId);
@@ -486,8 +495,15 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
     final isRoundEnd = state.phase == GamePhase.roundEnd ||
         state.phase == GamePhase.gameEnd;
-    final winnerPlayerIds =
-        isRoundEnd ? _ohHellWinners(state) : const <String>{};
+    // At game end the winner is the highest cumulative scorer (ties OK).
+    // At round end it's anyone who made their bid exactly. Without this
+    // split, the game-end celebration was based on the bid match of the
+    // final round, which has nothing to do with who actually won.
+    final winnerPlayerIds = !isRoundEnd
+        ? const <String>{}
+        : (state.phase == GamePhase.gameEnd
+            ? _ohHellGameWinners(state)
+            : _ohHellWinners(state));
     final showPulse = state.phase == GamePhase.bidding &&
         state.currentPlayerId == localPlayerId;
 
@@ -519,6 +535,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                   cardsDealt: state.cardsThisRound,
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  onScoreboardTap: () =>
+                      _openOhHellScoreboard(context, state, ref),
+                  onForfeitTap: () => confirmAndForfeitGame(
+                    context,
+                    ref,
+                    isSpectator: isSpectator,
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -572,19 +595,45 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                           roomId: roomId,
                           playerId: playerId,
                           nodeKey: seatKey,
-                          isTrickWinnerPulsing:
-                              _celebrationWinnerId == playerId,
+                          // Internal pulse/jump/sad ONLY mid-trick. At
+                          // round end the outer wrapper (yay-cheer or
+                          // sad) takes over so we don't double-animate.
+                          // Both fire on the delayed _celebrationWinnerId
+                          // timer (3150ms after trick = after the cards
+                          // have swooped to the winner).
+                          isTrickWinnerPulsing: !isRoundEnd &&
+                              _celebrationWinnerId == playerId &&
+                              (state.tricksWon[playerId] ?? 0) <=
+                                  (state.bids[playerId] ?? 0),
+                          isTrickWinnerBusted: !isRoundEnd &&
+                              _celebrationWinnerId == playerId &&
+                              (state.tricksWon[playerId] ?? 0) >
+                                  (state.bids[playerId] ?? 0),
+                          // Speech bubble: at round end → final verdict.
+                          // Mid-game → only "OH HELL" when a bust just
+                          // happened, so the regret is unmistakable. No
+                          // mid-game YAY pill (a single trick win isn't
+                          // worth the shout).
+                          reactionEmote: isRoundEnd
+                              ? (winnerPlayerIds.contains(playerId)
+                                  ? 'YAY!'
+                                  : 'OH HELL')
+                              : (_celebrationWinnerId == playerId &&
+                                      (state.tricksWon[playerId] ?? 0) >
+                                          (state.bids[playerId] ?? 0)
+                                  ? 'OH HELL'
+                                  : null),
                           isReady: isRoundEnd
                               ? readySet.contains(playerId)
                               : null,
                         );
                         final wrapped = isRoundEnd
                             ? (winnerPlayerIds.contains(playerId)
-                                ? WinnerJumpAnimation(
+                                ? _RoundEndYayAnimation(
                                     key: ValueKey('winner-$playerId-${state.roundNumber}'),
                                     child: node,
                                   )
-                                : LoserSadAnimation(
+                                : _RoundEndOhHellSmoke(
                                     key: ValueKey('loser-$playerId-${state.roundNumber}'),
                                     child: node,
                                   ))
@@ -685,18 +734,11 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                 ),
                 const SizedBox(height: 4),
 
-                // Local player bid pill — same widget as the seat pills so
-                // the player always knows what they bid and how they're
-                // tracking against it.
-                if (!isSpectator)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: BidPill(
-                      won: state.tricksWon[localPlayerId] ?? 0,
-                      bid: state.bids[localPlayerId] ?? 0,
-                      hasBid: state.bids.containsKey(localPlayerId),
-                    ),
-                  ),
+                // Local player avatar — sits centred above the hand, with
+                // the same jump/sad + YAY/OH HELL reaction treatment as
+                // opponents. Replaces the standalone BidPill (which lives
+                // inside PlayerNode now).
+                if (!isSpectator) _buildLocalPlayerNode(state, winnerPlayerIds, readySet),
 
                 // Player hand
                 if (!isSpectator)
@@ -728,51 +770,112 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                     ),
                   ),
 
-                // Actions
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GameActions(
-                    isSpectator: isSpectator,
-                    onLeave: () => Navigator.of(context).pop(),
-                  ),
-                ),
+                // Bottom GameActions row removed — forfeit icon is on the
+                // HUD now, freeing the area below the hand for the local
+                // player's avatar + reaction.
               ],
             ),
           ),
         ),
         ),
 
-        // Round-end / game-end ribbon (non-blocking). The full scoreboard
-        // opens in a glass bottom-sheet on tap. When the room is bot-only
-        // (no human players left) the ribbon pauses with a waiting message
-        // and omits the ready coordination UI entirely.
-        if (isRoundEnd)
-          Align(
-            alignment: Alignment.topCenter,
-            child: isPaused
-                ? RoundEndRibbon(
-                    message:
-                        '${_ohHellRibbonMessage(state, winnerPlayerIds, members)} • Waiting for a player to join...',
-                    onShowScoreboard: () =>
-                        _openOhHellScoreboard(context, state, ref),
-                  )
-                : RoundEndRibbon(
-                    message: _ohHellRibbonMessage(state, winnerPlayerIds, members),
-                    onShowScoreboard: () =>
-                        _openOhHellScoreboard(context, state, ref),
-                    countdownSeconds: remainingSeconds,
-                    isLocalReady: isLocalReady,
-                    onReadyTap: isLocalReady
-                        ? null
-                        : () {
-                            ref
-                                .read(readyBroadcastControllerProvider.notifier)
-                                .markReady(localPlayerId);
-                            _maybeFireNextRound();
-                          },
-                  ),
+        // RoundEndRibbon removed entirely — the scoreboard is on the HUD
+        // icon and the ready toggle is on the bottom-right icon.
+
+        // Compact ready icon above the hand — tap to ready up; flips to a
+        // green check once the broadcast lands. Bot-only rooms (isPaused)
+        // skip this because no human can ready.
+        if (isRoundEnd && !isPaused && !isSpectator)
+          Positioned(
+            right: 16,
+            bottom: 168,
+            child: BetweenRoundsReadyIcon(
+              secondsLeft: remainingSeconds,
+              isReady: isLocalReady,
+              onTap: () {
+                ref
+                    .read(readyBroadcastControllerProvider.notifier)
+                    .markReady(localPlayerId);
+                _maybeFireNextRound();
+              },
+            ),
           ),
+
+        // Local-player avatar is now rendered inline in the Column above
+        // the CardHand (see _buildLocalPlayerNode).
       ],
+    );
+  }
+
+  /// Builds the inline local-player avatar that sits centred between the
+  /// EmojiBar and the CardHand. Mirrors the seat-loop PlayerNode wiring so
+  /// the user sees the same reactions opponents do.
+  Widget _buildLocalPlayerNode(
+    OhHellState state,
+    Set<String> winnerPlayerIds,
+    Set<String> readySet,
+  ) {
+    final localPlayerId = widget.localPlayerId;
+    final isRoundEnd = state.phase == GamePhase.roundEnd ||
+        state.phase == GamePhase.gameEnd;
+    final members = ref.read(roomMembersProvider);
+    final playerEmojis = PlayerAvatar.emojiMap(state.playerOrder);
+    final displayName = PlayerAvatar.nameFor(
+      playerId: localPlayerId,
+      localPlayerId: localPlayerId,
+      seatIndex: state.playerOrder.indexOf(localPlayerId),
+      displayName: members[localPlayerId]?.displayName,
+    );
+    final node = PlayerNode(
+      name: displayName,
+      emoji: playerEmojis[localPlayerId] ?? '🐯',
+      won: state.tricksWon[localPlayerId] ?? 0,
+      bid: state.bids[localPlayerId] ?? 0,
+      isActive: state.currentPlayerId == localPlayerId,
+      hasPlayed: state.currentTrick
+          .any((tc) => tc.playerId == localPlayerId),
+      isDealer:
+          state.playerOrder.indexOf(localPlayerId) == state.dealerIndex,
+      isSmall: true,
+      socialMode: state.socialMode,
+      showBidPill: true,
+      hasBid: state.bids.containsKey(localPlayerId),
+      // Internal pulse/jump/sad ONLY mid-trick — fires on
+      // _celebrationWinnerId (3150ms after trick complete, i.e. after
+      // the cards have swooped to the winner).
+      isTrickWinnerPulsing: !isRoundEnd &&
+          _celebrationWinnerId == localPlayerId &&
+          (state.tricksWon[localPlayerId] ?? 0) <=
+              (state.bids[localPlayerId] ?? 0),
+      isTrickWinnerBusted: !isRoundEnd &&
+          _celebrationWinnerId == localPlayerId &&
+          (state.tricksWon[localPlayerId] ?? 0) >
+              (state.bids[localPlayerId] ?? 0),
+      reactionEmote: isRoundEnd
+          ? (winnerPlayerIds.contains(localPlayerId)
+              ? 'YAY!'
+              : 'OH HELL')
+          : (_celebrationWinnerId == localPlayerId &&
+                  (state.tricksWon[localPlayerId] ?? 0) >
+                      (state.bids[localPlayerId] ?? 0)
+              ? 'OH HELL'
+              : null),
+      isReady: isRoundEnd ? readySet.contains(localPlayerId) : null,
+    );
+    final wrapped = isRoundEnd
+        ? (winnerPlayerIds.contains(localPlayerId)
+            ? _RoundEndYayAnimation(
+                key: ValueKey('local-winner-${state.roundNumber}'),
+                child: node,
+              )
+            : _RoundEndOhHellSmoke(
+                key: ValueKey('local-loser-${state.roundNumber}'),
+                child: node,
+              ))
+        : node;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Center(child: wrapped),
     );
   }
 
@@ -805,6 +908,472 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
         'player_id': widget.localPlayerId,
         'bid_value': bid,
       },
+    );
+  }
+}
+
+/// Game/round-end YAY celebration — the avatar bounces 10 times and emits
+/// a floating "yay!" text on each jump. Replaces [WinnerJumpAnimation] for
+/// Oh Hell winners because the user asked for a more emphatic celebration
+/// than the standard 3-bounce.
+/// Round-end OH HELL smoke effect for losers. Wraps [LoserSadAnimation]
+/// (existing sad shake + droop + tear) AND emits a row of 🔥 emojis that
+/// rise + fade like smoke, paired with a smoky "OH HELL" text that
+/// dissolves upward. Replaces the plain LoserSadAnimation at round end.
+class _RoundEndOhHellSmoke extends StatefulWidget {
+  final Widget child;
+
+  const _RoundEndOhHellSmoke({super.key, required this.child});
+
+  @override
+  State<_RoundEndOhHellSmoke> createState() => _RoundEndOhHellSmokeState();
+}
+
+class _RoundEndOhHellSmokeState extends State<_RoundEndOhHellSmoke> {
+  static const int _fireCount = 6;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.topCenter,
+      children: [
+        LoserSadAnimation(
+          showTear: true,
+          child: widget.child,
+        ),
+        // Fire emojis rising from around the avatar, staggered.
+        for (var i = 0; i < _fireCount; i++)
+          _FirePuff(
+            key: ValueKey('fire-$i'),
+            startDelay: Duration(milliseconds: i * 220),
+            offsetX: ((i - _fireCount / 2) * 14) + ((i.isOdd ? -6 : 6)),
+          ),
+        // Smoky OH HELL text that drifts up + fades.
+        _SmokyText(key: const ValueKey('smoke-text')),
+      ],
+    );
+  }
+}
+
+/// One 🔥 emoji rising upward and fading (smoke-like).
+class _FirePuff extends StatefulWidget {
+  final Duration startDelay;
+  final double offsetX;
+
+  const _FirePuff({super.key, required this.startDelay, required this.offsetX});
+
+  @override
+  State<_FirePuff> createState() => _FirePuffState();
+}
+
+class _FirePuffState extends State<_FirePuff>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _translateY;
+  late final Animation<double> _scale;
+  Timer? _startTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.0),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 2,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.0),
+        weight: 5,
+      ),
+    ]).animate(_controller);
+    _translateY = Tween<double>(begin: 0, end: -80).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _scale = Tween<double>(begin: 0.6, end: 1.3).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+    _startTimer = Timer(widget.startDelay, () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _startTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: -6,
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return Opacity(
+              opacity: _opacity.value,
+              child: Transform.translate(
+                offset: Offset(widget.offsetX, _translateY.value),
+                child: Transform.scale(
+                  scale: _scale.value,
+                  child: const Text(
+                    '🔥',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Smoky "OH HELL" text that drifts upward and fades. Light-gray with
+/// blurred shadow for the smoke read.
+class _SmokyText extends StatefulWidget {
+  const _SmokyText({super.key});
+
+  @override
+  State<_SmokyText> createState() => _SmokyTextState();
+}
+
+class _SmokyTextState extends State<_SmokyText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _translateY;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1700),
+    );
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 0.95),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(0.95),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.95, end: 0.0),
+        weight: 4,
+      ),
+    ]).animate(_controller);
+    _translateY = Tween<double>(begin: -4, end: -80).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: -36,
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return Opacity(
+              opacity: _opacity.value,
+              child: Transform.translate(
+                offset: Offset(0, _translateY.value),
+                child: Text(
+                  'OH HELL',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white.withOpacity(0.75),
+                    letterSpacing: 0.6,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.45),
+                        blurRadius: 12,
+                        offset: const Offset(0, 1),
+                      ),
+                      Shadow(
+                        color: Colors.white.withOpacity(0.35),
+                        blurRadius: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundEndYayAnimation extends StatefulWidget {
+  final Widget child;
+
+  const _RoundEndYayAnimation({super.key, required this.child});
+
+  @override
+  State<_RoundEndYayAnimation> createState() =>
+      _RoundEndYayAnimationState();
+}
+
+class _RoundEndYayAnimationState extends State<_RoundEndYayAnimation>
+    with SingleTickerProviderStateMixin {
+  static const int _jumpCount = 10;
+  static const Duration _bounceDuration = Duration(milliseconds: 500);
+
+  late final AnimationController _controller;
+  late final Animation<double> _translateY;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _bounceDuration * _jumpCount,
+    );
+    final items = <TweenSequenceItem<double>>[];
+    for (var i = 0; i < _jumpCount; i++) {
+      items.add(
+        TweenSequenceItem(
+          tween: Tween(begin: 0.0, end: -22.0)
+              .chain(CurveTween(curve: Curves.easeOutCubic)),
+          weight: 1,
+        ),
+      );
+      items.add(
+        TweenSequenceItem(
+          tween: Tween(begin: -22.0, end: 0.0)
+              .chain(CurveTween(curve: Curves.bounceOut)),
+          weight: 1.5,
+        ),
+      );
+    }
+    _translateY = TweenSequence<double>(items).animate(_controller);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedBuilder(
+          animation: _translateY,
+          builder: (context, child) => Transform.translate(
+            offset: Offset(0, _translateY.value),
+            child: child,
+          ),
+          child: widget.child,
+        ),
+        // One floating "yay!" emission per jump, staggered.
+        for (var i = 0; i < _jumpCount; i++)
+          _FloatingYayText(
+            startDelay: _bounceDuration * i,
+          ),
+      ],
+    );
+  }
+}
+
+/// One staggered "yay!" particle: fades in, rises ~60px, fades out.
+class _FloatingYayText extends StatefulWidget {
+  final Duration startDelay;
+
+  const _FloatingYayText({required this.startDelay});
+
+  @override
+  State<_FloatingYayText> createState() => _FloatingYayTextState();
+}
+
+class _FloatingYayTextState extends State<_FloatingYayText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _translateY;
+  Timer? _startTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.0),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 2,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.0),
+        weight: 4,
+      ),
+    ]).animate(_controller);
+    _translateY = Tween<double>(begin: 0, end: -60).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _startTimer = Timer(widget.startDelay, () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _startTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: -8,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              return Opacity(
+                opacity: _opacity.value,
+                child: Transform.translate(
+                  offset: Offset(0, _translateY.value),
+                  child: Text(
+                    'yay!',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFFC47B2B),
+                      letterSpacing: 0.3,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withOpacity(0.45),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Big celebratory / consolation banner pinned in the mid-screen at game
+/// end. Used because the local seat has no PlayerNode (the player's
+/// avatar lives implicitly on the CardHand at the bottom).
+class _LocalGameEndBanner extends StatefulWidget {
+  final bool isWinner;
+
+  const _LocalGameEndBanner({required this.isWinner});
+
+  @override
+  State<_LocalGameEndBanner> createState() => _LocalGameEndBannerState();
+}
+
+class _LocalGameEndBannerState extends State<_LocalGameEndBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.6, end: 1.0).animate(
+          CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+        ),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+          decoration: BoxDecoration(
+            color: widget.isWinner
+                ? const Color(0xFFC47B2B) // accent gold
+                : Colors.black.withOpacity(0.78),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: widget.isWinner
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: widget.isWinner
+                    ? const Color(0xFFC47B2B).withOpacity(0.45)
+                    : Colors.black.withOpacity(0.4),
+                blurRadius: 28,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+          child: Text(
+            widget.isWinner ? '🎉 YAY! YOU WON 🎉' : '😭 OH HELL 😭',
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
