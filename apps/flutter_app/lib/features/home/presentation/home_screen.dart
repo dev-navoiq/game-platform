@@ -93,6 +93,11 @@ class HomeScreen extends ConsumerWidget {
               onPressed: () => context.push(AppRoutes.history),
             ),
             IconButton(
+              icon: const Icon(Icons.chat_bubble_outline,
+                  color: AppColors.textDark),
+              onPressed: () => context.push(AppRoutes.messages),
+            ),
+            IconButton(
               icon: const Icon(Icons.people_outline, color: AppColors.textDark),
               onPressed: () => context.push(AppRoutes.friends),
             ),
@@ -293,9 +298,9 @@ class _FriendsActivityStrip extends ConsumerWidget {
                 gameType: friend.gameType,
                 statusDetail: friend.statusDetail,
                 roomId: friend.roomId,
-                onAction: () {
-                  // TODO: Navigate to room or send invite
-                },
+                onAction: () => context.push(
+                  AppRoutes.dmThreadPath(friend.friendId),
+                ),
               );
             },
           ),

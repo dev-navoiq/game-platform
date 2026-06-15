@@ -25,3 +25,10 @@ export 'src/friends/friendship.dart';
 // Reactions
 export 'src/reactions/reaction.dart';
 export 'src/reactions/reaction_repository.dart';
+
+// Direct messaging (friend-to-friend DMs + game invites)
+export 'src/messaging/direct_message.dart';
+export 'src/messaging/direct_message_repository.dart';
+
+// Realtime presence
+export 'src/presence/presence_repository.dart';

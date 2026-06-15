@@ -26,6 +26,10 @@ class AppRoutes {
   static const referral = '/referral';
   static const friends = '/friends';
 
+  // Direct messages
+  static const messages = '/messages';
+  static const dmThread = '/messages/:userId';
+
   // Lobby
   static const lobby = '/lobby/:gameType';
   static const joinByCode = '/lobby/:gameType/join';
@@ -49,4 +53,5 @@ class AppRoutes {
   static String replayPath(String roomId) => '/replay/$roomId';
   static String tournamentPath(String tournamentId) =>
       '/tournament/$tournamentId';
+  static String dmThreadPath(String userId) => '/messages/$userId';
 }

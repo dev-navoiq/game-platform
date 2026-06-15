@@ -26,6 +26,9 @@ import '../../features/friends/presentation/friends_screen.dart';
 import '../../features/history/presentation/history_screen.dart';
 import '../../features/history/presentation/replay_screen.dart';
 import '../../features/social/presentation/notification_settings_screen.dart';
+import '../../features/social/presentation/messages_screen.dart';
+import '../../features/social/presentation/dm_thread_screen.dart';
+import '../../features/social/providers/messaging_providers.dart';
 import '../../features/shop/presentation/subscription_screen.dart';
 import '../../features/tournaments/presentation/screens/tournaments_screen.dart';
 import '../../features/tournaments/presentation/screens/tournament_detail_screen.dart';
@@ -190,6 +193,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           tournamentId: state.pathParameters['tournamentId'] ?? '',
         ),
       ),
+
+      // Direct messages
+      GoRoute(
+        path: AppRoutes.messages,
+        builder: (context, state) => const MessagesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.dmThread,
+        builder: (context, state) => DmThreadScreen(
+          otherUserId: state.pathParameters['userId'] ?? '',
+        ),
+      ),
     ],
 
     errorBuilder: (context, state) => _ErrorScreen(error: state.error),
@@ -207,13 +222,18 @@ class _SplashScreen extends StatelessWidget {
   }
 }
 
-class _MainShell extends StatelessWidget {
+class _MainShell extends ConsumerWidget {
   final Widget child;
 
   const _MainShell({required this.child});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Side-effect: starts the Supabase Realtime presence channel for the
+    // signed-in user. Watching it from the shell keeps it alive for the
+    // whole authenticated session and tears it down on sign-out.
+    ref.watch(presenceBootstrapProvider);
+
     return Scaffold(
       backgroundColor: AppColors.feltDark,
       extendBody: true,

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/di/providers.dart';
+import '../../../core/routing/routes.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/friend_activity_card.dart';
 import '../../../shared/widgets/glass_container.dart';
@@ -76,9 +78,9 @@ class _FriendsTab extends ConsumerWidget {
                 gameType: friend.gameType,
                 statusDetail: friend.statusDetail,
                 roomId: friend.roomId,
-                onAction: () {
-                  // TODO: Navigate to room or send invite
-                },
+                onAction: () => context.push(
+                  AppRoutes.dmThreadPath(friend.friendId),
+                ),
               ),
             );
           },
