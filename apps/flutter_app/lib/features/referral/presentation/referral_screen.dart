@@ -8,6 +8,7 @@ import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 
 class ReferralScreen extends ConsumerWidget {
   const ReferralScreen({super.key});
@@ -29,6 +30,10 @@ class ReferralScreen extends ConsumerWidget {
             bottom: 40,
           ),
           children: [
+            const UnderConstructionBanner(
+              message:
+                  'Referrals are under construction — the code above is a placeholder and rewards are not yet tracked.',
+            ),
             // Referral code card
             GlassCard(
               enableGlow: true,

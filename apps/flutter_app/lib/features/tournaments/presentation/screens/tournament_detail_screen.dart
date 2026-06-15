@@ -8,6 +8,7 @@ import '../../../../shared/widgets/felt_background.dart';
 import '../../../../shared/widgets/glass_app_bar.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/glass_container.dart';
+import '../../../../shared/widgets/under_construction_banner.dart';
 import '../../data/tournament_models.dart';
 import '../../providers/tournament_providers.dart';
 import '../widgets/bracket_view.dart';
@@ -86,6 +87,15 @@ class _TournamentDetailScreenState
       children: [
         SizedBox(
             height: MediaQuery.of(context).padding.top + kToolbarHeight + 8),
+
+        // WIP banner — tournament backend isn't running yet.
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: UnderConstructionBanner(
+            message:
+                'Tournaments are under construction — registration, bracket and chat are not yet live.',
+          ),
+        ),
 
         // Tournament info header
         Padding(

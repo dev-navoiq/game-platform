@@ -11,6 +11,7 @@ import '../../../shared/widgets/currency_display.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/skins/skin_selector.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 import 'widgets/gem_pack_card.dart';
 
 class ShopScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,15 @@ class _ShopScreenState extends ConsumerState<ShopScreen>
           children: [
             SizedBox(
                 height: MediaQuery.of(context).padding.top + 56 + 8),
+
+            // WIP banner — purchases are not wired to RevenueCat yet.
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: UnderConstructionBanner(
+                message:
+                    'Shop is under construction — purchases are not wired up yet. Browse only.',
+              ),
+            ),
 
             // Subscription upsell banner
             Padding(

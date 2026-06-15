@@ -8,6 +8,7 @@ import '../../../shared/theme/glass_tokens.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 
 class LeaderboardScreen extends ConsumerStatefulWidget {
   const LeaderboardScreen({super.key});
@@ -43,6 +44,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
             bottom: 100,
           ),
           children: [
+            const UnderConstructionBanner(
+              message:
+                  'Leaderboards are under construction — names and scores below are placeholders.',
+            ),
             // Game filter chips
             SizedBox(
               height: 36,

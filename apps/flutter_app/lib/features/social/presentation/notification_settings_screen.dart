@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/glass_container.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 
 /// Notification preferences with toggles matching the
 /// `notification_preferences` table columns.
@@ -40,6 +41,10 @@ class _NotificationSettingsScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const UnderConstructionBanner(
+            message:
+                'Notification preferences are under construction — toggles below are not yet persisted to your account.',
+          ),
           _buildSection('Game Notifications', [
             _buildToggle('Friend Requests', _friendRequests,
                 (v) => setState(() => _friendRequests = v)),

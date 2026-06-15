@@ -6,6 +6,7 @@ import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/season_pass_progress_bar.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 import 'widgets/reward_node.dart';
 
 class SeasonPassScreen extends ConsumerWidget {
@@ -26,6 +27,10 @@ class SeasonPassScreen extends ConsumerWidget {
             bottom: 40,
           ),
           children: [
+            const UnderConstructionBanner(
+              message:
+                  'Season Pass is under construction — XP, rewards and the Premium purchase below are placeholders.',
+            ),
             // Season info
             const SeasonPassProgressBar(
               currentLevel: 3,

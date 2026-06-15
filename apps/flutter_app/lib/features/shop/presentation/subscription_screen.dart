@@ -7,6 +7,7 @@ import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 
 class SubscriptionScreen extends ConsumerWidget {
   const SubscriptionScreen({super.key});
@@ -27,6 +28,10 @@ class SubscriptionScreen extends ConsumerWidget {
             bottom: 40,
           ),
           children: [
+            const UnderConstructionBanner(
+              message:
+                  'Subscriptions are under construction — the Subscribe and Restore buttons below do not yet contact RevenueCat.',
+            ),
             Text(
               'Unlock the full experience',
               style: TextStyle(

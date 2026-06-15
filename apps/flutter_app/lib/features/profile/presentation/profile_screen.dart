@@ -8,6 +8,7 @@ import '../../../shared/widgets/currency_display.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -35,6 +36,10 @@ class ProfileScreen extends ConsumerWidget {
             bottom: 100,
           ),
           children: [
+            const UnderConstructionBanner(
+              message:
+                  'Profile is under construction — name, level, XP and stats below are placeholders.',
+            ),
             // Avatar + Name card
             GlassCard(
               padding: const EdgeInsets.all(20),

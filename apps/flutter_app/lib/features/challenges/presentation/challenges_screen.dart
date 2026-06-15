@@ -5,6 +5,7 @@ import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/daily_challenge_card.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 
 class ChallengesScreen extends ConsumerWidget {
   const ChallengesScreen({super.key});
@@ -24,6 +25,10 @@ class ChallengesScreen extends ConsumerWidget {
             bottom: 40,
           ),
           children: [
+            const UnderConstructionBanner(
+              message:
+                  'Challenges are under construction — progress and rewards below are placeholders.',
+            ),
             // Countdown header
             Center(
               child: Container(

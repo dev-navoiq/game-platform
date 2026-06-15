@@ -6,6 +6,7 @@ import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/glass_container.dart';
+import '../../../shared/widgets/under_construction_banner.dart';
 import '../providers/history_providers.dart';
 
 /// Replay data provider for a specific room.
@@ -68,6 +69,10 @@ class _ReplayScreenState extends ConsumerState<ReplayScreen> {
               ),
               child: Column(
                 children: [
+                  const UnderConstructionBanner(
+                    message:
+                        'Replay is under construction — playback controls below do not yet render real game state.',
+                  ),
                   // Game info card
                   GlassContainer(
                     borderRadius: 14,
