@@ -30,6 +30,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   List<RoomMember> _members = const [];
   String _socialMode = 'full';
   String? _gameType;
+  // Sourced from the room's max_players column. Drives the seat-slot grid
+  // and the bot-add limit (was hardcoded to 4 → could only add 4 bots even
+  // in a 7-player Oh Hell room).
+  int _maxPlayers = 4;
   bool _isReady = false;
   bool _isStarting = false;
   bool _isAddingBot = false;
@@ -110,6 +114,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         _socialMode = snap.socialMode;
         _roomCode = snap.roomCode;
         _gameType = snap.gameType;
+        _maxPlayers = snap.maxPlayers;
       });
       // Keep the game-side identity lookup current as members come and go
       // (humans joining, bots being added) so seat labels stay correct even
@@ -155,6 +160,35 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       'Join my Gathr room — code: $code',
       subject: 'Join my room',
     );
+  }
+
+  /// Add a bot at the next available seat. Called from the per-seat icons
+  /// on [PlayerSlotWidget] so the user picks a difficulty in one tap — no
+  /// bottom sheet round-trip. Server-side, `add_bot_to_room` always fills
+  /// the next available seat, so we don't need to thread a seat index.
+  Future<void> _addBotWithDifficulty(String difficulty) async {
+    if (_isAddingBot) return;
+    setState(() => _isAddingBot = true);
+    try {
+      final supabase = ref.read(supabaseServiceProvider);
+      await supabase.addBot(
+        roomId: widget.roomId,
+        difficulty: difficulty,
+      );
+      // Realtime membership subscription flips the empty slot into the
+      // new bot's slot within a tick — no snackbar needed.
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not add bot: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAddingBot = false);
+    }
   }
 
   Future<void> _addBot() async {
@@ -448,7 +482,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               const SizedBox(height: 12),
               Expanded(
                 child: ListView.separated(
-                  itemCount: 4,
+                  itemCount: _maxPlayers,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     if (index < _members.length) {
@@ -468,29 +502,28 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                             playerColors[m.seatIndex % playerColors.length],
                       );
                     }
-                    return const PlayerSlotWidget(isEmpty: true);
+                    // Empty seat: host gets per-difficulty add-bot icons;
+                    // non-host sees the dim "waiting" placeholder. We pass
+                    // _isAddingBot so the spinner shows on *every* empty
+                    // slot during the RPC round-trip — the next call lands
+                    // on the right seat naturally via the server's next-
+                    // seat counter, so we don't need per-slot loading.
+                    return PlayerSlotWidget(
+                      isEmpty: true,
+                      onAddBot: _isLocalHost ? _addBotWithDifficulty : null,
+                      isAddingBot: _isAddingBot,
+                    );
                   },
                 ),
               ),
 
-              // Action buttons. Only the host controls bot adding + game start;
-              // non-host players see Ready only and a "Waiting for host" hint.
+              // Action buttons: Ready + Start Game (host) / waiting hint
+              // (joiner). The Add Bot button has moved into each empty
+              // seat slot above, so it isn't repeated down here.
               Padding(
                 padding: const EdgeInsets.only(bottom: 24),
                 child: Column(
                   children: [
-                    if (_isLocalHost) ...[
-                      GlassButton(
-                        label: _isAddingBot ? 'Adding bot…' : 'Add Bot',
-                        onPressed: _isAddingBot ? null : _addBot,
-                        isLoading: _isAddingBot,
-                        variant: GlassButtonVariant.outlined,
-                        size: GlassButtonSize.large,
-                        width: double.infinity,
-                        icon: Icon(Icons.smart_toy, color: AppColors.accent, size: 20),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
                     Row(
                       children: [
                         Expanded(

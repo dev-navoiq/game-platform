@@ -37,6 +37,7 @@ class RoomSnapshot {
   final String socialMode;
   final String status;
   final String gameType;
+  final int maxPlayers;
   final List<RoomMember> members;
 
   const RoomSnapshot({
@@ -44,6 +45,7 @@ class RoomSnapshot {
     required this.socialMode,
     required this.status,
     required this.gameType,
+    required this.maxPlayers,
     required this.members,
   });
 }

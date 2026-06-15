@@ -14,6 +14,7 @@ RoomSnapshot _snapshotWith({required int memberCount, String code = 'ABC123'}) {
     socialMode: 'full',
     status: 'waiting',
     gameType: 'twenty_nine',
+    maxPlayers: 4,
     members: [
       const RoomMember(
         id: 'guest-uid',
