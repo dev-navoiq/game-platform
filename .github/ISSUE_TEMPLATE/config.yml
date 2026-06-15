@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask Claude in chat instead
+    url: https://github.com/dev-navoiq/game-platform/issues/new?title=%5BAsk%5D+&body=%40claude+
+    about: For quick questions, file a blank issue with @claude in the body — no template needed.
