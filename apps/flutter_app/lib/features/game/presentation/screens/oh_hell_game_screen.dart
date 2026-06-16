@@ -59,9 +59,13 @@ class OhHellGameScreen extends ConsumerStatefulWidget {
 
 class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   /// Players who have already had their bust animation played this round.
-  /// Reset whenever a new round begins (detected by roundNumber change).
+  /// Reset when a new round's bidding phase starts (bids empty).
   final Set<String> _bustedAnimated = {};
-  int? _lastRoundNumber;
+
+  /// Cache of bid results captured BEFORE the engine clears bids at round end.
+  /// Maps playerId → true if they made their bid exactly, false otherwise.
+  /// Without this cache, _ohHellWinners() reads empty bids and everyone loses.
+  Map<String, bool> _playerMadeBid = {};
 
   /// One GlobalKey per seat — fed into PlayerNode and TrickZone so opponent
   /// card flights know where each player sits.
@@ -205,13 +209,45 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     };
   }
 
+  /// Caches bid results (made vs missed) BEFORE the engine clears bids at
+  /// round end. Must be called every build while bids are still populated;
+  /// the cache persists into roundEnd phase where bids are already empty.
+  void _cacheBidResults(OhHellState state) {
+    // Snapshot current bid results while bids are still available.
+    if (state.bids.isNotEmpty) {
+      for (final pid in state.playerOrder) {
+        final bid = state.bids[pid];
+        final won = state.tricksWon[pid] ?? 0;
+        if (bid != null) {
+          _playerMadeBid[pid] = (bid == won);
+        }
+      }
+    }
+    // Clear the cache when a new round's bidding starts (bids empty).
+    if (state.phase == GamePhase.bidding && state.bids.isEmpty) {
+      _playerMadeBid.clear();
+    }
+  }
+
   /// Players who made their bid exactly this round. They get the jump
   /// animation at round end; everyone else (overshot or undershot) gets
   /// the sad shake. Multiple winners are valid — Oh Hell awards points to
   /// every player who matched their bid.
+  ///
+  /// Prefers cached results from [_playerMadeBid] when available, falling
+  /// back to live state. This handles the race where bids are cleared
+  /// before roundEnd finishes rendering.
   Set<String> _ohHellWinners(OhHellState state) {
     final winners = <String>{};
     for (final pid in state.playerOrder) {
+      // Prefer cached result if available (covers roundEnd when bids empty).
+      if (_playerMadeBid.containsKey(pid)) {
+        if (_playerMadeBid[pid] == true) {
+          winners.add(pid);
+        }
+        continue;
+      }
+      // Fallback to live state during active play.
       final bid = state.bids[pid];
       final won = state.tricksWon[pid] ?? 0;
       if (bid != null && bid == won) {
@@ -407,9 +443,10 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 
   void _checkForBust(OhHellState state) {
-    // Reset per-round memory on new round.
-    if (_lastRoundNumber != state.roundNumber) {
-      _lastRoundNumber = state.roundNumber;
+    // Reset per-round memory when a NEW round's bidding phase starts.
+    // The old roundNumber-based clear happened too early (before roundEnd
+    // finished rendering), causing the cache to be wiped while still needed.
+    if (state.phase == GamePhase.bidding && state.bids.isEmpty) {
       _bustedAnimated.clear();
     }
 
@@ -476,6 +513,9 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     // falls back to "Bot N" and humans appear to be bots.
     final members = ref.watch(roomMembersProvider);
 
+    // Cache bid results BEFORE they get cleared — _ohHellWinners() needs this
+    // at roundEnd when the engine has already wiped state.bids.
+    _cacheBidResults(state);
     _checkForBust(state);
     _checkForTrickEnd(state, members);
     _scheduleDealReveal(state.roundNumber, state.cardsThisRound);
