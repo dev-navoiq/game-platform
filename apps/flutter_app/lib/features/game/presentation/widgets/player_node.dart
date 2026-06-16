@@ -144,6 +144,9 @@ class PlayerNode extends ConsumerWidget {
               // for bots at a glance. Humans get no badge — the absence is
               // the signal.
               if (isBot) _buildBotBadge(),
+              // Ready badge at round end — shown on avatar so BidPill can
+              // remain visible with the round's bid results.
+              if (isReady != null) _buildReadyBadge(),
             ],
           ),
         ),
@@ -169,13 +172,10 @@ class PlayerNode extends ConsumerWidget {
 
         const SizedBox(height: 4),
 
-        // Bid pill (suppressed between rounds — the ready chip takes its slot).
-        if (isReady == null && showBidPill)
+        // Bid pill — always shown when enabled so round results remain
+        // visible at round end. Ready state is now shown as avatar badge.
+        if (showBidPill)
           BidPill(won: won, bid: bid, hasBid: hasBid),
-
-        // Ready chip — shown only between rounds. Replaces the bid pill
-        // visually so the player area stays vertically compact.
-        if (isReady != null) _buildReadyChip(),
       ],
     );
 
@@ -201,31 +201,42 @@ class PlayerNode extends ConsumerWidget {
     return celebrated;
   }
 
-  Widget _buildReadyChip() {
+  /// Ready badge overlaid on avatar at round end. Green checkmark for ready,
+  /// amber hourglass for waiting. Positioned top-right to avoid collision
+  /// with dealer badge (bottom-right) and bot badge (top-left).
+  Widget _buildReadyBadge() {
     final ready = isReady ?? false;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: ready
-            ? AppColors.success.withOpacity(0.18)
-            : Colors.white.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: ready
-              ? AppColors.success.withOpacity(0.55)
-              : Colors.white.withOpacity(0.25),
-          width: 1.0,
-        ),
-      ),
-      child: Text(
-        ready ? 'READY ✓' : 'WAITING',
-        style: GoogleFonts.poppins(
-          fontSize: 8.5,
-          fontWeight: FontWeight.w800,
+    return Positioned(
+      top: -4,
+      right: -4,
+      child: Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
           color: ready
               ? AppColors.success
-              : Colors.white.withOpacity(0.7),
-          letterSpacing: 0.5,
+              : const Color(0xFFFF9800), // Amber for waiting
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withOpacity(0.9),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: ready
+                  ? AppColors.success.withOpacity(0.5)
+                  : const Color(0xFFFF9800).withOpacity(0.5),
+              blurRadius: 6,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Center(
+          child: Icon(
+            ready ? Icons.check : Icons.hourglass_empty,
+            size: 11,
+            color: Colors.white,
+          ),
         ),
       ),
     );
