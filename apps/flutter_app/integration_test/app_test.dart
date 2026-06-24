@@ -3,6 +3,12 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_app/main.dart' as app;
 
 /// Smoke test — verifies the app launches without crashing on a real device.
+///
+/// This file is also the canonical target of the recorded UI test pipeline
+/// (`.github/workflows/ui-tests-mac.yml`): when a PR carries the
+/// `needs-ui-tests` label, the self-hosted macOS runner boots a dedicated
+/// CI-iPhone-17 simulator, runs this suite, and uploads a screen recording
+/// for human review.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
