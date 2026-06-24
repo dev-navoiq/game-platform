@@ -1,0 +1,75 @@
+name: UI Tests (macOS, recorded)
+
+# Runs the Flutter integration_test suite on a dedicated iOS simulator on the
+# self-hosted macOS runner, records the simulator screen for human review,
+# uploads the .mov as a PR artifact, and posts a sticky comment with a link.
+#
+# Triggered only when a PR carries the `needs-ui-tests` label. Author adds the
+# label when they want a video; runs again on each new push as long as the
+# label is still there.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  # New pushes to the same PR cancel in-progress UI runs — a single mac can
+  # only run one at a time, and stale screen recordings aren't worth keeping.
+  group: ui-tests-mac-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ui-tests:
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'needs-ui-tests') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    # Matches the labels configured during runner registration. `ui-runner`
+    # pins this job to the dedicated macOS host; if no runner with these
+    # labels is online the job stays queued instead of falling back to
+    # GitHub-hosted (which can't drive an iOS simulator).
+    runs-on: [self-hosted, macOS, ui-runner]
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          /opt/homebrew/bin/fvm --version
+          /opt/homebrew/bin/fvm flutter --version | head -3
+
+      - name: Run UI tests with screen recording
+        env:
+          # Matches the dedicated simulator created at runner setup time.
+          SIM_NAME: CI-iPhone-17
+          FLUTTER: /opt/homebrew/bin/fvm flutter
+          OUT_DIR: ${{ github.workspace }}/ui-run-artifacts
+        run: |
+          bash ./scripts/ci/run-ui-tests-mac.sh
+
+      - name: Upload run artifacts (video + log)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-run-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: ui-run-artifacts/
+          retention-days: 14
+
+      - name: Post sticky PR comment with artifact link
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ui-tests-mac
+          message: |
+            ### 📹 UI test run (macOS)
+
+            - Status: **${{ job.status }}**
+            - Workflow run: [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - Artifact: `ui-run-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}` (link in the "Artifacts" section of the workflow run)
+            - Contents: `run.mov` (screen recording), `test.log` (raw output), `summary.txt`
+
+            Re-trigger by removing and re-adding the `needs-ui-tests` label, or pushing a new commit.
