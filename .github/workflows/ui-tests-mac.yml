@@ -30,6 +30,13 @@ jobs:
     runs-on: [self-hosted, macOS, ui-runner]
     timeout-minutes: 30
 
+    # Needed for the sticky comment step. Default GITHUB_TOKEN permissions
+    # at the repo level can be `contents: read` only, which 403s on PR
+    # comment writes ("Resource not accessible by integration").
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,6 +48,18 @@ jobs:
           xcodebuild -version
           /opt/homebrew/bin/fvm --version
           /opt/homebrew/bin/fvm flutter --version | head -3
+
+      - name: Refresh CocoaPods (fresh clone has no ios/Pods cache)
+        # `--repo-update` fetches the latest spec repo before resolving, so
+        # plugin pubspec bumps that require newer pod versions (e.g.
+        # flutter_webrtc 1.4.0 → WebRTC-SDK 144.x) succeed instead of
+        # conflicting with a stale committed Podfile.lock. Cheap on warm
+        # runs (no-op if lock satisfies plugins), ~3 min cold.
+        working-directory: apps/flutter_app
+        run: |
+          /opt/homebrew/bin/fvm flutter pub get
+          cd ios
+          pod install --repo-update
 
       - name: Run UI tests with screen recording
         env:
