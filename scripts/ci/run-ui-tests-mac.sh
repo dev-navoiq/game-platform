@@ -131,6 +131,20 @@ cd "$APP_DIR"
   echo "[xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace]"
   xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace 2>&1 \
     | head -40 || true
+  echo
+  echo "[xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace -sdk iphonesimulator]"
+  # If the simulator destinations DISAPPEAR when -sdk iphonesimulator is added,
+  # the scheme/target chain is incompatible with the sim SDK (a pod is
+  # iphoneos-only). If they STAY, xcodebuild can resolve sims and the bug is
+  # in how flutter+xcodebuild combine -sdk with -destination id=.
+  xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace \
+    -sdk iphonesimulator 2>&1 | head -40 || true
+  echo
+  echo "[xcodebuild -showBuildSettings ... Debug iphonesimulator | grep SUPPORTED_PLATFORMS|SDKROOT|VALID_ARCHS|EXCLUDED_ARCHS]"
+  xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
+    -configuration Debug -sdk iphonesimulator -showBuildSettings 2>&1 \
+    | grep -E "SUPPORTED_PLATFORMS|SDKROOT|VALID_ARCHS|EXCLUDED_ARCHS|TARGETED_DEVICE_FAMILY|EFFECTIVE_PLATFORM_NAME" \
+    | sort -u | head -30 || true
   echo "── End diagnostic dump ───────────────────────────────────"
 } 2>&1 | tee -a "$LOG"
 
