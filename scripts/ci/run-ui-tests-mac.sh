@@ -145,23 +145,6 @@ cd "$APP_DIR"
     -configuration Debug -sdk iphonesimulator -showBuildSettings 2>&1 \
     | grep -E "SUPPORTED_PLATFORMS|SDKROOT|VALID_ARCHS|EXCLUDED_ARCHS|TARGETED_DEVICE_FAMILY|EFFECTIVE_PLATFORM_NAME" \
     | sort -u | head -30 || true
-  echo
-  echo "── Workaround experiment: direct xcodebuild with explicit platform ──"
-  # Flutter (and `flutter build ios --simulator`) invoke xcodebuild with
-  # `-destination id=<UDID>` — no platform prefix. In Xcode 26.4.1 this seems
-  # to resolve the wrong destination set (iOS Device-only) and fails. The
-  # standard incantation `-destination "platform=iOS Simulator,id=<UDID>"`
-  # should resolve correctly. If this build SUCCEEDS, we have the workaround:
-  # bypass Flutter and drive xcodebuild directly for the actual test build.
-  echo "[xcodebuild build, -destination id=UDID  (mirrors Flutter)]"
-  xcodebuild build -workspace ios/Runner.xcworkspace -scheme Runner \
-    -configuration Debug -sdk iphonesimulator \
-    -destination "id=$UDID" 2>&1 | tail -25 || true
-  echo
-  echo "[xcodebuild build, -destination platform=iOS Simulator,id=UDID]"
-  xcodebuild build -workspace ios/Runner.xcworkspace -scheme Runner \
-    -configuration Debug \
-    -destination "platform=iOS Simulator,id=$UDID" 2>&1 | tail -25 || true
   echo "── End diagnostic dump ───────────────────────────────────"
 } 2>&1 | tee -a "$LOG"
 
