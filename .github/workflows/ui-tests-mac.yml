@@ -63,13 +63,35 @@ jobs:
           rm -f Podfile.lock
           pod install --repo-update
 
+      - name: Pre-flight — build iOS app for simulator
+        # Runs BEFORE `flutter test` to surface native build errors clearly
+        # (missing arm64-simulator slices, plugin compile failures). The
+        # destination-not-found error from `flutter test` is opaque; this
+        # step's xcodebuild output names the actual missing symbol/arch.
+        # `continue-on-error: true` so we still get test output downstream
+        # even if this fails — it's diagnostic, not a hard gate.
+        continue-on-error: true
+        working-directory: apps/flutter_app
+        run: |
+          mkdir -p ${{ github.workspace }}/ui-run-artifacts
+          /opt/homebrew/bin/fvm flutter build ios --simulator --debug \
+            --no-codesign --no-pub --no-version-check 2>&1 \
+            | tee ${{ github.workspace }}/ui-run-artifacts/preflight-build.log \
+            || true
+
       - name: Run UI tests with screen recording
         env:
           # Matches the dedicated simulator created at runner setup time.
           SIM_NAME: CI-iPhone-17
           FLUTTER: /opt/homebrew/bin/fvm flutter
           OUT_DIR: ${{ github.workspace }}/ui-run-artifacts
+          # Run ONLY the smoke test (not the full integration_test/ dir) to
+          # isolate "does the pipeline work" from "does the full app
+          # initialize correctly." Expand to `integration_test` once smoke
+          # is green.
+          TEST_TARGET: integration_test/smoke_test.dart
         run: |
+          mkdir -p ${{ github.workspace }}/ui-run-artifacts
           bash ./scripts/ci/run-ui-tests-mac.sh
 
       - name: Upload run artifacts (video + log)
