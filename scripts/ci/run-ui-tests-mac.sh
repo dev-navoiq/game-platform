@@ -137,7 +137,12 @@ cd "$APP_DIR"
 echo "[run-ui-tests] running '$FLUTTER test $TEST_TARGET' on $UDID"
 START_TS=$SECONDS
 set +e
-$FLUTTER test "$TEST_TARGET" -d "$UDID" --reporter expanded 2>&1 | tee "$LOG"
+# `tee -a` (append) — earlier `tee` form truncated the diagnostic dump
+# above. `--verbose` exposes the xcodebuild command Flutter generates so
+# we can see exactly which flags it's passing (e.g. -sdk iphoneos vs
+# iphonesimulator, or a generic/platform= destination).
+$FLUTTER test "$TEST_TARGET" -d "$UDID" --reporter expanded --verbose 2>&1 \
+  | tee -a "$LOG"
 TEST_EXIT=${PIPESTATUS[0]}
 set -e
 DURATION=$(( SECONDS - START_TS ))
