@@ -116,6 +116,24 @@ trap cleanup EXIT INT TERM
 APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)/apps/flutter_app"
 cd "$APP_DIR"
 
+# Diagnostic dump — answers "why doesn't xcodebuild see the sim". Cheap;
+# always written to test.log so post-mortem doesn't need a re-run.
+{
+  echo "── Diagnostic dump ───────────────────────────────────────"
+  echo "[xcode-select -p]"
+  xcode-select -p
+  echo "[xcrun --find xcodebuild]"
+  xcrun --find xcodebuild
+  echo "[xcrun simctl list devices booted]"
+  xcrun simctl list devices booted
+  echo "[flutter devices]"
+  $FLUTTER devices
+  echo "[xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace]"
+  xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace 2>&1 \
+    | head -40 || true
+  echo "── End diagnostic dump ───────────────────────────────────"
+} 2>&1 | tee -a "$LOG"
+
 echo "[run-ui-tests] running '$FLUTTER test $TEST_TARGET' on $UDID"
 START_TS=$SECONDS
 set +e
