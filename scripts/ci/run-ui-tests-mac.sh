@@ -116,10 +116,64 @@ trap cleanup EXIT INT TERM
 APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)/apps/flutter_app"
 cd "$APP_DIR"
 
+# Diagnostic dump — answers "why doesn't xcodebuild see the sim". Cheap;
+# always written to test.log so post-mortem doesn't need a re-run.
+{
+  echo "── Diagnostic dump ───────────────────────────────────────"
+  echo "[xcode-select -p]"
+  xcode-select -p
+  echo "[xcrun --find xcodebuild]"
+  xcrun --find xcodebuild
+  echo "[xcrun simctl list devices booted]"
+  xcrun simctl list devices booted
+  echo "[flutter devices]"
+  $FLUTTER devices
+  echo "[xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace]"
+  xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace 2>&1 \
+    | head -40 || true
+  echo
+  echo "[xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace -sdk iphonesimulator]"
+  # If the simulator destinations DISAPPEAR when -sdk iphonesimulator is added,
+  # the scheme/target chain is incompatible with the sim SDK (a pod is
+  # iphoneos-only). If they STAY, xcodebuild can resolve sims and the bug is
+  # in how flutter+xcodebuild combine -sdk with -destination id=.
+  xcodebuild -showdestinations -scheme Runner -workspace ios/Runner.xcworkspace \
+    -sdk iphonesimulator 2>&1 | head -40 || true
+  echo
+  echo "[xcodebuild -showBuildSettings ... Debug iphonesimulator | grep SUPPORTED_PLATFORMS|SDKROOT|VALID_ARCHS|EXCLUDED_ARCHS]"
+  xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
+    -configuration Debug -sdk iphonesimulator -showBuildSettings 2>&1 \
+    | grep -E "SUPPORTED_PLATFORMS|SDKROOT|VALID_ARCHS|EXCLUDED_ARCHS|TARGETED_DEVICE_FAMILY|EFFECTIVE_PLATFORM_NAME" \
+    | sort -u | head -30 || true
+  echo
+  echo "── Workaround experiment: direct xcodebuild with explicit platform ──"
+  # Flutter (and `flutter build ios --simulator`) invoke xcodebuild with
+  # `-destination id=<UDID>` — no platform prefix. In Xcode 26.4.1 this seems
+  # to resolve the wrong destination set (iOS Device-only) and fails. The
+  # standard incantation `-destination "platform=iOS Simulator,id=<UDID>"`
+  # should resolve correctly. If this build SUCCEEDS, we have the workaround:
+  # bypass Flutter and drive xcodebuild directly for the actual test build.
+  echo "[xcodebuild build, -destination id=UDID  (mirrors Flutter)]"
+  xcodebuild build -workspace ios/Runner.xcworkspace -scheme Runner \
+    -configuration Debug -sdk iphonesimulator \
+    -destination "id=$UDID" 2>&1 | tail -25 || true
+  echo
+  echo "[xcodebuild build, -destination platform=iOS Simulator,id=UDID]"
+  xcodebuild build -workspace ios/Runner.xcworkspace -scheme Runner \
+    -configuration Debug \
+    -destination "platform=iOS Simulator,id=$UDID" 2>&1 | tail -25 || true
+  echo "── End diagnostic dump ───────────────────────────────────"
+} 2>&1 | tee -a "$LOG"
+
 echo "[run-ui-tests] running '$FLUTTER test $TEST_TARGET' on $UDID"
 START_TS=$SECONDS
 set +e
-$FLUTTER test "$TEST_TARGET" -d "$UDID" --reporter expanded 2>&1 | tee "$LOG"
+# `tee -a` (append) — earlier `tee` form truncated the diagnostic dump
+# above. `--verbose` exposes the xcodebuild command Flutter generates so
+# we can see exactly which flags it's passing (e.g. -sdk iphoneos vs
+# iphonesimulator, or a generic/platform= destination).
+$FLUTTER test "$TEST_TARGET" -d "$UDID" --reporter expanded --verbose 2>&1 \
+  | tee -a "$LOG"
 TEST_EXIT=${PIPESTATUS[0]}
 set -e
 DURATION=$(( SECONDS - START_TS ))

@@ -30,6 +30,13 @@ jobs:
     runs-on: [self-hosted, macOS, ui-runner]
     timeout-minutes: 30
 
+    # Needed for the sticky comment step. Default GITHUB_TOKEN permissions
+    # at the repo level can be `contents: read` only, which 403s on PR
+    # comment writes ("Resource not accessible by integration").
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,13 +49,49 @@ jobs:
           /opt/homebrew/bin/fvm --version
           /opt/homebrew/bin/fvm flutter --version | head -3
 
+      - name: Refresh CocoaPods (fresh clone has no ios/Pods cache)
+        # Regenerate Podfile.lock from scratch so plugin pubspec bumps that
+        # require newer pod versions (e.g. flutter_webrtc 1.4.0 → WebRTC-SDK
+        # 144.x) don't fight a stale lock committed from a dev mac with the
+        # old version cached. CI doesn't commit the lock back, so the
+        # transient regenerated lock is throwaway. `--repo-update` ensures
+        # we resolve against the freshest spec repo.
+        working-directory: apps/flutter_app
+        run: |
+          /opt/homebrew/bin/fvm flutter pub get
+          cd ios
+          rm -f Podfile.lock
+          pod install --repo-update
+
+      - name: Pre-flight — build iOS app for simulator
+        # Runs BEFORE `flutter test` to surface native build errors clearly
+        # (missing arm64-simulator slices, plugin compile failures). The
+        # destination-not-found error from `flutter test` is opaque; this
+        # step's xcodebuild output names the actual missing symbol/arch.
+        # `continue-on-error: true` so we still get test output downstream
+        # even if this fails — it's diagnostic, not a hard gate.
+        continue-on-error: true
+        working-directory: apps/flutter_app
+        run: |
+          mkdir -p ${{ github.workspace }}/ui-run-artifacts
+          /opt/homebrew/bin/fvm flutter build ios --simulator --debug \
+            --no-codesign --no-pub --no-version-check 2>&1 \
+            | tee ${{ github.workspace }}/ui-run-artifacts/preflight-build.log \
+            || true
+
       - name: Run UI tests with screen recording
         env:
           # Matches the dedicated simulator created at runner setup time.
           SIM_NAME: CI-iPhone-17
           FLUTTER: /opt/homebrew/bin/fvm flutter
           OUT_DIR: ${{ github.workspace }}/ui-run-artifacts
+          # Run ONLY the smoke test (not the full integration_test/ dir) to
+          # isolate "does the pipeline work" from "does the full app
+          # initialize correctly." Expand to `integration_test` once smoke
+          # is green.
+          TEST_TARGET: integration_test/smoke_test.dart
         run: |
+          mkdir -p ${{ github.workspace }}/ui-run-artifacts
           bash ./scripts/ci/run-ui-tests-mac.sh
 
       - name: Upload run artifacts (video + log)
