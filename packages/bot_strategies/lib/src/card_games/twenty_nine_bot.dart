@@ -5,6 +5,11 @@ import '../core/bot_player.dart';
 import '../core/difficulty.dart';
 import '../core/personality.dart';
 
+// Test-only compile-time flag: `--dart-define=TN_FORCE_BOT_PASS=true` makes
+// every bot always pass during bidding, enabling deterministic all-pass tests.
+// Defaults to false in production builds.
+const bool _forceBotPass = bool.fromEnvironment('TN_FORCE_BOT_PASS');
+
 /// AI player for Twenty-Nine (4-player, 2v2, 32-card trick-taking).
 class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
   TwentyNineBot({
@@ -49,6 +54,10 @@ class TwentyNineBot extends BotPlayer<TwentyNineState, TwentyNineMove> {
     TwentyNineState state,
     List<TwentyNineMove> moves,
   ) {
+    if (_forceBotPass) {
+      final pass = moves.whereType<PassMove>().firstOrNull;
+      if (pass != null) return pass;
+    }
     return switch (policyTier) {
       PolicyTier.beginner => _beginnerBidding(state, moves),
       PolicyTier.medium => _mediumBidding(state, moves),

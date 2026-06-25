@@ -433,13 +433,62 @@ void main() {
   // ── Edge Cases ────────────────────────────────────────────────────────────
 
   group('Edge Cases', () {
-    test('all players passing triggers redeal flag', () {
+    test('all players passing triggers immediate redeal', () {
       var state = initialState;
-      state = rules.applyMove(state, PassMove(playerId: 'p2')).newState;
+      final originalDealerIndex = state.dealerIndex;
+      final originalRoundNumber = state.roundNumber;
+      final originalHands = Map<String, List<PlayingCard>>.fromEntries(
+        state.playerOrder.map(
+          (pid) => MapEntry(pid, List<PlayingCard>.from(state.hands[pid]!.cards)),
+        ),
+      );
+
+      final result = rules.applyMove(state, PassMove(playerId: 'p2'));
+      state = result.newState;
       state = rules.applyMove(state, PassMove(playerId: 'p3')).newState;
       state = rules.applyMove(state, PassMove(playerId: 'p4')).newState;
-      state = rules.applyMove(state, PassMove(playerId: 'p1')).newState;
-      expect(state.allPlayersPassed, isTrue);
+      final finalResult = rules.applyMove(state, PassMove(playerId: 'p1'));
+      state = finalResult.newState;
+
+      // Bidding restarted with a fresh deal.
+      expect(state.phase, GamePhase.bidding);
+      expect(state.passCount, 0);
+      expect(state.currentBid, 0);
+      expect(state.bidderId, isNull);
+
+      // Dealer rotated.
+      expect(state.dealerIndex, (originalDealerIndex + 1) % 4);
+
+      // First bidder is dealer+1.
+      final expectedFirstBidder =
+          state.playerOrder[(state.dealerIndex + 1) % 4];
+      expect(state.currentPlayerId, expectedFirstBidder);
+
+      // Round number preserved (not a scored new round).
+      expect(state.roundNumber, originalRoundNumber);
+
+      // Each player received 4 fresh cards.
+      for (final pid in state.playerOrder) {
+        expect(state.hands[pid]?.size, 4);
+      }
+
+      // 16 cards held back for second deal.
+      expect(state.pendingDeck.length, 16);
+
+      // Hands changed (new deck was dealt).
+      var anyHandChanged = false;
+      for (final pid in state.playerOrder) {
+        final oldCards = originalHands[pid]!.toSet();
+        final newCards = state.hands[pid]!.cards.toSet();
+        if (oldCards != newCards) anyHandChanged = true;
+      }
+      expect(anyHandChanged, isTrue);
+
+      // handDissolved event emitted.
+      expect(
+        finalResult.events.any((e) => e.type == GameEventType.handDissolved),
+        isTrue,
+      );
     });
 
     test('29 special bid records correctly', () {

@@ -38,6 +38,9 @@ enum GameEventType {
   pointsScored,
   bonusAwarded,
   penaltyApplied,
+
+  // Deal events
+  handDissolved,
 }
 
 class GameEvent extends Equatable {
