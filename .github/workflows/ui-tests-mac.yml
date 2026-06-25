@@ -101,13 +101,24 @@ jobs:
           mkdir -p ${{ github.workspace }}/ui-run-artifacts
           bash ./scripts/ci/run-ui-tests-mac.sh
 
+      - name: Upload recording to Supabase Storage (durable public link)
+        if: always()
+        env:
+          SUPABASE_STORAGE_SERVICE_KEY: ${{ secrets.SUPABASE_STORAGE_SERVICE_KEY }}
+          SUPABASE_STORAGE_PROJECT_REF: ${{ secrets.SUPABASE_STORAGE_PROJECT_REF }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          OUT_DIR: ${{ github.workspace }}/ui-run-artifacts
+        run: bash ./scripts/ci/upload-ui-video.sh
+
       - name: Upload run artifacts (video + log)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ui-run-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
           path: ui-run-artifacts/
-          retention-days: 14
+          # Short-term archive; the durable copy is in Supabase Storage above.
+          retention-days: 90
 
       - name: Post sticky PR comment with artifact link
         if: always()
@@ -118,8 +129,8 @@ jobs:
             ### 📹 UI test run (macOS)
 
             - Status: **${{ job.status }}**
+            - 📺 Video (durable, public): ${{ env.VIDEO_URL || '_upload skipped — see artifact_' }}
             - Workflow run: [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            - Artifact: `ui-run-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}` (link in the "Artifacts" section of the workflow run)
-            - Contents: `run.mov` (screen recording), `test.log` (raw output), `summary.txt`
+            - Artifact (90-day): `ui-run-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}` — `run.mov`, `test.log`, `summary.txt`
 
-            Re-trigger by removing and re-adding the `needs-ui-tests` label, or pushing a new commit.
+            The video link is a direct file (plays in-browser), kept as the latest per PR in Supabase Storage; older runs are swept after 30 days. Re-trigger by re-adding the `needs-ui-tests` label or pushing a commit.
