@@ -70,3 +70,5 @@ prompts.zip
 
 # Claude Code agent worktrees (auto-generated, large, never to be committed)
 .claude/worktrees/
+# Local UI-run screen recordings / logs (not for VCS)
+ui-run-artifacts/

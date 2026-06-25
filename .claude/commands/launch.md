@@ -18,7 +18,7 @@ Examples of `$ARGUMENTS`:
 
 1. **Run pre-flight** via Bash:
    ```
-   /Users/ambar/Documents/game-platform/scripts/preflight-ios.sh <target> <env>
+   /Users/ambar/Developer/game-platform/scripts/preflight-ios.sh <target> <env>
    ```
    The script kills stale processes, verifies LAN IP / cert / symlink / device availability, and tests simulator destination resolution.
 
@@ -27,11 +27,11 @@ Examples of `$ARGUMENTS`:
 3. **If pre-flight passed, launch flutter:**
    - For `device`: use **release mode** (AOT, no debug-attach — works around the Xcode 26.4.1 Apple-Events debug-session timeout). Hot reload is unavailable but app runs reliably.
      ```
-     cd /Users/ambar/Documents/game-platform/apps/flutter_app && fvm flutter run --release -d 00008150-00141D4C0C61401C --dart-define=ENV=<env>
+     cd /Users/ambar/Developer/game-platform/apps/flutter_app && fvm flutter run --release -d 00008150-00141D4C0C61401C --dart-define=ENV=<env>
      ```
    - For `sim`: use **debug mode** (hot reload works). Note that sim is currently affected by the Xcode 26.4.1 CoreSimulator regression — if pre-flight didn't catch it, the run will fail with "Unable to find a destination matching id=...". Fall back to device.
      ```
-     cd /Users/ambar/Documents/game-platform/apps/flutter_app && fvm flutter run -d 93B3CE12-584D-4F1D-8C42-C1F94C109893 --dart-define=ENV=<env>
+     cd /Users/ambar/Developer/game-platform/apps/flutter_app && fvm flutter run -d 93B3CE12-584D-4F1D-8C42-C1F94C109893 --dart-define=ENV=<env>
      ```
    - Launch in background using Bash with `run_in_background=true` and pipe output to `/tmp/flutter-launch.log`. Watch the log via a background Bash with an `until grep` loop, exit on "Flutter run key commands" (ready) OR any error pattern. Notify the user when ready or with the error context.
 

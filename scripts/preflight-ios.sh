@@ -58,23 +58,13 @@ if [ "$TARGET" = "sim" ]; then
   fi
 fi
 
-# 4. Build symlink intact (codesign fails on iCloud-synced ~/Documents/build).
+# 4. Build dir. The project moved out of iCloud (~/Documents → ~/Developer) on
+#    2026-06-24, so iCloud no longer injects xattrs and a plain build/ dir is fine.
+#    The legacy symlink-to-/tmp workaround is still accepted but no longer required.
 if [ -L "$APP_DIR/build" ]; then
-  link_target="$(readlink "$APP_DIR/build")"
-  if [ "$link_target" = "/tmp/flutter_build_gameplatform" ]; then
-    green "build/ symlink: $link_target"
-  else
-    yellow "build/ symlink points to unexpected target: $link_target"
-  fi
-elif [ -e "$APP_DIR/build" ]; then
-  red "build/ exists but is not a symlink. iCloud Drive xattrs will break codesign."
-  echo "   Fix: rm -rf $APP_DIR/build && mkdir -p /tmp/flutter_build_gameplatform && ln -s /tmp/flutter_build_gameplatform $APP_DIR/build"
-  exit 1
+  green "build/ symlink (legacy iCloud workaround): $(readlink "$APP_DIR/build")"
 else
-  yellow "build/ symlink missing — recreating"
-  mkdir -p /tmp/flutter_build_gameplatform
-  ln -s /tmp/flutter_build_gameplatform "$APP_DIR/build"
-  green "build/ symlink recreated"
+  green "build/ is a normal directory (project is outside iCloud — symlink not needed)"
 fi
 
 # 5. Apple Dev cert in keychain (only needed for device targets).
