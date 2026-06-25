@@ -1,0 +1,85 @@
+name: Cleanup UI test videos
+
+# Retention (days) for the Supabase `ui-test-videos` bucket: deletes any
+# recording older than 30 days. Per-PR "keep latest" is handled at upload time
+# in scripts/ci/upload-ui-video.sh; this sweep catches merged/closed-PR videos.
+
+on:
+  schedule:
+    - cron: '17 4 * * *' # daily 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: 'Delete videos older than N days'
+        default: '30'
+        required: false
+
+concurrency:
+  group: cleanup-ui-videos
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sweep old recordings
+        env:
+          KEY: ${{ secrets.SUPABASE_STORAGE_SERVICE_KEY }}
+          REF: ${{ secrets.SUPABASE_STORAGE_PROJECT_REF }}
+          MAX_AGE_DAYS: ${{ github.event.inputs.max_age_days || '30' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEY:-}" || -z "${REF:-}" ]]; then
+            echo "SUPABASE_STORAGE_* secrets not set — nothing to do."; exit 0
+          fi
+          python3 - <<'PY'
+          import json, os, urllib.request, datetime
+
+          key = os.environ["KEY"]; ref = os.environ["REF"]
+          max_age = int(os.environ.get("MAX_AGE_DAYS", "30"))
+          base = f"https://{ref}.supabase.co/storage/v1"
+          bucket = "ui-test-videos"
+          hdr = {"Authorization": f"Bearer {key}", "apikey": key,
+                 "Content-Type": "application/json"}
+
+          def api(method, path, body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(base + path, data=data, headers=hdr, method=method)
+              with urllib.request.urlopen(req) as r:
+                  raw = r.read()
+                  return json.loads(raw) if raw else None
+
+          def listing(prefix):
+              return api("POST", f"/object/list/{bucket}",
+                         {"prefix": prefix, "limit": 1000,
+                          "sortBy": {"column": "name", "order": "asc"}}) or []
+
+          cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=max_age)
+          stale = []
+          # Top level entries: folders have id == None.
+          for top in listing(""):
+              folder = top["name"]
+              if folder == "keep":
+                  # Curated bug/doc repros pinned by hand — never swept.
+                  continue
+              if top.get("id") is None:  # a "folder"
+                  for obj in listing(f"{folder}/"):
+                      if not obj.get("id"):
+                          continue
+                      ts = obj.get("created_at") or obj.get("updated_at")
+                      if not ts:
+                          continue
+                      when = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                      if when < cutoff:
+                          stale.append(f"{folder}/{obj['name']}")
+              else:  # a stray top-level object
+                  ts = top.get("created_at") or top.get("updated_at")
+                  if ts and datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")) < cutoff:
+                      stale.append(folder)
+
+          print(f"Found {len(stale)} recording(s) older than {max_age} days.")
+          if stale:
+              api("DELETE", f"/object/{bucket}", {"prefixes": stale})
+              for s in stale:
+                  print(f"  deleted {s}")
+          PY
