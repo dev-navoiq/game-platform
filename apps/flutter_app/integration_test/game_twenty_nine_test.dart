@@ -8,6 +8,10 @@
 //   • The game screen runs continuous animations (BiddingPulse, glow), so
 //     pumpAndSettle never settles — we advance time in fixed steps via pumpFor,
 //     which also lets real Supabase realtime/network round-trips complete.
+//
+// The 'all-pass redeal' test requires --dart-define=TN_FORCE_BOT_PASS=true so
+// bots always pass during bidding; the human taps 'bid-pass' once. The engine
+// performs the redeal and the UI shows "All players passed — re-dealing".
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,5 +111,79 @@ void main() {
       expect(find.byType(GameScreen), findsOneWidget);
       expect(find.byType(PlayingCardWidget), findsWidgets);
     });
+
+    // Run only when --dart-define=TN_FORCE_BOT_PASS=true is set.
+    // Bots always pass; the human passes once via 'bid-pass'. After 4 passes
+    // the engine redeals, and the UI shows a "re-dealing" snackbar, then
+    // bidding resumes (the modal reappears on the next human turn).
+    testWidgets(
+      'all-pass redeal: engine redeals and bidding resumes',
+      skip: !const bool.fromEnvironment('TN_FORCE_BOT_PASS'),
+      (tester) async {
+        Future<bool> tapText(String label, {Duration? wait}) async {
+          final f = find.text(label);
+          if (f.evaluate().isEmpty) return false;
+          await tester.tap(f.first, warnIfMissed: false);
+          await pumpFor(tester, wait ?? const Duration(seconds: 2));
+          return true;
+        }
+
+        app.main();
+        await pumpFor(tester, const Duration(seconds: 4));
+
+        // ── Login as guest ────────────────────────────────────────────────
+        await tapText('Continue as Guest', wait: const Duration(seconds: 4));
+
+        // ── Open Twenty-Nine lobby and create a room ──────────────────────
+        await tapText('Twenty-Nine', wait: const Duration(seconds: 3));
+        await tapText('Create Room', wait: const Duration(seconds: 4));
+
+        // ── Add 3 medium bots ─────────────────────────────────────────────
+        for (var i = 0; i < 3; i++) {
+          final medium = find.byTooltip('Medium bot');
+          if (medium.evaluate().isNotEmpty) {
+            await tester.tap(medium.first, warnIfMissed: false);
+            await pumpFor(tester, const Duration(seconds: 3));
+          }
+        }
+
+        // ── Ready and start ───────────────────────────────────────────────
+        await tapText('Ready', wait: const Duration(seconds: 1));
+        await tapText('Start Game', wait: const Duration(seconds: 5));
+
+        expect(find.byType(GameScreen), findsOneWidget);
+        await pumpFor(tester, const Duration(seconds: 3));
+
+        // ── All 4 players pass: bots pass automatically (TN_FORCE_BOT_PASS),
+        //    human taps bid-pass once. After 4 passes the redeal fires. ────
+        for (var tick = 0; tick < 10; tick++) {
+          final pass = find.byKey(const Key('bid-pass'));
+          if (pass.evaluate().isNotEmpty) {
+            await tester.tap(pass.first, warnIfMissed: false);
+            await pumpFor(tester, const Duration(seconds: 2));
+            break;
+          }
+          await pumpFor(tester, const Duration(seconds: 1));
+        }
+
+        // Allow the server to apply the redeal and broadcast the new state.
+        await pumpFor(tester, const Duration(seconds: 5));
+
+        // ── Assert the redeal snackbar appeared ───────────────────────────
+        expect(
+          find.text('All players passed — re-dealing'),
+          findsOneWidget,
+          reason: 'Expected "All players passed — re-dealing" snackbar',
+        );
+
+        // ── Assert we are back in bidding with a fresh hand ───────────────
+        expect(find.byType(GameScreen), findsOneWidget);
+        expect(find.byType(PlayingCardWidget), findsWidgets);
+        // The bidding modal should re-appear when it is the human's turn again.
+        await pumpFor(tester, const Duration(seconds: 4));
+        // Verify the game did not soft-lock (screen is still interactive).
+        expect(find.byType(GameScreen), findsOneWidget);
+      },
+    );
   });
 }

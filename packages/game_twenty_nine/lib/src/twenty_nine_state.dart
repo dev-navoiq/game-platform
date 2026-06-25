@@ -55,9 +55,6 @@ class TwentyNineState extends GameState {
   /// Game-level scores (first to 6 wins). Keyed by team index (0 or 1).
   final Map<int, int> sessionScores;
 
-  /// Whether all players passed with no bid placed (triggers redeal).
-  final bool allPlayersPassed;
-
   // ── Internal tracking fields (not in test constructor but needed by rules) ──
 
   /// Points accumulated by each team this round.
@@ -122,7 +119,6 @@ class TwentyNineState extends GameState {
     required this.dealerIndex,
     required this.playerOrder,
     this.sessionScores = const {0: 0, 1: 0},
-    this.allPlayersPassed = false,
     this.teamPoints = const {0: 0, 1: 0},
     this.tricksWon = const {0: 0, 1: 0},
     this.passCount = 0,
@@ -185,7 +181,6 @@ class TwentyNineState extends GameState {
     int? dealerIndex,
     List<String>? playerOrder,
     Map<int, int>? sessionScores,
-    bool? allPlayersPassed,
     Map<int, int>? teamPoints,
     Map<int, int>? tricksWon,
     int? passCount,
@@ -216,7 +211,6 @@ class TwentyNineState extends GameState {
       dealerIndex: dealerIndex ?? this.dealerIndex,
       playerOrder: playerOrder ?? this.playerOrder,
       sessionScores: sessionScores ?? this.sessionScores,
-      allPlayersPassed: allPlayersPassed ?? this.allPlayersPassed,
       teamPoints: teamPoints ?? this.teamPoints,
       tricksWon: tricksWon ?? this.tricksWon,
       passCount: passCount ?? this.passCount,
@@ -254,7 +248,6 @@ class TwentyNineState extends GameState {
         'playerOrder': playerOrder,
         'sessionScores':
             sessionScores.map((k, v) => MapEntry(k.toString(), v)),
-        'allPlayersPassed': allPlayersPassed,
         'teamPoints': teamPoints.map((k, v) => MapEntry(k.toString(), v)),
         'tricksWon': tricksWon.map((k, v) => MapEntry(k.toString(), v)),
         'passCount': passCount,
@@ -293,7 +286,6 @@ class TwentyNineState extends GameState {
       playerOrder: List<String>.from(json['playerOrder'] as List),
       sessionScores: (json['sessionScores'] as Map<String, dynamic>)
           .map((k, v) => MapEntry(int.parse(k), v as int)),
-      allPlayersPassed: (json['allPlayersPassed'] as bool?) ?? false,
       teamPoints: (json['teamPoints'] as Map<String, dynamic>)
           .map((k, v) => MapEntry(int.parse(k), v as int)),
       tricksWon: (json['tricksWon'] as Map<String, dynamic>)
@@ -338,7 +330,6 @@ class TwentyNineState extends GameState {
         dealerIndex,
         playerOrder,
         sessionScores,
-        allPlayersPassed,
         teamPoints,
         tricksWon,
         passCount,

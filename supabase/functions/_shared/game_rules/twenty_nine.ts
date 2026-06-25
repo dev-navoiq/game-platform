@@ -38,12 +38,13 @@ interface TwentyNineState {
   currentBid: number | null;
   bidderId: string | null;
   passCount: number;
-  allPlayersPassed: boolean;
+  allPlayersPassed?: boolean;             // legacy — no longer written; kept optional for old states
   tricksWon: Record<number, number>;      // team → count
   teamPoints: Record<number, number>;     // team → card-points
   sessionScores: Record<number, number>;  // team → game-points
   turnNumber: number;
   roundNumber: number;
+  socialMode?: string;
   doublingMultiplier?: number;
   doubledBy?: string | null;
   redoubledBy?: string | null;
@@ -422,15 +423,38 @@ function applyPass(state: TwentyNineState): TwentyNineState {
     };
   }
 
-  // 4 passes with no bid → all players passed (redeal needed).
+  // 4 passes with no bid → dissolve the deal and re-deal fresh hands.
   if (newPassCount >= 4 && state.bidderId == null) {
+    const { hands, pendingDeck, firstBidder, newDealerIndex } = buildFreshDeal(state);
     return {
-      ...state,
-      passCount: newPassCount,
-      allPlayersPassed: true,
-      currentPlayerId: getNextPlayerId(state),
+      phase: 'bidding',
+      currentPlayerId: firstBidder,
+      playerOrder: state.playerOrder,
+      dealerIndex: newDealerIndex,
+      hands,
+      currentTrick: [],
+      trumpSuit: null,
+      trumpRevealed: false,
+      trumpSelector: null,
+      currentBid: null,
+      bidderId: null,
+      passCount: 0,
+      tricksWon: { 0: 0, 1: 0 },
+      teamPoints: { 0: 0, 1: 0 },
+      sessionScores: state.sessionScores,
       turnNumber: state.turnNumber + 1,
-    };
+      roundNumber: state.roundNumber,
+      doublingMultiplier: 1,
+      doubledBy: null,
+      redoubledBy: null,
+      trumpRevealerThisTrick: null,
+      socialMode: state.socialMode,
+      pendingDeck,
+      bidAdjustment: 0,
+      royalWeddingClaimedByTeam: [],
+      redPips: state.redPips ?? { 0: 0, 1: 0 },
+      blackPips: state.blackPips ?? { 0: 0, 1: 0 },
+    } as TwentyNineState;
   }
 
   return {
@@ -531,8 +555,12 @@ function applyRevealTrump(state: TwentyNineState, move: MovePayload): TwentyNine
   };
 }
 
-function applyNewRound(state: TwentyNineState): TwentyNineState {
-  // Build and shuffle a fresh 32-card deck
+function buildFreshDeal(state: TwentyNineState): {
+  hands: Record<string, Card[]>;
+  pendingDeck: Card[];
+  firstBidder: string;
+  newDealerIndex: number;
+} {
   const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
   const ranks = ['seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace'];
   const deck: Card[] = [];
@@ -547,8 +575,6 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
 
-  // Deal first 4 cards to each player; hold the remaining 16 in pendingDeck
-  // until trump is declared.
   const hands: Record<string, Card[]> = {};
   let cardIndex = 0;
   for (const pid of state.playerOrder) {
@@ -557,9 +583,14 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
   }
   const pendingDeck = deck.slice(cardIndex, cardIndex + 16);
 
-  // Rotate dealer
   const newDealerIndex = (state.dealerIndex + 1) % 4;
   const firstBidder = state.playerOrder[(newDealerIndex + 1) % 4];
+
+  return { hands, pendingDeck, firstBidder, newDealerIndex };
+}
+
+function applyNewRound(state: TwentyNineState): TwentyNineState {
+  const { hands, pendingDeck, firstBidder, newDealerIndex } = buildFreshDeal(state);
 
   // "Play Again" path: when starting a brand-new session after gameEnd,
   // wipe session scores and reset roundNumber so the new game starts clean.
@@ -578,7 +609,6 @@ function applyNewRound(state: TwentyNineState): TwentyNineState {
     currentBid: null,
     bidderId: null,
     passCount: 0,
-    allPlayersPassed: false,
     tricksWon: { 0: 0, 1: 0 },
     teamPoints: { 0: 0, 1: 0 },
     turnNumber: state.turnNumber + 1,

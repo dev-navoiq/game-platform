@@ -69,6 +69,9 @@ class TwentyNineGameScreen extends ConsumerStatefulWidget {
 class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   bool _showTrumpReveal = false;
   final ShakeController _handShake = ShakeController();
+  // Track (roundNumber, dealerIndex) so bid history resets on both new rounds
+  // AND redeals (dealer rotates without roundNumber incrementing).
+  (int, int) _bidHistoryDealKey = (0, -1);
 
   /// One GlobalKey per seat, used to anchor opponent card flights and the
   /// trick-collect animation.
@@ -101,11 +104,10 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   int _secondsElapsed = 0;
   static const int _countdownLimit = 30;
 
-  /// Most-recent bidding action per playerId for the current round. Persists
+  /// Most-recent bidding action per playerId for the current round/deal. Persists
   /// across modal minimize/restore so the chips stay accurate. Cleared on
-  /// every new round.
+  /// every new round and every redeal.
   final Map<String, BidActionChip> _bidHistory = {};
-  int _bidHistoryRound = -1;
   int _lastBidSeen = 0;
   int _lastMultiplierSeen = 1;
   String? _lastBidderSeen;
@@ -192,9 +194,11 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   /// for 29 with at most one full bidding rotation this is enough to
   /// answer "what did everyone do?" without a full event log.
   void _updateBidHistory(TwentyNineState state) {
-    // Reset between rounds.
-    if (_bidHistoryRound != state.roundNumber) {
-      _bidHistoryRound = state.roundNumber;
+    // Reset between rounds AND between redeals (dealer rotates without
+    // roundNumber incrementing). Use a composite key so both cases clear.
+    final dealKey = (state.roundNumber, state.dealerIndex);
+    if (_bidHistoryDealKey != dealKey) {
+      _bidHistoryDealKey = dealKey;
       _bidHistory.clear();
       _lastBidSeen = 0;
       _lastMultiplierSeen = 1;
@@ -565,11 +569,32 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
   @override
   void didUpdateWidget(covariant TwentyNineGameScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Show trump reveal when trump just got revealed
+    // Show trump reveal when trump just got revealed.
     if (widget.state.trumpRevealed &&
         !oldWidget.state.trumpRevealed &&
         widget.state.trumpSuit != null) {
       setState(() => _showTrumpReveal = true);
+    }
+    // Detect a redeal: dealer rotated without roundNumber incrementing.
+    final s = widget.state;
+    final o = oldWidget.state;
+    final isRedeal = s.phase == GamePhase.bidding &&
+        s.dealerIndex != o.dealerIndex &&
+        s.roundNumber == o.roundNumber &&
+        s.passCount == 0;
+    if (isRedeal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('All players passed — re-dealing'),
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      });
     }
   }
 

@@ -12,15 +12,17 @@
 #   - summary.txt        one-line pass/fail + duration
 #
 # Env vars:
-#   SIM_NAME      Simulator display name to use (default: CI-iPhone-17).
-#                 Created on first run if missing.
-#   SIM_DEVICE    Apple device type ID for creation
-#                 (default: com.apple.CoreSimulator.SimDeviceType.iPhone-17).
-#   SIM_RUNTIME   Apple runtime ID for creation
-#                 (default: latest iOS runtime found via simctl).
-#   OUT_DIR       Where artifacts land (default: ./ui-run-artifacts).
-#   TEST_TARGET   Path/glob passed to `flutter test` (default: integration_test).
-#   FLUTTER       Flutter command to use (default: `fvm flutter`).
+#   SIM_NAME           Simulator display name to use (default: CI-iPhone-17).
+#                      Created on first run if missing.
+#   SIM_DEVICE         Apple device type ID for creation
+#                      (default: com.apple.CoreSimulator.SimDeviceType.iPhone-17).
+#   SIM_RUNTIME        Apple runtime ID for creation
+#                      (default: latest iOS runtime found via simctl).
+#   OUT_DIR            Where artifacts land (default: ./ui-run-artifacts).
+#   TEST_TARGET        Path/glob passed to `flutter test` (default: integration_test).
+#   FLUTTER            Flutter command to use (default: `fvm flutter`).
+#   FLUTTER_EXTRA_ARGS Additional flags appended to the `flutter test` invocation.
+#                      Example: "--dart-define=TN_FORCE_BOT_PASS=true"
 #
 # Exit code = the underlying `flutter test` exit code; recording is always
 # finalized before exit so the .mov is viewable even on failure.
@@ -33,6 +35,7 @@ SIM_DEVICE="${SIM_DEVICE:-com.apple.CoreSimulator.SimDeviceType.iPhone-17}"
 OUT_DIR="${OUT_DIR:-$(pwd)/ui-run-artifacts}"
 TEST_TARGET="${TEST_TARGET:-integration_test}"
 FLUTTER="${FLUTTER:-fvm flutter}"
+FLUTTER_EXTRA_ARGS="${FLUTTER_EXTRA_ARGS:-}"
 
 # Pick the newest installed iOS runtime if none specified.
 if [[ -z "${SIM_RUNTIME:-}" ]]; then
@@ -148,14 +151,16 @@ cd "$APP_DIR"
   echo "── End diagnostic dump ───────────────────────────────────"
 } 2>&1 | tee -a "$LOG"
 
-echo "[run-ui-tests] running '$FLUTTER test $TEST_TARGET' on $UDID"
+echo "[run-ui-tests] running '$FLUTTER test $TEST_TARGET $FLUTTER_EXTRA_ARGS' on $UDID"
 START_TS=$SECONDS
 set +e
 # `tee -a` (append) — earlier `tee` form truncated the diagnostic dump
 # above. `--verbose` exposes the xcodebuild command Flutter generates so
 # we can see exactly which flags it's passing (e.g. -sdk iphoneos vs
 # iphonesimulator, or a generic/platform= destination).
-$FLUTTER test "$TEST_TARGET" -d "$UDID" --reporter expanded --verbose 2>&1 \
+# shellcheck disable=SC2086
+$FLUTTER test "$TEST_TARGET" -d "$UDID" --reporter expanded --verbose \
+  $FLUTTER_EXTRA_ARGS 2>&1 \
   | tee -a "$LOG"
 TEST_EXIT=${PIPESTATUS[0]}
 set -e

@@ -21,7 +21,6 @@ void main() {
           dealerIndex: 0,
           playerOrder: playerIds,
           sessionScores: {0: 0, 1: 0},
-          allPlayersPassed: false,
         );
 
         final copy = state.copyWith(currentPlayerId: 'p2');
@@ -44,7 +43,6 @@ void main() {
           dealerIndex: 1,
           playerOrder: playerIds,
           sessionScores: {0: 2, 1: 1},
-          allPlayersPassed: false,
         );
 
         final copy = state.copyWith();

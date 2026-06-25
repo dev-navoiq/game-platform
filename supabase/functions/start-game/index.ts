@@ -174,7 +174,6 @@ function buildTwentyNineState(
     currentBid: null,
     bidderId: null,
     passCount: 0,
-    allPlayersPassed: false,
     tricksWon: { 0: 0, 1: 0 },
     teamPoints: { 0: 0, 1: 0 },
     sessionScores: { 0: 0, 1: 0 },

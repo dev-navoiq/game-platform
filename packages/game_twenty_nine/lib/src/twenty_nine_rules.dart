@@ -450,15 +450,44 @@ class TwentyNineRules extends GameRules<TwentyNineState, TwentyNineMove> {
       );
     }
 
-    // 4 passes with no bid → all players passed (triggers redeal).
+    // 4 passes with no bid → dissolve this deal and re-deal fresh hands,
+    // rotating the dealer. Build the new state directly to avoid copyWith
+    // sentinel proliferation (bidderId, trumpSuit, etc. must clear to null).
     if (newPassCount >= 4 && state.bidderId == null) {
+      final deck = Deck.standard32();
+      deck.shuffle();
+      final newHands = <String, Hand>{};
+      for (final pid in state.playerOrder) {
+        newHands[pid] = Hand(deck.drawMultiple(4));
+      }
+      final newPending = List<PlayingCard>.unmodifiable(
+        List<PlayingCard>.from(deck.cards.reversed),
+      );
+      final newDealerIndex = (state.dealerIndex + 1) % 4;
+      final firstBidder = state.playerOrder[(newDealerIndex + 1) % 4];
+
       return MoveResult.valid(
-        newState: state.copyWith(
-          passCount: newPassCount,
-          allPlayersPassed: true,
-          currentPlayerId: state.nextPlayerId,
+        newState: TwentyNineState(
+          phase: GamePhase.bidding,
+          currentPlayerId: firstBidder,
           turnNumber: state.turnNumber + 1,
+          roundNumber: state.roundNumber,
+          socialMode: state.socialMode,
+          hands: newHands,
+          currentTrick: const [],
+          dealerIndex: newDealerIndex,
+          playerOrder: state.playerOrder,
+          sessionScores: state.sessionScores,
+          redPips: state.redPips,
+          blackPips: state.blackPips,
+          pendingDeck: newPending,
         ),
+        events: [
+          GameEvent(
+            type: GameEventType.handDissolved,
+            data: const {'reason': 'allPassed'},
+          ),
+        ],
       );
     }
 
