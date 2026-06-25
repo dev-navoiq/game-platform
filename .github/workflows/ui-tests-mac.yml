@@ -85,11 +85,12 @@ jobs:
           SIM_NAME: CI-iPhone-17
           FLUTTER: /opt/homebrew/bin/fvm flutter
           OUT_DIR: ${{ github.workspace }}/ui-run-artifacts
-          # Run ONLY the smoke test (not the full integration_test/ dir) to
-          # isolate "does the pipeline work" from "does the full app
-          # initialize correctly." Expand to `integration_test` once smoke
-          # is green.
-          TEST_TARGET: integration_test/smoke_test.dart
+          # Record the all-players-pass redeal scenario (issue #44). The
+          # redeal test is gated behind TN_FORCE_BOT_PASS so bots pass
+          # deterministically; --plain-name keeps the recording focused on
+          # just that test (the file also holds the full game-flow test).
+          TEST_TARGET: integration_test/game_twenty_nine_test.dart
+          FLUTTER_EXTRA_ARGS: --dart-define=TN_FORCE_BOT_PASS=true --plain-name "all-pass redeal"
         run: |
           mkdir -p ${{ github.workspace }}/ui-run-artifacts
           bash ./scripts/ci/run-ui-tests-mac.sh
