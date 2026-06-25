@@ -90,11 +90,13 @@ jobs:
           # deterministically; --plain-name keeps the recording focused on
           # just that test (the file also holds the full game-flow test).
           TEST_TARGET: integration_test/game_twenty_nine_test.dart
-          # Single-word --plain-name value: FLUTTER_EXTRA_ARGS is expanded
-          # unquoted by the CI script, so a quoted multi-word value would
-          # word-split into broken tokens. "redeal" uniquely matches the
-          # 'all-pass redeal: …' test name.
-          FLUTTER_EXTRA_ARGS: --dart-define=TN_FORCE_BOT_PASS=true --plain-name redeal
+          # The runner IS the dev mac, where local Supabase is running, so the
+          # simulator reaches it at 127.0.0.1:54321 (the app needs a backend for
+          # guest login + create-room + add-bot + start-game). Single-word
+          # --plain-name value: FLUTTER_EXTRA_ARGS is expanded unquoted by the
+          # CI script, so a quoted multi-word value would word-split into broken
+          # tokens. "redeal" uniquely matches the 'all-pass redeal: …' test.
+          FLUTTER_EXTRA_ARGS: --dart-define=TN_FORCE_BOT_PASS=true --dart-define=ENV=development --dart-define=SUPABASE_URL=http://127.0.0.1:54321 --plain-name redeal
         run: |
           mkdir -p ${{ github.workspace }}/ui-run-artifacts
           bash ./scripts/ci/run-ui-tests-mac.sh
