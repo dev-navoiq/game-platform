@@ -154,34 +154,36 @@ void main() {
         expect(find.byType(GameScreen), findsOneWidget);
         await pumpFor(tester, const Duration(seconds: 3));
 
-        // ── All 4 players pass: bots pass automatically (TN_FORCE_BOT_PASS),
-        //    human taps bid-pass once. After 4 passes the redeal fires. ────
-        for (var tick = 0; tick < 10; tick++) {
+        // ── All 4 players pass → redeal ───────────────────────────────────
+        // Bots pass automatically (TN_FORCE_BOT_PASS); the human taps bid-pass
+        // whenever the modal is up. The redeal "re-dealing" SnackBar is
+        // ephemeral (auto-dismisses in ~4s), so we POLL for it on every short
+        // tick instead of waiting a fixed interval and checking once after it
+        // has already vanished.
+        const redealMsg = 'All players passed — re-dealing';
+        var sawRedealBanner = false;
+        for (var tick = 0; tick < 40 && !sawRedealBanner; tick++) {
           final pass = find.byKey(const Key('bid-pass'));
           if (pass.evaluate().isNotEmpty) {
             await tester.tap(pass.first, warnIfMissed: false);
-            await pumpFor(tester, const Duration(seconds: 2));
-            break;
           }
-          await pumpFor(tester, const Duration(seconds: 1));
+          await pumpFor(tester, const Duration(milliseconds: 500));
+          if (find.text(redealMsg).evaluate().isNotEmpty) {
+            sawRedealBanner = true;
+          }
         }
 
-        // Allow the server to apply the redeal and broadcast the new state.
-        await pumpFor(tester, const Duration(seconds: 5));
-
-        // ── Assert the redeal snackbar appeared ───────────────────────────
+        // ── Assert the redeal happened (banner was shown) ─────────────────
         expect(
-          find.text('All players passed — re-dealing'),
-          findsOneWidget,
-          reason: 'Expected "All players passed — re-dealing" snackbar',
+          sawRedealBanner,
+          isTrue,
+          reason: 'Expected the "$redealMsg" snackbar to appear after 4 passes',
         );
 
-        // ── Assert we are back in bidding with a fresh hand ───────────────
+        // ── Assert we are back in bidding with a fresh hand, not soft-locked ─
         expect(find.byType(GameScreen), findsOneWidget);
         expect(find.byType(PlayingCardWidget), findsWidgets);
-        // The bidding modal should re-appear when it is the human's turn again.
         await pumpFor(tester, const Duration(seconds: 4));
-        // Verify the game did not soft-lock (screen is still interactive).
         expect(find.byType(GameScreen), findsOneWidget);
       },
     );
