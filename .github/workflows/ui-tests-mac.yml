@@ -90,7 +90,11 @@ jobs:
           # deterministically; --plain-name keeps the recording focused on
           # just that test (the file also holds the full game-flow test).
           TEST_TARGET: integration_test/game_twenty_nine_test.dart
-          FLUTTER_EXTRA_ARGS: --dart-define=TN_FORCE_BOT_PASS=true --plain-name "all-pass redeal"
+          # Single-word --plain-name value: FLUTTER_EXTRA_ARGS is expanded
+          # unquoted by the CI script, so a quoted multi-word value would
+          # word-split into broken tokens. "redeal" uniquely matches the
+          # 'all-pass redeal: …' test name.
+          FLUTTER_EXTRA_ARGS: --dart-define=TN_FORCE_BOT_PASS=true --plain-name redeal
         run: |
           mkdir -p ${{ github.workspace }}/ui-run-artifacts
           bash ./scripts/ci/run-ui-tests-mac.sh
