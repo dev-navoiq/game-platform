@@ -35,6 +35,12 @@ class AppRoutes {
   static const joinByCode = '/lobby/:gameType/join';
   static const room = '/room/:roomId';
 
+  /// Sentinel `:roomId` used when navigating to the Room screen *before* the
+  /// room exists. The screen renders an optimistic "creating…" state and mints
+  /// the real room in the background (it reads the [RoomCreateRequest] from
+  /// GoRouter `extra`). No real room ever has this id.
+  static const pendingRoomId = 'pending';
+
   // Game
   static const game = '/game/:gameId';
 

@@ -28,6 +28,11 @@ class AnimationDurations {
 
   // ── UI ────────────────────────────────────────────────────────
   static const pageFade = Duration(milliseconds: 300);
+
+  /// Route-level navigation transition. Deliberately shorter than [pageFade]
+  /// so moving between screens (home → lobby → room → game) feels snappy
+  /// rather than a slow ~300ms Material slide.
+  static const navTransition = Duration(milliseconds: 200);
   static const modalSlide = Duration(milliseconds: 350); // _context.md: 350ms
   static const listItem = Duration(milliseconds: 250);
   static const listItemStagger = Duration(milliseconds: 60);

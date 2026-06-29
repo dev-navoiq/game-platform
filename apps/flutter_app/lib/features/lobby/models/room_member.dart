@@ -29,6 +29,23 @@ class RoomMember {
   });
 }
 
+/// Everything the Room screen needs to create a room *itself* after the user
+/// taps "Create Room" on the lobby. Passed as GoRouter `extra` so the screen
+/// can render an optimistic "creating…" state immediately (host seat + correct
+/// seat count are all known client-side) while the create-room edge function
+/// runs in the background — instead of freezing the lobby button for 2–5s.
+class RoomCreateRequest {
+  final String gameType;
+  final String socialMode;
+  final int maxPlayers;
+
+  const RoomCreateRequest({
+    required this.gameType,
+    required this.socialMode,
+    required this.maxPlayers,
+  });
+}
+
 /// What the lobby/room screen needs every time it reconciles with the server.
 /// One query at the room level + one at the participant level both feed into
 /// a single snapshot the UI swaps in atomically.

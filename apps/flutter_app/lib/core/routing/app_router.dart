@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../di/providers.dart';
 import '../theme/colors.dart';
+import '../../shared/animations/core/animation_constants.dart';
+import '../../shared/animations/core/animation_curves.dart';
 import 'routes.dart';
 import '../../shared/widgets/felt_background.dart';
 import '../../shared/widgets/glass_nav_bar.dart';
@@ -14,6 +16,7 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/lobby/screens/lobby_screen.dart';
 import '../../features/lobby/presentation/join_by_code_screen.dart';
 import '../../features/lobby/presentation/room_screen.dart';
+import '../../features/lobby/models/room_member.dart';
 import '../../features/game/screens/game_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/profile/presentation/settings_screen.dart';
@@ -110,31 +113,42 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Lobby & Room (full screen)
+      // Lobby & Room (full screen). Use a fast glass fade so the
+      // home → lobby → room → game flow feels snappy instead of the slow
+      // default Material slide on every hop.
       GoRoute(
         path: AppRoutes.lobby,
-        builder: (context, state) => LobbyScreen(
-          gameType: state.pathParameters['gameType'] ?? '',
+        pageBuilder: (context, state) => _glassPage(
+          state,
+          LobbyScreen(gameType: state.pathParameters['gameType'] ?? ''),
         ),
       ),
       GoRoute(
         path: AppRoutes.joinByCode,
-        builder: (context, state) => JoinByCodeScreen(
-          gameType: state.pathParameters['gameType'] ?? '',
+        pageBuilder: (context, state) => _glassPage(
+          state,
+          JoinByCodeScreen(gameType: state.pathParameters['gameType'] ?? ''),
         ),
       ),
       GoRoute(
         path: AppRoutes.room,
-        builder: (context, state) => RoomScreen(
-          roomId: state.pathParameters['roomId'] ?? '',
+        pageBuilder: (context, state) => _glassPage(
+          state,
+          RoomScreen(
+            roomId: state.pathParameters['roomId'] ?? '',
+            createRequest: state.extra is RoomCreateRequest
+                ? state.extra as RoomCreateRequest
+                : null,
+          ),
         ),
       ),
 
       // Game (full screen)
       GoRoute(
         path: AppRoutes.game,
-        builder: (context, state) => GameScreen(
-          roomId: state.pathParameters['gameId'] ?? '',
+        pageBuilder: (context, state) => _glassPage(
+          state,
+          GameScreen(roomId: state.pathParameters['gameId'] ?? ''),
         ),
       ),
 
@@ -210,6 +224,31 @@ final routerProvider = Provider<GoRouter>((ref) {
     errorBuilder: (context, state) => _ErrorScreen(error: state.error),
   );
 });
+
+/// A GoRouter page that transitions in with a fast glass fade (fade + slight
+/// scale), matching the "Refined Crystal" UI. Snappier than the default
+/// ~300ms Material slide — see [AnimationDurations.navTransition].
+CustomTransitionPage<void> _glassPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: AnimationDurations.navTransition,
+    reverseTransitionDuration: AnimationDurations.navTransition,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: AnimationCurves.pageFade,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
