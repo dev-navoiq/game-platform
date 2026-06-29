@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game_core/game_core.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
+import '../../../../core/services/supabase_service.dart' show MoveRejection;
 import '../../../../core/utils/player_avatar.dart';
 import '../../../lobby/models/room_member.dart';
 import '../../providers/game_provider.dart';
@@ -1143,6 +1144,8 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     );
   }
 
+  /// declareTrump deals the second batch of (hidden) cards, so we can't
+  /// predict it locally — wait for the authoritative server result.
   void _declareTrump(Suit suit) {
     ref.read(gameStateProvider.notifier).sendMove(
       roomId: widget.roomId,
@@ -1154,74 +1157,83 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
     );
   }
 
-  Future<void> _playCard(PlayingCard card) async {
-    await ref.read(gameStateProvider.notifier).sendMove(
-          roomId: widget.roomId,
-          move: {
-            'type': 'playCard',
-            'player_id': widget.localPlayerId,
-            'card': card.toJson(),
-          },
-        );
+  /// Send a deterministic move with an optimistic local prediction so the UI
+  /// updates instantly; roll back + surface an error only if the server
+  /// rejects it.
+  Future<void> _sendOptimistic(
+    GameMove localMove,
+    Map<String, dynamic> wireMove,
+  ) async {
+    try {
+      await ref.read(gameStateProvider.notifier).sendMoveOptimistic(
+            roomId: widget.roomId,
+            localMove: localMove,
+            wireMove: wireMove,
+          );
+    } on MoveRejection catch (e) {
+      _onMoveRejected(e);
+    }
   }
 
+  /// Benign rejections (turn/phase races, version conflicts) self-correct via
+  /// the realtime backstop after the rollback, so don't nag the user. Anything
+  /// else means the move was genuinely illegal — tell them.
+  void _onMoveRejected(MoveRejection e) {
+    const benign = {'NOT_YOUR_TURN', 'WRONG_PHASE', 'VERSION_CONFLICT'};
+    if (benign.contains(e.code) || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("That move wasn't allowed — try again.")),
+    );
+  }
+
+  Future<void> _playCard(PlayingCard card) => _sendOptimistic(
+        PlayCardMove(playerId: widget.localPlayerId, card: card),
+        {
+          'type': 'playCard',
+          'player_id': widget.localPlayerId,
+          'card': card.toJson(),
+        },
+      );
+
   void _placeBid(int bid) {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: BidMoveDto(
-        playerId: widget.localPlayerId,
-        bidValue: bid,
-      ).toJson(),
+    _sendOptimistic(
+      BidMove(playerId: widget.localPlayerId, bidValue: bid),
+      BidMoveDto(playerId: widget.localPlayerId, bidValue: bid).toJson(),
     );
   }
 
   void _pass() {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'pass',
-        'player_id': widget.localPlayerId,
-      },
+    _sendOptimistic(
+      PassMove(playerId: widget.localPlayerId),
+      {'type': 'pass', 'player_id': widget.localPlayerId},
     );
   }
 
   void _double() {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'double',
-        'player_id': widget.localPlayerId,
-      },
+    _sendOptimistic(
+      DoubleMove(playerId: widget.localPlayerId),
+      {'type': 'double', 'player_id': widget.localPlayerId},
     );
   }
 
   void _redouble() {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'redouble',
-        'player_id': widget.localPlayerId,
-      },
+    _sendOptimistic(
+      RedoubleMove(playerId: widget.localPlayerId),
+      {'type': 'redouble', 'player_id': widget.localPlayerId},
     );
   }
 
   void _revealTrump() {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'revealTrump',
-        'player_id': widget.localPlayerId,
-      },
+    _sendOptimistic(
+      RevealTrumpMove(playerId: widget.localPlayerId),
+      {'type': 'revealTrump', 'player_id': widget.localPlayerId},
     );
   }
 
   void _claimRoyalWedding() {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'claimRoyalWedding',
-        'player_id': widget.localPlayerId,
-      },
+    _sendOptimistic(
+      ClaimRoyalWeddingMove(playerId: widget.localPlayerId),
+      {'type': 'claimRoyalWedding', 'player_id': widget.localPlayerId},
     );
   }
 

@@ -12,6 +12,8 @@ import 'package:game_spades/game_spades.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
 import '../../../core/di/providers.dart';
+import '../../../core/theme/colors.dart';
+import '../../../shared/widgets/felt_background.dart';
 import '../presentation/screens/bridge_game_screen.dart';
 import '../presentation/screens/chess_game_screen.dart';
 import '../presentation/screens/hearts_game_screen.dart';
@@ -141,8 +143,26 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     if (gameState == null) {
+      // Match the felt table instead of flashing a bare white spinner, so the
+      // jump from room → game reads as "dealing" rather than a blank load.
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: AppColors.feltDark,
+        body: FeltBackground(
+          child: Center(
+            child: Column(
+              key: Key('game-loading'),
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: AppColors.accent),
+                SizedBox(height: 20),
+                Text(
+                  'Setting up the table…',
+                  style: TextStyle(color: Colors.white70, fontSize: 15),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 

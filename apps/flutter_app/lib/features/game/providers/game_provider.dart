@@ -21,6 +21,16 @@ class GameNotifier extends StateNotifier<GameState?> {
   final SupabaseService _supabase;
   String? _gameType;
 
+  /// Monotonic version of the last state we accepted. Incoming states (from
+  /// the realtime backstop or a slow validate-move response) that are *older*
+  /// than this are dropped so they can't clobber a newer optimistic / server
+  /// state. See [_versionOf]. Starts at -1 so the very first state always wins.
+  int _appliedVersion = -1;
+
+  /// Pure rules engine used to predict the result of a deterministic move
+  /// locally, before the server confirms it (optimistic UI).
+  final _twentyNineRules = TwentyNineRules();
+
   GameNotifier(this._supabase) : super(null);
 
   /// Set the active game type for state deserialization.
@@ -44,30 +54,123 @@ class GameNotifier extends StateNotifier<GameState?> {
         final newState = deserializeGameState(_gameType!, stateData);
         print('[GameNotifier] deserialized state: ${newState != null ? 'OK' : 'NULL'}');
         if (newState != null) {
-          state = newState;
+          _applyAuthoritative(newState);
         }
       },
     );
   }
 
-  /// Send a move to the server. validate-move returns the new state directly
-  /// in the response; we apply it optimistically rather than waiting for the
-  /// Postgres realtime broadcast to round-trip back. The realtime listener
-  /// still acts as a backstop for moves originated by *other* clients.
+  /// Send a move to the server and apply the authoritative result it returns.
+  /// Used for moves we don't predict locally (e.g. declareTrump) and for the
+  /// host-driven bot path.
   Future<void> sendMove({
     required String roomId,
     required dynamic move,
   }) async {
     final response = await _supabase.sendMove(roomId: roomId, move: move);
-    if (_gameType == null) return;
+    _applyServerResponse(response);
+  }
+
+  /// Send a move with an optimistic local prediction.
+  ///
+  /// [localMove] is the typed move fed to the local rules engine to update the
+  /// UI *immediately*; [wireMove] is the JSON payload sent to validate-move
+  /// (kept separate because the server expects snake_case fields). The server
+  /// remains authoritative: its response (or the realtime backstop) overwrites
+  /// the prediction, and a [MoveRejection] rolls it back.
+  Future<void> sendMoveOptimistic({
+    required String roomId,
+    required GameMove localMove,
+    required dynamic wireMove,
+  }) async {
+    final before = state;
+    final gameType = _gameType;
+
+    // 1. Predict the result locally and show it now — but only for
+    //    deterministic moves (no shuffle / hidden-card deal).
+    if (before != null && gameType != null) {
+      final predicted = _predictOptimisticState(gameType, before, localMove);
+      if (predicted != null) _applyAuthoritative(predicted);
+    }
+
+    // 2. Confirm with the server and reconcile.
+    try {
+      final response = await _supabase.sendMove(roomId: roomId, move: wireMove);
+      _applyServerResponse(response);
+    } on MoveRejection {
+      // The server refused the move — undo the optimistic prediction. The
+      // realtime backstop will re-sync if state moved on meanwhile.
+      if (before != null) {
+        _appliedVersion = _versionOf(before);
+        state = before;
+      }
+      rethrow; // let the UI surface a message
+    }
+  }
+
+  void _applyServerResponse(Map<String, dynamic> response) {
+    final gameType = _gameType;
+    if (gameType == null) return;
     final newStateData = response['new_state'] as Map<String, dynamic>?;
     if (newStateData == null) return;
-    final newState = deserializeGameState(_gameType!, newStateData);
-    if (newState != null) state = newState;
+    final newState = deserializeGameState(gameType, newStateData);
+    if (newState != null) _applyAuthoritative(newState);
+  }
+
+  /// Adopt [newState] unless it is older than what we've already shown.
+  ///
+  /// The staleness guard exists to stop a late realtime echo (or a slow
+  /// validate-move response) from clobbering a newer *optimistic* state. Only
+  /// Twenty-Nine predicts moves locally today, and only its turnNumber is
+  /// verified monotonic across every server transition — so the guard is
+  /// scoped to it. Other games keep plain last-write-wins (their prior
+  /// behaviour), which is correct because they never apply state ahead of the
+  /// server.
+  void _applyAuthoritative(GameState newState) {
+    if (_gameType == 'twenty_nine' && _versionOf(newState) < _appliedVersion) {
+      return; // stale — ignore
+    }
+    _appliedVersion = _versionOf(newState);
+    state = newState;
+  }
+
+  /// Monotonically-increasing version. Every state transition (including the
+  /// 4-pass re-deal and new-round/session-restart) increments turnNumber and
+  /// never resets it for the lifetime of a game_states row, so it never goes
+  /// backwards for a legitimate forward transition. (roundNumber can't be used
+  /// — a session restart resets it to 1 while turnNumber keeps climbing.)
+  int _versionOf(GameState s) => s.turnNumber;
+
+  /// Predict the next state for [move] applied to [before], or null if the move
+  /// is not safe to apply before the server confirms — i.e. it is
+  /// non-deterministic (shuffles / deals hidden cards) or unsupported here.
+  GameState? _predictOptimisticState(
+      String gameType, GameState before, GameMove move) {
+    if (gameType != 'twenty_nine') return null;
+    if (before is! TwentyNineState || move is! TwentyNineMove) return null;
+
+    final eligible = switch (move) {
+      PlayCardMove() => true,
+      BidMove() => true,
+      DoubleMove() => true,
+      RedoubleMove() => true,
+      RevealTrumpMove() => true,
+      ClaimRoyalWeddingMove() => true,
+      // A pass is deterministic unless it is the dissolving 4th pass, which
+      // shuffles and re-deals — let the server be the source of truth there.
+      PassMove() => !(before.passCount + 1 >= 4 && before.bidderId == null),
+      // declareTrump deals the second batch of (hidden) cards — don't predict.
+      DeclareTrumpMove() => false,
+    };
+    if (!eligible) return null;
+
+    final result = _twentyNineRules.applyMove(before, move);
+    return result.isValid ? result.newState : null;
   }
 
   /// Directly update the game state (used by tests and local state injection).
   void updateState(GameState newState) {
+    _appliedVersion = _versionOf(newState);
     state = newState;
   }
 
@@ -75,6 +178,7 @@ class GameNotifier extends StateNotifier<GameState?> {
   void clearState() {
     state = null;
     _gameType = null;
+    _appliedVersion = -1;
   }
 }
 

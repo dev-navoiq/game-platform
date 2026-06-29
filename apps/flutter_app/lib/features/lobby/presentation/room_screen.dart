@@ -20,13 +20,27 @@ import 'widgets/player_slot_widget.dart';
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomId;
 
-  const RoomScreen({super.key, required this.roomId});
+  /// When present, this screen was opened *before* the room existed: it renders
+  /// an optimistic "creating…" table and mints the room in the background,
+  /// then attaches to it like any other room. See [RoomCreateRequest].
+  final RoomCreateRequest? createRequest;
+
+  const RoomScreen({super.key, required this.roomId, this.createRequest});
 
   @override
   ConsumerState<RoomScreen> createState() => _RoomScreenState();
 }
 
 class _RoomScreenState extends ConsumerState<RoomScreen> {
+  /// The room id this screen is bound to. Starts as [widget.roomId] but, in the
+  /// create flow, is the sentinel 'pending' until create-room returns the real
+  /// id — every server call below uses this, never [widget.roomId].
+  late String _roomId = widget.roomId;
+
+  /// True while the background create-room call is in flight (create flow only).
+  /// Gates host actions (add bot / start) that need a real room id.
+  bool _creating = false;
+
   List<RoomMember> _members = const [];
   String _socialMode = 'full';
   String? _gameType;
@@ -88,14 +102,31 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadSnapshot();
-      final supabase = ref.read(supabaseServiceProvider);
-      _disposeMembershipSub = supabase.subscribeToRoomMembership(
-        roomId: widget.roomId,
-        onChanged: _loadSnapshot,
-      );
-    });
+    final req = widget.createRequest;
+    if (req != null) {
+      // Create flow: paint an optimistic table immediately (we already know
+      // the game, seat count, and that the local user is host), then create
+      // the room in the background and attach to it.
+      _creating = true;
+      _gameType = req.gameType;
+      _socialMode = req.socialMode;
+      _maxPlayers = req.maxPlayers;
+      final myId = ref.read(supabaseServiceProvider).currentUser?.id;
+      _members = [
+        RoomMember(
+          id: myId ?? 'me',
+          displayName: 'You',
+          seatIndex: 0,
+          isHost: true,
+          isBot: false,
+          isReady: false,
+          isCurrentUser: true,
+        ),
+      ];
+      WidgetsBinding.instance.addPostFrameCallback((_) => _createThenAttach(req));
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _attach());
+    }
   }
 
   @override
@@ -104,10 +135,58 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     super.dispose();
   }
 
+  /// Subscribe to membership changes for [_roomId] and pull the first snapshot.
+  /// Shared by the normal path and the create flow (after the id resolves).
+  void _attach() {
+    _loadSnapshot();
+    final supabase = ref.read(supabaseServiceProvider);
+    _disposeMembershipSub = supabase.subscribeToRoomMembership(
+      roomId: _roomId,
+      onChanged: _loadSnapshot,
+    );
+  }
+
+  /// Background create-room for the optimistic create flow. On success, binds
+  /// to the real room id and attaches; on failure, surfaces the error and pops
+  /// back to the lobby.
+  Future<void> _createThenAttach(RoomCreateRequest req) async {
+    // Read the service up front so it's usable even if this widget unmounts
+    // (user backs out) before the await completes.
+    final supabase = ref.read(supabaseServiceProvider);
+    try {
+      final result = await supabase.createRoom(
+        gameType: req.gameType,
+        socialMode: req.socialMode,
+        maxPlayers: req.maxPlayers,
+      );
+      final realId = result['room_id'] as String;
+      if (!mounted) {
+        // Abandoned mid-create — don't orphan an empty room on the server.
+        supabase.leaveRoom(roomId: realId).ignore();
+        return;
+      }
+      setState(() {
+        _roomId = realId;
+        _roomCode = result['code'] as String? ?? _roomCode;
+        _creating = false;
+      });
+      _attach();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not create room: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      context.pop();
+    }
+  }
+
   Future<void> _loadSnapshot() async {
     try {
       final supabase = ref.read(supabaseServiceProvider);
-      final snap = await supabase.fetchRoomSnapshot(roomId: widget.roomId);
+      final snap = await supabase.fetchRoomSnapshot(roomId: _roomId);
       if (!mounted) return;
       setState(() {
         _members = snap.members;
@@ -133,7 +212,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         // do NOT populate roomBotsProvider here — only the host runs bots,
         // which avoids two devices racing to send the same bot move.
         ref.read(gameTypeProvider.notifier).state = snap.gameType;
-        context.replace(AppRoutes.gamePath(widget.roomId));
+        context.replace(AppRoutes.gamePath(_roomId));
       }
     } catch (e) {
       debugPrint('[RoomScreen] fetchRoomSnapshot failed: $e');
@@ -172,7 +251,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     try {
       final supabase = ref.read(supabaseServiceProvider);
       await supabase.addBot(
-        roomId: widget.roomId,
+        roomId: _roomId,
         difficulty: difficulty,
       );
       // Realtime membership subscription flips the empty slot into the
@@ -225,7 +304,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     try {
       final supabase = ref.read(supabaseServiceProvider);
       await supabase.addBot(
-        roomId: widget.roomId,
+        roomId: _roomId,
         difficulty: difficulty,
       );
       // No success snackbar — it covers the Add Bot / Start Game buttons
@@ -261,7 +340,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         final roomData = await supabase.client
             .from('game_rooms')
             .select('config')
-            .eq('id', widget.roomId)
+            .eq('id', _roomId)
             .single();
         final config = roomData['config'] as Map<String, dynamic>?;
         final botsList = (config?['bots'] as List?)?.cast<Map<String, dynamic>>() ?? [];
@@ -282,7 +361,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       // are already in the provider.
       _navigatedToGame = true;
 
-      final result = await supabase.startGame(roomId: widget.roomId);
+      final result = await supabase.startGame(roomId: _roomId);
 
       if (mounted) {
         // The edge function returns 4xx as a JSON body { error, code } with
@@ -326,7 +405,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           }
         }
 
-        context.push(AppRoutes.gamePath(widget.roomId));
+        context.push(AppRoutes.gamePath(_roomId));
       }
     } catch (e) {
       if (mounted) {
@@ -365,7 +444,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               onTap: () {
                 final supabase = ref.read(supabaseServiceProvider);
                 supabase.updateRoomSocialMode(
-                  roomId: widget.roomId,
+                  roomId: _roomId,
                   mode: value,
                 );
                 setState(() => _socialMode = value);
@@ -431,13 +510,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _roomCode ?? '------',
+                      _roomCode ?? (_creating ? 'Creating…' : '------'),
                       key: const Key('room-code'),
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: _creating && _roomCode == null ? 18 : 28,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textOnFelt,
-                        letterSpacing: 4,
+                        letterSpacing: _creating && _roomCode == null ? 1 : 4,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -510,7 +589,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     // seat counter, so we don't need per-slot loading.
                     return PlayerSlotWidget(
                       isEmpty: true,
-                      onAddBot: _isLocalHost ? _addBotWithDifficulty : null,
+                      // No add-bot until the room actually exists.
+                      onAddBot: _isLocalHost && !_creating
+                          ? _addBotWithDifficulty
+                          : null,
                       isAddingBot: _isAddingBot,
                     );
                   },

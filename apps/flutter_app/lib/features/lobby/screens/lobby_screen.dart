@@ -4,13 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/routing/routes.dart';
-import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_bottom_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
+import '../models/room_member.dart';
 import '../presentation/widgets/room_list_card.dart';
 
 class LobbyScreen extends ConsumerStatefulWidget {
@@ -23,10 +23,10 @@ class LobbyScreen extends ConsumerStatefulWidget {
 }
 
 class _LobbyScreenState extends ConsumerState<LobbyScreen> {
-  /// Tracks an in-flight create-room request so the button can show a
-  /// spinner and reject repeat taps. Without this guard, the create-room
-  /// edge function can race and produce two rooms for a single intent.
-  bool _isCreating = false;
+  /// Guards against a double-tap pushing two Room screens (→ two rooms). Held
+  /// while the Room screen is on top; cleared when the user returns here, so a
+  /// second create is allowed after backing out.
+  bool _navigating = false;
 
   String get _displayName {
     switch (widget.gameType) {
@@ -86,15 +86,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               // Banner ad (free tier only)
               const BannerAdWidget(),
 
-              // Create Room button — disables itself + shows a spinner while
-              // the edge function call is in flight so impatient retaps don't
-              // spawn duplicate rooms.
+              // Create Room button — navigates straight to the room, which
+              // creates itself in the background so the user never waits on a
+              // frozen button.
               Padding(
                 padding: const EdgeInsets.only(bottom: 24, top: 12),
                 child: GlassButton(
-                  label: _isCreating ? 'Creating Room…' : 'Create Room',
-                  onPressed: _isCreating ? null : _onCreateRoom,
-                  isLoading: _isCreating,
+                  label: 'Create Room',
+                  onPressed: _onCreateRoom,
                   size: GlassButtonSize.large,
                   width: double.infinity,
                   icon: const Icon(Icons.add, color: Colors.white, size: 20),
@@ -108,42 +107,32 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Future<void> _onCreateRoom() async {
-    if (_isCreating) return;
+    if (_navigating) return;
 
     // For variable-player games, ask the host how many seats to open before
-    // we actually create the room. The picker is shown before _isCreating
-    // flips so a dismissed sheet doesn't leave the button spinning.
+    // we head to the room. This is the one thing we genuinely need up front;
+    // the actual create-room call happens inside the Room screen.
     int maxPlayers = 4;
     if (widget.gameType == 'oh_hell') {
       final picked = await _showOhHellPlayerCountSheet(context);
       if (picked == null) return; // dismissed
       maxPlayers = picked;
     }
+    if (!mounted) return;
 
-    setState(() => _isCreating = true);
-
-    try {
-      final supabase = ref.read(supabaseServiceProvider);
-      final result = await supabase.createRoom(
+    // Navigate immediately with a create request; the Room screen renders an
+    // optimistic "creating…" table and fires create-room in the background.
+    // `push` resolves when the user returns, so we can re-arm the guard.
+    _navigating = true;
+    await context.push(
+      AppRoutes.roomPath(AppRoutes.pendingRoomId),
+      extra: RoomCreateRequest(
         gameType: widget.gameType,
         socialMode: 'full',
         maxPlayers: maxPlayers,
-      );
-      if (mounted) {
-        context.push(AppRoutes.roomPath(result['room_id'] as String));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not create room: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isCreating = false);
-    }
+      ),
+    );
+    if (mounted) _navigating = false;
   }
 
   Future<int?> _showOhHellPlayerCountSheet(BuildContext context) {
