@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game_bridge/game_bridge.dart';
 import 'package:game_core/game_core.dart';
+import 'package:game_ludo/game_ludo.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
@@ -192,6 +193,8 @@ GameState? deserializeGameState(String gameType, Map<String, dynamic> json) {
         return OhHellState.fromJson(json);
       case 'bridge':
         return BridgeState.fromJson(json);
+      case 'ludo':
+        return LudoState.fromJson(json);
       // TODO: Add fromJson for other game types as they are implemented
       default:
         return null;

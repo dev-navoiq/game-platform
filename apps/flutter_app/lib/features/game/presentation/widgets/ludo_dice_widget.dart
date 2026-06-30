@@ -27,10 +27,15 @@ class LudoDiceWidget extends StatefulWidget {
 }
 
 class _LudoDiceWidgetState extends State<LudoDiceWidget>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _rotation;
+  late final AnimationController _pulse;
   final _random = math.Random();
+
+  /// True when the die is waiting for a tap to roll.
+  bool get _canRoll =>
+      widget.isEnabled && widget.onTap != null && !widget.isRolling;
 
   @override
   void initState() {
@@ -42,6 +47,11 @@ class _LudoDiceWidgetState extends State<LudoDiceWidget>
     _rotation = Tween(begin: 0.0, end: 2 * math.pi).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
+    );
+    if (_canRoll) _pulse.repeat(reverse: true);
   }
 
   @override
@@ -54,11 +64,18 @@ class _LudoDiceWidgetState extends State<LudoDiceWidget>
         _controller.reset();
       });
     }
+    if (_canRoll && !_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    } else if (!_canRoll && _pulse.isAnimating) {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _pulse.dispose();
     super.dispose();
   }
 
@@ -67,17 +84,18 @@ class _LudoDiceWidgetState extends State<LudoDiceWidget>
     return GestureDetector(
       onTap: widget.isEnabled ? widget.onTap : null,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: Listenable.merge([_controller, _pulse]),
         builder: (context, _) {
           final displayValue = widget.isRolling
               ? _random.nextInt(6) + 1
               : (widget.value ?? 1);
+          final pulse = _canRoll ? _pulse.value : 0.0;
 
           return Transform(
             alignment: Alignment.center,
             transform: widget.isRolling
                 ? (Matrix4.identity()..rotateZ(_rotation.value))
-                : Matrix4.identity(),
+                : (Matrix4.identity()..scale(1.0 + 0.09 * pulse)),
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
               opacity: widget.isEnabled ? 1.0 : 0.5,
@@ -87,8 +105,19 @@ class _LudoDiceWidgetState extends State<LudoDiceWidget>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.textDark.withOpacity(0.2)),
+                  border: Border.all(
+                    color: _canRoll
+                        ? AppColors.accent.withOpacity(0.85)
+                        : AppColors.textDark.withOpacity(0.2),
+                    width: _canRoll ? 2 : 1,
+                  ),
                   boxShadow: [
+                    if (_canRoll)
+                      BoxShadow(
+                        color: AppColors.accent.withOpacity(0.15 + 0.4 * pulse),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
                     BoxShadow(
                       color: Colors.black.withOpacity(0.15),
                       blurRadius: 8,

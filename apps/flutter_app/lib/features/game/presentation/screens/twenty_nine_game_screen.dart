@@ -678,6 +678,11 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                   roundNumber: state.roundNumber,
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  onForfeitTap: () => confirmAndForfeitGame(
+                    context,
+                    ref,
+                    isSpectator: isSpectator,
+                  ),
                   onScoreboardTap: () => _openTwentyNineScoreboard(
                     context,
                     state,
@@ -919,13 +924,6 @@ class _TwentyNineGameScreenState extends ConsumerState<TwentyNineGameScreen> {
                   ),
 
                 // Actions
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GameActions(
-                    isSpectator: isSpectator,
-                    onLeave: () => Navigator.of(context).pop(),
-                  ),
-                ),
               ],
             ),
           ),

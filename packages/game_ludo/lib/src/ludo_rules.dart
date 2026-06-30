@@ -171,6 +171,7 @@ class LudoRules extends GameRules<LudoState, LudoMove> {
 
     var tokens = List<LudoToken>.from(state.tokens);
     final events = <GameEvent>[];
+    var captured = false;
 
     // Capture opponents on non-safe main-track squares
     if (newPos.zone == LudoZone.main &&
@@ -182,6 +183,7 @@ class LudoRules extends GameRules<LudoState, LudoMove> {
         if (other.position.zone == LudoZone.main &&
             other.position.index == newPos.index) {
           tokens[i] = other.sendHome();
+          captured = true;
           events.add(GameEvent(
               type: GameEventType.pieceCaptured,
               playerId: move.playerId,
@@ -199,35 +201,52 @@ class LudoRules extends GameRules<LudoState, LudoMove> {
         playerId: move.playerId,
         data: {'tokenId': token.id, 'to': newPos.toString()}));
 
-    // Check finish
+    // Did this move bring the current player all the way home?
     final finishedPlayers = List<String>.from(state.finishedPlayers);
     String? winnerId = state.winnerId;
     var phase = state.phase;
-
     final updatedState = state.copyWith(tokens: tokens);
-    if (_hasPlayerFinished(updatedState, move.playerId) &&
-        !finishedPlayers.contains(move.playerId)) {
+    final justFinished = _hasPlayerFinished(updatedState, move.playerId) &&
+        !finishedPlayers.contains(move.playerId);
+    if (justFinished) {
       finishedPlayers.add(move.playerId);
-      if (finishedPlayers.length == 1) {
-        winnerId = move.playerId;
-        phase = GamePhase.gameEnd;
-        events.add(GameEvent(
-            type: GameEventType.gameEnded,
-            data: {'winnerId': winnerId}));
-      }
+      winnerId ??= move.playerId; // First to finish is the winner.
+      events.add(GameEvent(
+          type: GameEventType.pointsScored,
+          playerId: move.playerId,
+          data: {'placement': finishedPlayers.length}));
     }
 
-    // Next player
-    var nextIdx = state.currentPlayerIndex;
-    if (!state.canRollAgain) {
-      nextIdx = _nextActivePlayerIndex(state, state.currentPlayerIndex);
+    // The game keeps running for 2nd/3rd placements; it ends once only one
+    // player is left unfinished. (For 2 players this is "first to finish".)
+    final gameOver = finishedPlayers.length >= state.playerIds.length - 1;
+    if (gameOver && phase != GamePhase.gameEnd) {
+      phase = GamePhase.gameEnd;
+      // Rank the trailing player last so every seat has a placement.
+      for (final id in state.playerIds) {
+        if (!finishedPlayers.contains(id)) finishedPlayers.add(id);
+      }
+      events.add(GameEvent(
+          type: GameEventType.gameEnded, data: {'winnerId': winnerId}));
     }
+
+    // A six or a capture grants another roll — never if the player just
+    // finished or the game has ended.
+    final bonusTurn = !justFinished &&
+        !gameOver &&
+        (state.canRollAgain || (captured && _config.bonusTurnOnCapture));
+
+    final nextIdx = bonusTurn
+        ? state.currentPlayerIndex
+        : _nextActivePlayerIndex(state, state.currentPlayerIndex);
 
     final newState = state.copyWith(
       tokens: tokens,
       clearRoll: true,
+      // Keep the six-streak only when the six-bonus is what extends the turn;
+      // a capture bonus resets it so it can't feed the 3-six rule.
       consecutiveSixes: state.canRollAgain ? state.consecutiveSixes : 0,
-      canRollAgain: false,
+      canRollAgain: bonusTurn,
       currentPlayerIndex: nextIdx,
       finishedPlayers: finishedPlayers,
       winnerId: winnerId,

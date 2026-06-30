@@ -75,6 +75,11 @@ class _ChessGameScreenState extends ConsumerState<ChessGameScreen> {
                   gameName: 'Chess',
                   socialMode: state.socialMode,
                   isSpectator: _isSpectator,
+                  onForfeitTap: () => confirmAndForfeitGame(
+                    context,
+                    ref,
+                    isSpectator: _isSpectator,
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -178,13 +183,6 @@ class _ChessGameScreenState extends ConsumerState<ChessGameScreen> {
                 ),
 
                 // Actions
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GameActions(
-                    isSpectator: _isSpectator,
-                    onLeave: () => Navigator.of(context).pop(),
-                  ),
-                ),
               ],
             ),
           ),

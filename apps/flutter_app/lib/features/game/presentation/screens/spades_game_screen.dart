@@ -64,6 +64,11 @@ class SpadesGameScreen extends ConsumerWidget {
                   trumpInfo: '♠',
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  onForfeitTap: () => confirmAndForfeitGame(
+                    context,
+                    ref,
+                    isSpectator: isSpectator,
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -220,13 +225,6 @@ class SpadesGameScreen extends ConsumerWidget {
                   ),
 
                 // Actions
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GameActions(
-                    isSpectator: isSpectator,
-                    onLeave: () => Navigator.of(context).pop(),
-                  ),
-                ),
               ],
             ),
           ),

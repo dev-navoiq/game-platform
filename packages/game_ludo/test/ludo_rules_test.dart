@@ -257,9 +257,10 @@ void main() {
   });
 
   group('Win condition', () {
-    test('player wins when all 4 tokens reach finish', () {
-      // Move all 4 red tokens manually to homeStretch index 5, then roll 1 each
-      final rules = rulesWithRolls([1, 0, 1, 0, 1, 0, 1]); // 1 for each token finish
+    test('first finisher is the winner but a 4-player game plays on', () {
+      // Move all 4 red tokens to finish; p1 becomes the winner but three
+      // other players are still in the game, so it must NOT be over.
+      final rules = rulesWithRolls([1]); // 1 to finish the last token
       var state = rules.createInitialState(
           playerIds: ['p1', 'p2', 'p3', 'p4'], dealerIndex: 0);
 
@@ -281,10 +282,80 @@ void main() {
           .first;
       state = rules.applyMove(state, moveAction).newState;
 
+      expect(state.winnerId, 'p1');
+      expect(rules.getWinners(state), ['p1']);
+      expect(state.finishedPlayers, ['p1']);
+      expect(state.isGameOver, isFalse,
+          reason: '3 players still in the game');
+      expect(state.phase, GamePhase.playing);
+      // Turn moves on to the next active player.
+      expect(state.currentPlayerId, 'p2');
+    });
+
+    test('2-player game ends as soon as the first player finishes', () {
+      final rules = rulesWithRolls([1]);
+      var state = rules.createInitialState(
+          playerIds: ['p1', 'p2'], dealerIndex: 0);
+
+      state = state.copyWith(tokens: state.tokens.map((t) {
+        if (t.color != LudoColor.red) return t;
+        if (t.id == 'p1_0') {
+          return t.moveTo(LudoPosition.homeStretch(LudoColor.red, 5));
+        }
+        return t.moveTo(LudoPosition.finish(LudoColor.red));
+      }).toList());
+
+      state = rules.applyMove(state, LudoRollDice(playerId: 'p1')).newState;
+      final moveAction = rules.getValidMoves(state, 'p1')
+          .whereType<LudoMoveToken>()
+          .first;
+      state = rules.applyMove(state, moveAction).newState;
+
       expect(state.isGameOver, isTrue);
       expect(state.winnerId, 'p1');
       expect(state.phase, GamePhase.gameEnd);
-      expect(rules.getWinners(state), ['p1']);
+      // The trailing player is ranked last for full placements.
+      expect(state.finishedPlayers, ['p1', 'p2']);
+    });
+  });
+
+  group('Bonus turns', () {
+    test('capturing an opponent grants another roll', () {
+      // Red at 7, blue at 10; red rolls 3 → captures blue and keeps the turn.
+      final rules = rulesWithRolls([3]);
+      var state = rules.createInitialState(
+          playerIds: ['p1', 'p2', 'p3', 'p4'], dealerIndex: 0);
+
+      state = state.copyWith(tokens: state.tokens.map((t) {
+        if (t.id == 'p1_0') return t.moveTo(LudoPosition.main(7));
+        if (t.id == 'p2_0') return t.moveTo(LudoPosition.main(10));
+        return t;
+      }).toList());
+
+      state = rules.applyMove(state, LudoRollDice(playerId: 'p1')).newState;
+      state = rules.applyMove(state,
+          LudoMoveToken(playerId: 'p1', tokenId: 'p1_0', steps: 3)).newState;
+
+      expect(state.currentPlayerId, 'p1', reason: 'capture keeps the turn');
+      expect(state.canRollAgain, isTrue);
+      expect(state.lastRoll, isNull, reason: 'must roll again');
+      expect(rules.getValidMoves(state, 'p1').first, isA<LudoRollDice>());
+    });
+  });
+
+  group('Serialization', () {
+    test('LudoState survives a JSON round-trip', () {
+      final rules = rulesWithRolls([6]);
+      var state = rules.createInitialState(
+          playerIds: ['p1', 'p2', 'p3'], dealerIndex: 1);
+      state = rules.applyMove(state, LudoRollDice(playerId: 'p2')).newState;
+      state = rules.applyMove(state, rules
+          .getValidMoves(state, 'p2')
+          .whereType<LudoMoveToken>()
+          .first).newState;
+
+      final restored = LudoState.fromJson(state.toJson());
+      expect(restored, equals(state));
     });
   });
 
