@@ -105,6 +105,11 @@ class _SequenceGameScreenState extends ConsumerState<SequenceGameScreen> {
                   gameName: 'Sequence',
                   socialMode: state.socialMode,
                   isSpectator: _isSpectator,
+                  onForfeitTap: () => confirmAndForfeitGame(
+                    context,
+                    ref,
+                    isSpectator: _isSpectator,
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -191,13 +196,6 @@ class _SequenceGameScreenState extends ConsumerState<SequenceGameScreen> {
                   ),
 
                 // Actions
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GameActions(
-                    isSpectator: _isSpectator,
-                    onLeave: () => Navigator.of(context).pop(),
-                  ),
-                ),
               ],
             ),
           ),

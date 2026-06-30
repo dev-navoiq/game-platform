@@ -4,6 +4,7 @@ import 'package:bot_strategies/bot_strategies.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game_bridge/game_bridge.dart';
 import 'package:game_core/game_core.dart';
+import 'package:game_ludo/game_ludo.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -73,6 +74,7 @@ class BotMoveController {
   final TwentyNineRules _twentyNineRules = TwentyNineRules();
   final BridgeRules _bridgeRules = BridgeRules();
   final OhHellRules _ohHellRules = OhHellRules();
+  final LudoRules _ludoRules = LudoRules();
 
   BotMoveController(this._ref);
 
@@ -263,6 +265,10 @@ class BotMoveController {
       _cancelPending();
       return;
     }
+    if (state is LudoState && state.phase == GamePhase.gameEnd) {
+      _cancelPending();
+      return;
+    }
 
     final currentPlayer = state.currentPlayerId;
     if (currentPlayer == null) {
@@ -351,8 +357,47 @@ class BotMoveController {
       return _playBridgeBotMove(state, botInfo, roomId);
     } else if (state is OhHellState) {
       return _playOhHellBotMove(state, botInfo, roomId);
+    } else if (state is LudoState) {
+      return _playLudoBotMove(state, botInfo, roomId);
     }
     return Future<void>.value();
+  }
+
+  /// Ludo bot turns take two server round-trips: first a (server-authoritative)
+  /// roll, then — once the rolled value broadcasts back — a token move or pass.
+  /// Each step is scheduled independently as the new state arrives.
+  Future<void> _playLudoBotMove(
+    LudoState state,
+    BotInfo botInfo,
+    String roomId,
+  ) async {
+    final bot = _getOrCreateBot('ludo', botInfo);
+    if (bot is! LudoBot) return;
+
+    final validMoves = _ludoRules.getValidMoves(state, botInfo.id);
+    if (validMoves.isEmpty) return;
+
+    final selectedMove = bot.selectMove(state, validMoves);
+    if (selectedMove == null) return;
+
+    final movePayload = _convertLudoMoveToPayload(selectedMove);
+    if (movePayload == null) return;
+
+    print('[BotMoveController] Ludo bot ${botInfo.id.substring(0, 8)} computed: ${movePayload['type']}');
+
+    await _dispatchBotMove(botInfo, roomId, movePayload, 'ludo');
+  }
+
+  Map<String, dynamic>? _convertLudoMoveToPayload(LudoMove move) {
+    return switch (move) {
+      LudoRollDice() => {'type': 'roll', 'player_id': move.playerId},
+      LudoMoveToken() => {
+          'type': 'move',
+          'player_id': move.playerId,
+          'token_id': move.tokenId,
+        },
+      LudoPass() => {'type': 'pass', 'player_id': move.playerId},
+    };
   }
 
   Future<void> _playOhHellBotMove(

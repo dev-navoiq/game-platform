@@ -143,6 +143,8 @@ function buildInitialState(
       return buildSpadesState(playerIds, dealerIndex, socialMode);
     case 'bridge':
       return buildBridgeState(playerIds, dealerIndex, socialMode);
+    case 'ludo':
+      return buildLudoState(playerIds, dealerIndex, socialMode);
     default:
       return buildGenericState(gameType, playerIds, dealerIndex, socialMode);
   }
@@ -326,6 +328,55 @@ function vulnerabilityForDeal(dealNumber: number): string {
   if (mod === 2) return 'ns';
   if (mod === 3) return 'ew';
   return 'both';
+}
+
+// Mirror of LudoState.initial + LudoRules.createInitialState (2–4 players).
+function buildLudoState(
+  playerIds: string[],
+  dealerIndex: number,
+  socialMode: string,
+): Record<string, unknown> {
+  if (playerIds.length < 2 || playerIds.length > 4) {
+    throw new Error('Ludo requires 2-4 players');
+  }
+  // dealerIndex = first player to act; rotate so that seat leads.
+  const orderedIds = [
+    ...playerIds.slice(dealerIndex),
+    ...playerIds.slice(0, dealerIndex),
+  ];
+  const colors = ['red', 'blue', 'green', 'yellow'];
+  const tokensPerPlayer = 4;
+
+  const playerColors: Record<string, string> = {};
+  const tokens: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < orderedIds.length; i++) {
+    const playerId = orderedIds[i];
+    const color = colors[i];
+    playerColors[playerId] = color;
+    for (let j = 0; j < tokensPerPlayer; j++) {
+      tokens.push({
+        id: `${playerId}_${j}`,
+        color,
+        position: { zone: 'home', index: j, color },
+      });
+    }
+  }
+
+  return {
+    playerIds: orderedIds,
+    tokens,
+    playerColors,
+    currentPlayerIndex: 0,
+    consecutiveSixes: 0,
+    canRollAgain: false,
+    finishedPlayers: [],
+    phase: 'playing',
+    // Mirror the index.ts turn check, which reads currentPlayerId.
+    currentPlayerId: orderedIds[0],
+    turnNumber: 1,
+    roundNumber: 1,
+    socialMode,
+  };
 }
 
 function buildGenericState(

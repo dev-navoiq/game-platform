@@ -406,6 +406,11 @@ class _BridgeGameScreenState extends ConsumerState<BridgeGameScreen> {
                       : _denomGlyph(state.contract!.denomination),
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  onForfeitTap: () => confirmAndForfeitGame(
+                    context,
+                    ref,
+                    isSpectator: isSpectator,
+                  ),
                   onScoreboardTap: lastDeal == null
                       ? null
                       : () => _openScoreboard(context, lastDeal),
@@ -619,13 +624,6 @@ class _BridgeGameScreenState extends ConsumerState<BridgeGameScreen> {
                     ),
                   ),
 
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GameActions(
-                    isSpectator: isSpectator,
-                    onLeave: () => Navigator.of(context).pop(),
-                  ),
-                ),
               ],
             ),
           ),

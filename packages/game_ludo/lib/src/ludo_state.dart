@@ -77,8 +77,11 @@ class LudoState extends GameState {
   @override
   String get currentPlayerId => playerIds[currentPlayerIndex];
 
+  /// The game ends once only one player is left unfinished — everyone else
+  /// has brought all their tokens home and earned a placement. (For 2 players
+  /// this collapses to "first to finish wins".)
   @override
-  bool get isGameOver => winnerId != null;
+  bool get isGameOver => finishedPlayers.length >= playerIds.length - 1;
 
   /// Tokens belonging to [playerId].
   List<LudoToken> tokensFor(String playerId) {
@@ -122,6 +125,27 @@ class LudoState extends GameState {
         turnNumber: turnNumber ?? this.turnNumber,
         roundNumber: roundNumber,
         socialMode: socialMode ?? this.socialMode,
+      );
+
+  factory LudoState.fromJson(Map<String, dynamic> json) => LudoState(
+        playerIds: (json['playerIds'] as List).cast<String>(),
+        tokens: (json['tokens'] as List)
+            .map((t) => LudoToken.fromJson(t as Map<String, dynamic>))
+            .toList(),
+        playerColors: (json['playerColors'] as Map).map((k, v) =>
+            MapEntry(k as String, LudoColor.values.byName(v as String))),
+        currentPlayerIndex: json['currentPlayerIndex'] as int? ?? 0,
+        lastRoll: json['lastRoll'] as int?,
+        consecutiveSixes: json['consecutiveSixes'] as int? ?? 0,
+        canRollAgain: json['canRollAgain'] as bool? ?? false,
+        finishedPlayers:
+            ((json['finishedPlayers'] as List?) ?? const []).cast<String>(),
+        winnerId: json['winnerId'] as String?,
+        phase: GamePhase.values.byName(json['phase'] as String? ?? 'playing'),
+        turnNumber: json['turnNumber'] as int? ?? 1,
+        roundNumber: json['roundNumber'] as int? ?? 1,
+        socialMode: RoomSocialMode.values
+            .byName(json['socialMode'] as String? ?? 'full'),
       );
 
   @override
