@@ -34,12 +34,12 @@ class EnvConfig {
         // if the Mac's IP has changed. Same applies to LIVEKIT_URL.
         _supabaseUrl = const String.fromEnvironment(
           'SUPABASE_URL',
-          defaultValue: 'http://192.168.1.11:54321',
+          defaultValue: 'http://192.168.1.17:54321',
         );
         _supabaseAnonKey = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
         _livekitUrl = const String.fromEnvironment(
           'LIVEKIT_URL',
-          defaultValue: 'ws://192.168.1.11:7880',
+          defaultValue: 'ws://192.168.1.17:7880',
         );
         _revenueCatApiKey = 'your-dev-rc-key';
         _sentryDsn = '';

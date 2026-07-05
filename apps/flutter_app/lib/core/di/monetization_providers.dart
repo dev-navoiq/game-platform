@@ -10,11 +10,12 @@ import '../models/subscription_tier.dart' as app;
 import '../services/mock_ad_platform.dart';
 import '../services/mock_revenue_cat.dart';
 import '../services/subscription_service.dart';
+import 'providers.dart';
 
 // ── Repository providers ────────────────────────────────────────────────────
 
 final currencyRepositoryProvider = Provider<CurrencyRepository>((ref) {
-  return SupabaseCurrencyRepository();
+  return SupabaseCurrencyRepository(ref.watch(supabaseProvider));
 });
 
 final skinRepositoryProvider = Provider<SkinRepository>((ref) {
@@ -22,11 +23,11 @@ final skinRepositoryProvider = Provider<SkinRepository>((ref) {
 });
 
 final challengeRepositoryProvider = Provider<ChallengeRepository>((ref) {
-  return SupabaseChallengeRepository();
+  return SupabaseChallengeRepository(ref.watch(supabaseProvider));
 });
 
 final seasonRepositoryProvider = Provider<SeasonRepository>((ref) {
-  return SupabaseSeasonRepository();
+  return SupabaseSeasonRepository(ref.watch(supabaseProvider));
 });
 
 final adRepositoryProvider = Provider<AdRepository>((ref) {
@@ -76,16 +77,26 @@ final skinServiceProvider = Provider<SkinService>((ref) {
 
 // ── Derived / state providers ───────────────────────────────────────────────
 
-/// The user's current coin + gem balance. Starts at zero; screens should
-/// load the real balance from [CurrencyService] and update this provider.
-final currencyBalanceProvider = StateProvider<CurrencyBalance>((ref) {
-  return const CurrencyBalance.zero();
+/// The user's current coin + gem balance, derived from their profile row.
+/// Refreshes when [userProfileProvider] is invalidated.
+final currencyBalanceProvider = Provider<CurrencyBalance>((ref) {
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  if (profile == null) return const CurrencyBalance.zero();
+  return CurrencyBalance(coins: profile.coins, gems: profile.gems);
 });
 
-/// The user's current subscription tier (app-level enum with full metadata).
-/// Updated after login and after any purchase via [SubscriptionService].
-final currentTierProvider = StateProvider<app.SubscriptionTier>((ref) {
-  return app.SubscriptionTier.free;
+/// The user's current subscription tier (app-level enum with full metadata),
+/// derived from their profile row.
+final currentTierProvider = Provider<app.SubscriptionTier>((ref) {
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  switch (profile?.subscriptionTier) {
+    case 'pro':
+      return app.SubscriptionTier.pro;
+    case 'max':
+      return app.SubscriptionTier.max;
+    default:
+      return app.SubscriptionTier.free;
+  }
 });
 
 /// Tier benefits derived from the monetization package's [TierBenefits].

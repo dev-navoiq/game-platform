@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/audio_service.dart';
+import '../../shared/models/user_model.dart';
 
 // Supabase client (raw)
 final supabaseProvider = Provider<SupabaseClient>((ref) {
@@ -24,6 +25,19 @@ final authStateProvider = StreamProvider<User?>((ref) {
 // Current user
 final currentUserProvider = Provider<User?>((ref) {
   return ref.watch(authStateProvider).value;
+});
+
+// The logged-in user's profile row (coins, gems, xp, level, subscription_tier,
+// account_type, …). Re-fetches whenever the auth user changes. Call
+// `ref.invalidate(userProfileProvider)` after an action that changes the
+// balance (e.g. returning from a game, tournament registration) to refresh.
+final userProfileProvider = FutureProvider<UserModel?>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return null;
+  final supabase = ref.watch(supabaseProvider);
+  final json =
+      await supabase.from('profiles').select().eq('id', user.id).single();
+  return UserModel.fromJson(json);
 });
 
 // Tracks whether the user has logged in this session (set by login screen)

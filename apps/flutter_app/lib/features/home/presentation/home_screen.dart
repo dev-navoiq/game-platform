@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/di/monetization_providers.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/services/supabase_service.dart';
@@ -86,8 +87,18 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
           actions: [
-            const CurrencyDisplay(coins: 200, gems: 0, compact: true),
+            CurrencyDisplay(
+              coins: ref.watch(currencyBalanceProvider).coins,
+              gems: ref.watch(currencyBalanceProvider).gems,
+              compact: true,
+            ),
             const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.emoji_events_outlined,
+                  color: AppColors.textDark),
+              tooltip: 'Tournaments',
+              onPressed: () => context.push(AppRoutes.tournaments),
+            ),
             IconButton(
               icon: const Icon(Icons.history, color: AppColors.textDark),
               onPressed: () => context.push(AppRoutes.history),

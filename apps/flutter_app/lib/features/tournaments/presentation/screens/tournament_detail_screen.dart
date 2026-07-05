@@ -8,12 +8,10 @@ import '../../../../shared/widgets/felt_background.dart';
 import '../../../../shared/widgets/glass_app_bar.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/glass_container.dart';
-import '../../../../shared/widgets/under_construction_banner.dart';
 import '../../data/tournament_models.dart';
 import '../../providers/tournament_providers.dart';
 import '../widgets/bracket_view.dart';
 import '../widgets/standings_table.dart';
-import '../widgets/tournament_card.dart';
 
 class TournamentDetailScreen extends ConsumerStatefulWidget {
   final String tournamentId;
@@ -87,15 +85,6 @@ class _TournamentDetailScreenState
       children: [
         SizedBox(
             height: MediaQuery.of(context).padding.top + kToolbarHeight + 8),
-
-        // WIP banner — tournament backend isn't running yet.
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: UnderConstructionBanner(
-            message:
-                'Tournaments are under construction — registration, bracket and chat are not yet live.',
-          ),
-        ),
 
         // Tournament info header
         Padding(
@@ -243,6 +232,7 @@ class _TournamentDetailScreenState
       ref.invalidate(myParticipationProvider(widget.tournamentId));
       ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
       ref.invalidate(myTournamentsProvider);
+      ref.invalidate(userProfileProvider); // entry fee changed the balance
     }
   }
 
@@ -271,6 +261,7 @@ class _TournamentDetailScreenState
       ref.invalidate(myParticipationProvider(widget.tournamentId));
       ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
       ref.invalidate(myTournamentsProvider);
+      ref.invalidate(userProfileProvider); // refund changed the balance
     }
   }
 

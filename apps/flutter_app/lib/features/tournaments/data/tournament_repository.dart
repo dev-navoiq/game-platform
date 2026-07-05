@@ -119,80 +119,56 @@ class TournamentRepository {
 
   // ── Registration ───────────────────────────────────────────────────────────
 
+  // Registration is fully server-authoritative: the `tournament-register`
+  // edge function debits the entry fee (coins/gems), enforces tier / gem-gate /
+  // capacity, and writes the participant + entry ledger atomically. `userId` is
+  // taken from the auth JWT server-side; the param is kept for call-site compat.
   Future<TournamentRegistrationResult> register(
     String tournamentId,
     String userId,
   ) async {
     try {
-      final tournament = await getTournament(tournamentId);
-      if (tournament == null) {
-        return TournamentRegistrationResult.tournamentNotFound;
-      }
-
-      if (!tournament.isRegistrationOpen) {
-        if (tournament.isFull) {
-          return TournamentRegistrationResult.tournamentFull;
-        }
-        return TournamentRegistrationResult.registrationClosed;
-      }
-
-      // Deduct entry fee via edge function (handles coin/gem validation)
-      if (!tournament.isFree) {
-        final canAfford = await _checkBalance(
-          userId,
-          tournament.entryFeeCoins,
-          tournament.entryFeeGems,
-        );
-        if (!canAfford) {
-          return TournamentRegistrationResult.insufficientFunds;
-        }
-
-        await _deductEntryFee(
-          userId,
-          tournamentId,
-          tournament.entryFeeCoins,
-          tournament.entryFeeGems,
-        );
-      }
-
-      await _supabase.from('tournament_participants').insert({
-        'tournament_id': tournamentId,
-        'user_id': userId,
-      });
-
+      await _supabase.functions.invoke(
+        'tournament-register',
+        body: {'tournament_id': tournamentId},
+      );
       return TournamentRegistrationResult.success;
-    } catch (e) {
-      if (e.toString().contains('duplicate')) {
-        return TournamentRegistrationResult.alreadyRegistered;
-      }
+    } on FunctionException catch (e) {
+      return _mapRegisterError(e);
+    } catch (_) {
       return TournamentRegistrationResult.error;
     }
   }
 
+  TournamentRegistrationResult _mapRegisterError(FunctionException e) {
+    final details = e.details;
+    final code = details is Map ? details['code'] as String? : null;
+    switch (code) {
+      case 'REGISTRATION_CLOSED':
+        return TournamentRegistrationResult.registrationClosed;
+      case 'TOURNAMENT_FULL':
+        return TournamentRegistrationResult.tournamentFull;
+      case 'ALREADY_REGISTERED':
+        return TournamentRegistrationResult.alreadyRegistered;
+      case 'INSUFFICIENT_FUNDS':
+        return TournamentRegistrationResult.insufficientFunds;
+      case 'NOT_FOUND':
+        return TournamentRegistrationResult.tournamentNotFound;
+      case 'TIER_REQUIRED':
+        return TournamentRegistrationResult.tierRequired;
+      default:
+        // REGISTERED_REQUIRED / TOO_MANY_ACTIVE_TOURNAMENTS
+        return TournamentRegistrationResult.error;
+    }
+  }
+
+  // Unregister + refund is handled server-side by `tournament-unregister`.
   Future<bool> unregister(String tournamentId, String userId) async {
     try {
-      final tournament = await getTournament(tournamentId);
-      if (tournament == null ||
-          tournament.status != TournamentStatus.registration) {
-        return false;
-      }
-
-      // Refund entry fee
-      if (!tournament.isFree) {
-        await _refundEntryFee(
-          userId,
-          tournamentId,
-          tournament.entryFeeCoins,
-          tournament.entryFeeGems,
-        );
-      }
-
-      await _supabase
-          .from('tournament_participants')
-          .delete()
-          .eq('tournament_id', tournamentId)
-          .eq('user_id', userId);
-
+      await _supabase.functions.invoke(
+        'tournament-unregister',
+        body: {'tournament_id': tournamentId},
+      );
       return true;
     } catch (_) {
       return false;
@@ -268,69 +244,4 @@ class TournamentRepository {
             data.map((r) => TournamentChatMessage.fromJson(r)).toList());
   }
 
-  // ── Currency helpers ───────────────────────────────────────────────────────
-
-  Future<bool> _checkBalance(String userId, int coins, int gems) async {
-    final response = await _supabase
-        .from('profiles')
-        .select('coins, gems')
-        .eq('id', userId)
-        .single();
-
-    return (response['coins'] as int) >= coins &&
-        (response['gems'] as int) >= gems;
-  }
-
-  Future<void> _deductEntryFee(
-    String userId,
-    String tournamentId,
-    int coins,
-    int gems,
-  ) async {
-    // Direct SQL update for now; in production use an RPC for atomicity
-    if (coins > 0) {
-      await _supabase.rpc('spend_currency', params: {
-        'p_user_id': userId,
-        'p_amount': coins,
-        'p_currency': 'coins',
-        'p_reason': 'Tournament entry fee',
-        'p_reference_id': tournamentId,
-      });
-    }
-    if (gems > 0) {
-      await _supabase.rpc('spend_currency', params: {
-        'p_user_id': userId,
-        'p_amount': gems,
-        'p_currency': 'gems',
-        'p_reason': 'Tournament entry fee',
-        'p_reference_id': tournamentId,
-      });
-    }
-  }
-
-  Future<void> _refundEntryFee(
-    String userId,
-    String tournamentId,
-    int coins,
-    int gems,
-  ) async {
-    if (coins > 0) {
-      await _supabase.rpc('earn_currency', params: {
-        'p_user_id': userId,
-        'p_amount': coins,
-        'p_currency': 'coins',
-        'p_reason': 'Tournament entry fee refund',
-        'p_reference_id': tournamentId,
-      });
-    }
-    if (gems > 0) {
-      await _supabase.rpc('earn_currency', params: {
-        'p_user_id': userId,
-        'p_amount': gems,
-        'p_currency': 'gems',
-        'p_reason': 'Tournament entry fee refund',
-        'p_reference_id': tournamentId,
-      });
-    }
-  }
 }
