@@ -3,6 +3,7 @@ import { handleCors } from '../_shared/cors.ts';
 import { getSupabaseClient, getSupabaseAdmin } from '../_shared/supabase.ts';
 import { requireAuth, jsonResponse, errorResponse } from '../_shared/validation.ts';
 import { creditCurrency } from '../_shared/currency.ts';
+import { isGuest } from '../_shared/identity.ts';
 
 interface RecordReferralRequest {
   referral_code: string;
@@ -22,6 +23,11 @@ serve(async (req) => {
     const body: RecordReferralRequest = await req.json();
     if (!body.referral_code) {
       return errorResponse('referral_code is required', 400);
+    }
+
+    // ── Referee must be registered (guests can't earn referral rewards) ────
+    if (await isGuest(admin, user.id)) {
+      return errorResponse('Create an account to use a referral code', 403, 'REGISTERED_REQUIRED');
     }
 
     // ── Look up referrer ──────────────────────────────────────────────────

@@ -139,3 +139,56 @@ export async function grantXp(
 
   return { xp, level, xp_to_next_level: xpNeeded, leveled_up: leveledUp };
 }
+
+/**
+ * Add XP to the user's progress in the active season (if any).
+ * Levels up at a flat 1000 XP per season level, capped at season.max_level.
+ * No-op when there is no active season. Mirrors the logic previously private to
+ * claim-challenge-reward so game-end and tournament rewards share one path.
+ */
+export async function addSeasonXp(
+  admin: SupabaseClient,
+  userId: string,
+  xp: number,
+): Promise<void> {
+  if (xp <= 0) return;
+
+  const { data: season } = await admin
+    .from('seasons')
+    .select('id, max_level')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!season) return;
+
+  const { data: progress } = await admin
+    .from('user_season_progress')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('season_id', season.id)
+    .maybeSingle();
+
+  if (!progress) {
+    await admin.from('user_season_progress').insert({
+      user_id: userId,
+      season_id: season.id,
+      xp,
+      level: 0,
+    });
+    return;
+  }
+
+  let newXp = progress.xp + xp;
+  let newLevel = progress.level;
+  const xpPerLevel = 1000;
+
+  while (newXp >= xpPerLevel && newLevel < season.max_level) {
+    newXp -= xpPerLevel;
+    newLevel++;
+  }
+
+  await admin
+    .from('user_season_progress')
+    .update({ xp: newXp, level: newLevel })
+    .eq('id', progress.id);
+}

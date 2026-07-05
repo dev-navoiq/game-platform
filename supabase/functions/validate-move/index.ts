@@ -4,6 +4,8 @@ import { getSupabaseClient, getSupabaseAdmin } from '../_shared/supabase.ts';
 import { requireAuth, jsonResponse, errorResponse } from '../_shared/validation.ts';
 import { MovePayload, mapDartPhaseToDb } from '../_shared/types.ts';
 import { validateMove, applyMove } from '../_shared/game_rules/index.ts';
+import { grantGameEndRewards } from '../_shared/rewards.ts';
+import { reportTournamentMatchResult } from '../_shared/tournament_report.ts';
 
 interface ValidateMoveRequest {
   room_id: string;
@@ -130,6 +132,22 @@ serve(async (req) => {
         .from('game_rooms')
         .update({ status: 'finished' })
         .eq('id', body.room_id);
+
+      // Grant coins + XP (+ season XP) to human players, exactly once per room.
+      // Never fails the move response — the game already ended.
+      try {
+        await grantGameEndRewards(admin, body.room_id, room.game_type, newState);
+      } catch (e) {
+        console.error('grantGameEndRewards failed', e);
+      }
+
+      // If this room is a tournament match, report the result + advance the
+      // bracket. No-op for non-tournament rooms.
+      try {
+        await reportTournamentMatchResult(admin, body.room_id);
+      } catch (e) {
+        console.error('reportTournamentMatchResult failed', e);
+      }
 
       // Clear player activities
       const { data: players } = await admin

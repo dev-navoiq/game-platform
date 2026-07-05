@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { handleCors } from '../_shared/cors.ts';
 import { getSupabaseClient, getSupabaseAdmin } from '../_shared/supabase.ts';
 import { requireAuth, jsonResponse, errorResponse } from '../_shared/validation.ts';
+import { forfeitTournamentMatch } from '../_shared/tournament_report.ts';
 
 interface LeaveRoomRequest {
   room_id: string;
@@ -64,6 +65,25 @@ serve(async (req) => {
     const liveHostId = room.current_host_id ?? room.created_by;
     const wasHost = liveHostId === user.id;
     const isPlayingGame = room.status === 'playing';
+
+    // ── Tournament match: forfeit to the opponent (no bot substitution) ──
+    // Competitive integrity — a disconnect hands the match to the opponent
+    // and advances the bracket, rather than silently subbing a bot.
+    const tournamentMatchId =
+      (room.config as Record<string, unknown> | null)?.tournament_match_id as string | undefined;
+    if (isPlayingGame && !row.is_spectator && tournamentMatchId) {
+      await admin
+        .from('room_players')
+        .update({ disconnected_at: new Date().toISOString() })
+        .eq('id', row.id);
+      await admin.from('game_rooms').update({ status: 'finished' }).eq('id', room.id);
+      try {
+        await forfeitTournamentMatch(admin, tournamentMatchId, user.id);
+      } catch (e) {
+        console.error('forfeitTournamentMatch failed', e);
+      }
+      return jsonResponse({ room_id: room.id, forfeited: true });
+    }
 
     // ── Phase A: handle the caller's row ─────────────────────────────────
     if (!isPlayingGame || row.is_spectator) {
