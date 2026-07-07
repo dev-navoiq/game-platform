@@ -13,6 +13,7 @@ import 'core/config/env_config.dart';
 import 'core/game_registry_init.dart';
 import 'core/services/config_sync_service.dart';
 import 'core/services/feature_flags.dart';
+import 'core/services/notification_service.dart';
 import 'core/services/update_service.dart';
 
 void main() async {
@@ -34,6 +35,18 @@ void main() async {
     (e) => e.name == envName,
     orElse: () => Environment.development,
   );
+
+  // FAIL CLOSED: a release/TestFlight build must never resolve to the
+  // development environment (LAN IP over cleartext HTTP + dev key). This has
+  // shipped broken testers before; make it a hard build/runtime error instead
+  // of a silent default. See SECURITY-AUDIT M7 / SECURITY-GUIDELINES C3.
+  if (kReleaseMode && env == Environment.development) {
+    throw StateError(
+      'Release build resolved ENV=development. Pass '
+      '--dart-define=ENV=staging (or production) when building for release.',
+    );
+  }
+
   EnvConfig.initialize(env);
 
   // Supabase init must complete before runApp — the client is required for
@@ -94,5 +107,10 @@ Future<void> _initializeBackgroundServices() async {
     await UpdateService.instance.initialize();
   } catch (e) {
     debugPrint('UpdateService init failed (non-fatal): $e');
+  }
+  try {
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('NotificationService init failed (non-fatal): $e');
   }
 }

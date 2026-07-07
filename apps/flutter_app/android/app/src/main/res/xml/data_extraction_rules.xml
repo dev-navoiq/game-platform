@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (API 31+) backup/transfer rules. With allowBackup="false" the
+     app is excluded from Auto Backup and device-to-device transfer entirely;
+     these explicit rules make the intent unambiguous and exclude the shared-prefs
+     store that holds the Supabase session/refresh token. See SECURITY-AUDIT H8. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

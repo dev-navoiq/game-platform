@@ -67,3 +67,9 @@ enabled = false
 port = 54327
 vector_port = 54328
 backend = "postgres"
+
+# notify-dispatch is a database-webhook target (pg_net trigger), not a
+# client-called function — it authenticates with x-webhook-secret instead
+# of a user JWT.
+[functions.notify-dispatch]
+verify_jwt = false

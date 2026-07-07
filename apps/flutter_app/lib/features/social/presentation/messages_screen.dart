@@ -5,6 +5,7 @@ import 'package:social_core/social_core.dart';
 
 import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
@@ -15,11 +16,24 @@ import '../providers/messaging_providers.dart';
 /// Inbox of 1:1 conversations with friends. Each row links into the DM
 /// thread. Rows show a green presence dot for friends who are currently
 /// in the Realtime presence channel.
-class MessagesScreen extends ConsumerWidget {
+class MessagesScreen extends ConsumerStatefulWidget {
   const MessagesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MessagesScreen> createState() => _MessagesScreenState();
+}
+
+class _MessagesScreenState extends ConsumerState<MessagesScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Permission-in-context: someone opening their inbox cares about
+    // messages, so this is the moment to ask. No-ops once decided.
+    NotificationService.instance.requestPermissionIfNeeded();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final inboxAsync = ref.watch(dmInboxProvider);
     final friendActivities = ref.watch(friendActivitiesProvider);
     final onlineIds = ref.watch(onlineUserIdsProvider);

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../di/providers.dart';
+import '../services/notification_service.dart';
 import '../theme/colors.dart';
 import '../../shared/animations/core/animation_constants.dart';
 import '../../shared/animations/core/animation_curves.dart';
@@ -37,7 +38,7 @@ import '../../features/tournaments/presentation/screens/tournaments_screen.dart'
 import '../../features/tournaments/presentation/screens/tournament_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: AppRoutes.splash,
     debugLogDiagnostics: true,
 
@@ -223,6 +224,12 @@ final routerProvider = Provider<GoRouter>((ref) {
 
     errorBuilder: (context, state) => _ErrorScreen(error: state.error),
   );
+
+  // Notification taps deep-link into the app; any tap that happened during
+  // cold start was parked and replays as soon as this handler is set.
+  NotificationService.instance.onTapRoute = router.go;
+
+  return router;
 });
 
 /// A GoRouter page that transitions in with a fast glass fade (fade + slight

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'notification_service.dart';
 import 'supabase_service.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -93,6 +94,9 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    // Must precede signOut: deleting the device token row needs the session
+    // (RLS), and a token left behind would keep pushing to a signed-out device.
+    await NotificationService.instance.unregisterCurrentToken();
     await _client.auth.signOut();
   }
 
