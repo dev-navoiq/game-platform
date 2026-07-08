@@ -40,10 +40,17 @@ void main() async {
   // development environment (LAN IP over cleartext HTTP + dev key). This has
   // shipped broken testers before; make it a hard build/runtime error instead
   // of a silent default. See SECURITY-AUDIT M7 / SECURITY-GUIDELINES C3.
-  if (kReleaseMode && env == Environment.development) {
+  //
+  // ALLOW_DEV_RELEASE exists because physical-device runs must use release
+  // mode (Xcode 26.4.1 debug-attach timeout) yet still target local Supabase.
+  // It must be passed explicitly per-build and is never set by the release
+  // scripts, so the guard stays fail-closed for TestFlight/store builds.
+  const allowDevRelease = bool.fromEnvironment('ALLOW_DEV_RELEASE');
+  if (kReleaseMode && env == Environment.development && !allowDevRelease) {
     throw StateError(
       'Release build resolved ENV=development. Pass '
-      '--dart-define=ENV=staging (or production) when building for release.',
+      '--dart-define=ENV=staging (or production) when building for release, '
+      'or --dart-define=ALLOW_DEV_RELEASE=true for a local device run.',
     );
   }
 
@@ -104,7 +111,11 @@ Future<void> _initializeBackgroundServices() async {
     debugPrint('Background services init failed (non-fatal): $e');
   }
   try {
-    await UpdateService.instance.initialize();
+    // Shorebird can block indefinitely when its network check stalls; without
+    // a timeout it starves every service queued behind it.
+    await UpdateService.instance.initialize().timeout(
+          const Duration(seconds: 10),
+        );
   } catch (e) {
     debugPrint('UpdateService init failed (non-fatal): $e');
   }

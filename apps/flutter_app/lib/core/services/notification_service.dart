@@ -95,22 +95,9 @@ class NotificationService {
 
     final messaging = FirebaseMessaging.instance;
 
-    // iOS presents foreground notifications natively; on Android FCM does
-    // not, so _onForegroundMessage mirrors them through the local plugin.
-    await messaging.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
-    FirebaseMessaging.onMessageOpenedApp
-        .listen((message) => _handleTap(message.data['route'] as String?));
-    final initial = await messaging.getInitialMessage();
-    if (initial != null) {
-      _handleTap(initial.data['route'] as String?);
-    }
-
+    // Token registration is the load-bearing part — attach it FIRST. Some
+    // firebase_messaging platform futures (getInitialMessage in particular)
+    // can hang forever on iOS; nothing below may gate this.
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
       if (state.event == AuthChangeEvent.signedIn ||
           state.event == AuthChangeEvent.initialSession) {
@@ -119,6 +106,31 @@ class NotificationService {
       }
     });
     _tokenSub = messaging.onTokenRefresh.listen((_) => _registerToken());
+
+    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+    FirebaseMessaging.onMessageOpenedApp
+        .listen((message) => _handleTap(message.data['route'] as String?));
+
+    // iOS presents foreground notifications natively; on Android FCM does
+    // not, so _onForegroundMessage mirrors them through the local plugin.
+    unawaited(messaging
+        .setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        )
+        .catchError((Object e) =>
+            debugPrint('Foreground presentation options failed: $e')));
+
+    // Cold start from a notification tap: resolve in the background — this
+    // future is the one with the documented iOS hang.
+    unawaited(messaging.getInitialMessage().then((initial) {
+      if (initial != null) {
+        _handleTap(initial.data['route'] as String?);
+      }
+    }).catchError((Object e) {
+      debugPrint('getInitialMessage failed: $e');
+    }));
   }
 
   /// Ask for notification permission. Call from a moment where the user just
@@ -129,6 +141,9 @@ class NotificationService {
       final current =
           await FirebaseMessaging.instance.getNotificationSettings();
       if (current.authorizationStatus == AuthorizationStatus.authorized) {
+        // Already granted (possibly by a previous install of the same bundle
+        // id) — this call is then the only reliable moment to (re)register.
+        await _registerToken();
         return true;
       }
       if (current.authorizationStatus == AuthorizationStatus.denied) {
@@ -258,7 +273,7 @@ class NotificationService {
     final userId = client.auth.currentUser?.id;
     if (userId == null) return;
     try {
-      final token = await FirebaseMessaging.instance.getToken();
+      final token = await _getTokenWaitingForApns();
       if (token == null) return;
       await client.from('device_push_tokens').upsert({
         'user_id': userId,
@@ -268,6 +283,36 @@ class NotificationService {
       }, onConflict: 'user_id,token');
     } catch (e) {
       debugPrint('Push token registration failed: $e');
+    }
+  }
+
+  /// On iOS the FCM token can't be minted until Apple delivers the APNs
+  /// token, which races app startup — getToken() then throws
+  /// [firebase_messaging/apns-token-not-set]. Poll briefly instead of
+  /// dropping the registration on the floor.
+  Future<String?> _getTokenWaitingForApns() async {
+    final messaging = FirebaseMessaging.instance;
+    if (Platform.isIOS) {
+      // The iOS plugin only calls registerForRemoteNotifications from within
+      // requestPermission() — without this, the APNs token never arrives for
+      // users whose permission was granted by a previous install. It shows no
+      // prompt once the status is already determined, so only skip it when a
+      // prompt could actually appear (notDetermined).
+      final settings = await messaging.getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.notDetermined &&
+          settings.authorizationStatus != AuthorizationStatus.denied) {
+        await messaging.requestPermission();
+      }
+      for (var attempt = 0; attempt < 10; attempt++) {
+        if (await messaging.getAPNSToken() != null) break;
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    }
+    try {
+      return await messaging.getToken();
+    } on FirebaseException catch (e) {
+      if (e.code == 'apns-token-not-set') return null;
+      rethrow;
     }
   }
 
