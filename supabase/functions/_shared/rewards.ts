@@ -74,6 +74,14 @@ export async function grantGameEndRewards(
 
   for (const o of humanOutcomes) {
     await grantOne(admin, roomId, o, config, today);
+
+    // ── Update leaderboard (Story #52) ──────────────────────────────────────
+    const ratingChange = o.result === 'win' ? 25 : (o.result === 'loss' ? -15 : 0);
+    try {
+      await updateLeaderboard(admin, o.user_id, gameType, o.result, ratingChange);
+    } catch (e) {
+      console.error('updateLeaderboard failed', e);
+    }
   }
 
   // ── Record match history (humans only; bots aren't in profiles) ─────────
@@ -145,5 +153,52 @@ async function grantOne(
   if (xp > 0) {
     await grantXp(admin, o.user_id, xp);
     await addSeasonXp(admin, o.user_id, xp);
+  }
+}
+
+/**
+ * Update player's leaderboard entry for a specific game type.
+ * Creates new entry if first game, otherwise updates existing stats.
+ * Uses simple fixed-point rating system: +25 win, -15 loss, 0 draw.
+ */
+async function updateLeaderboard(
+  admin: SupabaseClient,
+  userId: string,
+  gameType: string,
+  result: 'win' | 'loss' | 'draw',
+  ratingChange: number,
+): Promise<void> {
+  const { data: existing } = await admin
+    .from('leaderboards')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('game_type', gameType)
+    .maybeSingle();
+
+  if (!existing) {
+    // First game for this user + game type
+    await admin.from('leaderboards').insert({
+      user_id: userId,
+      game_type: gameType,
+      games_played: 1,
+      wins: result === 'win' ? 1 : 0,
+      losses: result === 'loss' ? 1 : 0,
+      draws: result === 'draw' ? 1 : 0,
+      rating: Math.max(0, 1500 + ratingChange), // Start at 1500, floor at 0
+    });
+  } else {
+    // Update existing entry
+    const newRating = Math.max(0, existing.rating + ratingChange);
+    await admin
+      .from('leaderboards')
+      .update({
+        games_played: existing.games_played + 1,
+        wins: existing.wins + (result === 'win' ? 1 : 0),
+        losses: existing.losses + (result === 'loss' ? 1 : 0),
+        draws: existing.draws + (result === 'draw' ? 1 : 0),
+        rating: newRating,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id);
   }
 }
