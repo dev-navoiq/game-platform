@@ -175,29 +175,38 @@ async function updateLeaderboard(
     .eq('game_type', gameType)
     .maybeSingle();
 
+  const isWin = result === 'win';
+
   if (!existing) {
     // First game for this user + game type
     await admin.from('leaderboards').insert({
       user_id: userId,
       game_type: gameType,
-      games_played: 1,
-      wins: result === 'win' ? 1 : 0,
+      total_games: 1,
+      wins: isWin ? 1 : 0,
       losses: result === 'loss' ? 1 : 0,
       draws: result === 'draw' ? 1 : 0,
-      rating: Math.max(0, 1500 + ratingChange), // Start at 1500, floor at 0
+      win_streak: isWin ? 1 : 0,
+      best_streak: isWin ? 1 : 0,
+      rating: Math.max(0, 1500 + ratingChange),
+      last_played_at: new Date().toISOString(),
     });
   } else {
     // Update existing entry
+    const newWinStreak = isWin ? existing.win_streak + 1 : 0;
+    const newBestStreak = Math.max(existing.best_streak, newWinStreak);
     const newRating = Math.max(0, existing.rating + ratingChange);
     await admin
       .from('leaderboards')
       .update({
-        games_played: existing.games_played + 1,
-        wins: existing.wins + (result === 'win' ? 1 : 0),
+        total_games: existing.total_games + 1,
+        wins: existing.wins + (isWin ? 1 : 0),
         losses: existing.losses + (result === 'loss' ? 1 : 0),
         draws: existing.draws + (result === 'draw' ? 1 : 0),
+        win_streak: newWinStreak,
+        best_streak: newBestStreak,
         rating: newRating,
-        updated_at: new Date().toISOString(),
+        last_played_at: new Date().toISOString(),
       })
       .eq('id', existing.id);
   }
