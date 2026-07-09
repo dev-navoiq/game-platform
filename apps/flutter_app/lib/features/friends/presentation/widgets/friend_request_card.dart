@@ -7,7 +7,7 @@ import '../../../../shared/widgets/glass_card.dart';
 import '../../../social/providers/social_providers.dart';
 
 /// Card for an incoming friend request with Accept/Decline buttons.
-class FriendRequestCard extends ConsumerWidget {
+class FriendRequestCard extends ConsumerStatefulWidget {
   final social_core.Friendship friendship;
 
   const FriendRequestCard({
@@ -16,7 +16,35 @@ class FriendRequestCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FriendRequestCard> createState() => _FriendRequestCardState();
+}
+
+class _FriendRequestCardState extends ConsumerState<FriendRequestCard> {
+  bool _busy = false;
+
+  Future<void> _respond({required bool accept}) async {
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(friendsRepositoryProvider);
+      if (accept) {
+        await repo.acceptFriendRequest(friendshipId: widget.friendship.id);
+      } else {
+        await repo.declineFriendRequest(friendshipId: widget.friendship.id);
+      }
+      // The friendships stream refreshes the list; nothing else to do.
+    } catch (_) {
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't update the request")),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final friendship = widget.friendship;
     final senderName = friendship.friendName ?? friendship.userId;
 
     return GlassCard(
@@ -53,63 +81,54 @@ class FriendRequestCard extends ConsumerWidget {
             ),
           ),
 
-          // Accept
-          _ActionButton(
-            label: 'Accept',
-            color: AppColors.success,
-            onTap: () {
-              ref
-                  .read(friendsRepositoryProvider)
-                  .acceptFriendRequest(friendshipId: friendship.id);
-            },
-          ),
-          const SizedBox(width: 6),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else ...[
+            // Accept
+            FilledButton(
+              key: Key('accept-request-${friendship.id}'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                minimumSize: const Size(0, 36),
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: () => _respond(accept: true),
+              child: const Text('Accept'),
+            ),
+            const SizedBox(width: 6),
 
-          // Decline
-          _ActionButton(
-            label: 'Decline',
-            color: AppColors.danger,
-            onTap: () {
-              ref
-                  .read(friendsRepositoryProvider)
-                  .declineFriendRequest(friendshipId: friendship.id);
-            },
-          ),
+            // Decline
+            OutlinedButton(
+              key: Key('decline-request-${friendship.id}'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.danger,
+                side: BorderSide(color: AppColors.danger.withOpacity(0.6)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: const Size(0, 36),
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: () => _respond(accept: false),
+              child: const Text('Decline'),
+            ),
+          ],
         ],
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ActionButton({
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(100),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: color,
-          ),
-        ),
       ),
     );
   }
