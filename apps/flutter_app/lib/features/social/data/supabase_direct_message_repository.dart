@@ -57,6 +57,29 @@ class SupabaseDirectMessageRepository implements DirectMessageRepository {
   }
 
   @override
+  Future<void> sendTournamentInvite({
+    required String senderId,
+    required String recipientId,
+    required String tournamentId,
+    required String tournamentName,
+    required String gameType,
+    DateTime? startTime,
+  }) async {
+    await _client.from('direct_messages').insert({
+      'sender_id': senderId,
+      'recipient_id': recipientId,
+      'content': 'Invited you to the tournament "$tournamentName"',
+      'message_type': 'tournament_invite',
+      'payload': {
+        'tournament_id': tournamentId,
+        'name': tournamentName,
+        'game_type': gameType,
+        if (startTime != null) 'start_time': startTime.toIso8601String(),
+      },
+    });
+  }
+
+  @override
   Stream<List<DirectMessage>> watchThread({
     required String userAId,
     required String userBId,

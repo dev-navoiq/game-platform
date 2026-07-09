@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:social_core/social_core.dart';
 
 import '../../../core/di/providers.dart';
+import '../../../core/game_registry_init.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
@@ -92,11 +93,13 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
       final supabase = ref.read(supabaseServiceProvider);
 
       // Create a private friends-only room. social_mode=full matches the
-      // existing manual-create flow defaults.
+      // existing manual-create flow defaults. Seats come from the game's
+      // descriptor — the old hardcoded 4 left Chess invites waiting forever
+      // on two ghost seats.
       final room = await supabase.createRoom(
         gameType: gameType,
         socialMode: 'full',
-        maxPlayers: 4,
+        maxPlayers: gameRegistry.lookup(gameType)?.maxPlayers ?? 4,
         isPrivate: true,
       );
 
@@ -283,7 +286,12 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
                                   message: msg,
                                   isMe: isMe,
                                 )
-                              : _TextBubble(message: msg, isMe: isMe),
+                              : msg.isTournamentInvite
+                                  ? _TournamentInviteBubble(
+                                      message: msg,
+                                      isMe: isMe,
+                                    )
+                                  : _TextBubble(message: msg, isMe: isMe),
                         );
                       },
                     );
@@ -306,6 +314,79 @@ class _DmThreadScreenState extends ConsumerState<DmThreadScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Bubbles
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _TournamentInviteBubble extends StatelessWidget {
+  final DirectMessage message;
+  final bool isMe;
+  const _TournamentInviteBubble({required this.message, required this.isMe});
+
+  @override
+  Widget build(BuildContext context) {
+    final payload = message.payload ?? const {};
+    final name = payload['name'] as String? ?? 'Tournament';
+    final tournamentId = payload['tournament_id'] as String?;
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.72),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.accent.withOpacity(isMe ? 0.28 : 0.18),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.accent.withOpacity(0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.emoji_events,
+                    size: 16, color: AppColors.accent),
+                const SizedBox(width: 6),
+                Text(
+                  isMe ? 'You sent an invite' : 'Tournament invite',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textFeltMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textOnFelt,
+              ),
+            ),
+            if (!isMe && tournamentId != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 32,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                  onPressed: () =>
+                      context.push(AppRoutes.tournamentPath(tournamentId)),
+                  child: const Text('View tournament',
+                      style: TextStyle(fontSize: 12)),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _TextBubble extends StatelessWidget {
   final DirectMessage message;

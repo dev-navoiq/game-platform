@@ -7,12 +7,14 @@ import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../shared/widgets/currency_display.dart';
 import '../../../shared/widgets/daily_challenge_card.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/friend_activity_card.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_container.dart';
+import '../../friends/presentation/friend_activity_actions.dart';
 import '../../friends/providers/friends_providers.dart';
 import 'widgets/favorites_section.dart';
 import 'widgets/game_tile_card.dart';
@@ -79,7 +81,7 @@ class HomeScreen extends ConsumerWidget {
         extendBodyBehindAppBar: true,
         appBar: GlassAppBar(
           titleWidget: Text(
-            'Choose a Game',
+            AppLocalizations.of(context).chooseAGame,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -96,7 +98,7 @@ class HomeScreen extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.emoji_events_outlined,
                   color: AppColors.textDark),
-              tooltip: 'Tournaments',
+              tooltip: AppLocalizations.of(context).tournaments,
               onPressed: () => context.push(AppRoutes.tournaments),
             ),
             IconButton(
@@ -153,15 +155,17 @@ class _ResumeGameCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final infoAsync = ref.watch(resumeRoomProvider);
     final info = infoAsync.valueOrNull;
     if (info == null) return const SizedBox.shrink();
 
     final subtitle = switch (info.type) {
-      'in_game' => 'A game is in progress${info.gameType != null ? ' • ${_friendlyGameType(info.gameType!)}' : ''}',
-      'in_lobby' => 'You\'re waiting in a lobby',
-      'spectating' => 'You\'re spectating a game',
-      _ => 'Tap to rejoin',
+      'in_game' =>
+        '${l10n.resumeInGame}${info.gameType != null ? ' • ${_friendlyGameType(l10n, info.gameType!)}' : ''}',
+      'in_lobby' => l10n.resumeInLobby,
+      'spectating' => l10n.resumeSpectating,
+      _ => l10n.resumeTapToRejoin,
     };
 
     return Padding(
@@ -179,7 +183,7 @@ class _ResumeGameCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Resume Game',
+                    l10n.resumeGame,
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -240,16 +244,16 @@ class _ResumeGameCard extends ConsumerWidget {
     }
   }
 
-  static String _friendlyGameType(String raw) {
+  static String _friendlyGameType(AppLocalizations l10n, String raw) {
     return switch (raw) {
-      'twenty_nine' => '29',
-      'oh_hell' => 'Oh Hell',
-      'hearts' => 'Hearts',
-      'spades' => 'Spades',
-      'bridge' => 'Bridge',
-      'chess' => 'Chess',
-      'ludo' => 'Ludo',
-      'sequence' => 'Sequence',
+      'twenty_nine' => l10n.gameNameTwentyNine,
+      'oh_hell' => l10n.gameNameOhHell,
+      'hearts' => l10n.gameNameHearts,
+      'spades' => l10n.gameNameSpades,
+      'bridge' => l10n.gameNameBridge,
+      'chess' => l10n.gameNameChess,
+      'ludo' => l10n.gameNameLudo,
+      'sequence' => l10n.gameNameSequence,
       _ => raw,
     };
   }
@@ -272,7 +276,7 @@ class _FriendsActivityStrip extends ConsumerWidget {
         Row(
           children: [
             Text(
-              'Friends',
+              AppLocalizations.of(context).friends,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -283,7 +287,7 @@ class _FriendsActivityStrip extends ConsumerWidget {
             GestureDetector(
               onTap: () => context.push(AppRoutes.friends),
               child: Text(
-                'See All',
+                AppLocalizations.of(context).seeAll,
                 style: TextStyle(
                   fontSize: 12,
                   color: AppColors.accent,
@@ -309,9 +313,8 @@ class _FriendsActivityStrip extends ConsumerWidget {
                 gameType: friend.gameType,
                 statusDetail: friend.statusDetail,
                 roomId: friend.roomId,
-                onAction: () => context.push(
-                  AppRoutes.dmThreadPath(friend.friendId),
-                ),
+                onAction: () =>
+                    handleFriendActivityAction(context, ref, friend),
               );
             },
           ),
@@ -334,7 +337,7 @@ class _DailyChallengesSection extends StatelessWidget {
         Row(
           children: [
             Text(
-              'Daily Challenges',
+              AppLocalizations.of(context).dailyChallenges,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -343,7 +346,7 @@ class _DailyChallengesSection extends StatelessWidget {
             ),
             const Spacer(),
             Text(
-              'Resets in 12h',
+              AppLocalizations.of(context).resetsIn(12),
               style: TextStyle(
                 fontSize: 11,
                 color: AppColors.textFeltMuted,
@@ -396,91 +399,86 @@ class _DailyChallengesSection extends StatelessWidget {
   }
 }
 
-/// 2-column grid of game tiles.
+/// 2-column grid of game tiles with per-game art + idle animations.
 class _GameGrid extends StatelessWidget {
   const _GameGrid();
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final tiles = <(String type, String title, String subtitle)>[
+      (
+        'twenty_nine',
+        l10n.gameNameTwentyNine,
+        l10n.playerCountRange('4'),
+      ),
+      (
+        'oh_hell',
+        l10n.gameNameOhHell,
+        l10n.playerCountRange('3-7'),
+      ),
+      (
+        'hearts',
+        l10n.gameNameHearts,
+        l10n.playerCountRange('4'),
+      ),
+      (
+        'spades',
+        l10n.gameNameSpades,
+        l10n.playerCountRange('4'),
+      ),
+      (
+        'bridge',
+        l10n.gameNameBridge,
+        l10n.playerCountRange('4'),
+      ),
+      // Chess hidden until M4 (create-room form) ships — the beta's
+      // hardcoded max_players=4 would leave a 2-player game in a
+      // 4-seat room stuck in 'waiting'. See memory/multiplayer-room-flow-debt.
+      (
+        'ludo',
+        l10n.gameNameLudo,
+        l10n.playerCountRange('2-4'),
+      ),
+      (
+        'sequence',
+        l10n.gameNameSequence,
+        l10n.playerCountRange('2-4'),
+      ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Games',
-          style: TextStyle(
+          l10n.games,
+          style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: AppColors.textOnFelt,
           ),
         ),
         const SizedBox(height: 8),
-        GridView.count(
-          crossAxisCount: 2,
+        GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.9,
-          children: [
-            GameTileCard(
-              title: 'Twenty-Nine',
-              subtitle: '4 players',
-              icon: Icons.style,
-              onTap: () => context.push(AppRoutes.lobbyPath('twenty_nine')),
-            ),
-            GameTileCard(
-              title: 'Oh Hell',
-              subtitle: '3-7 players',
-              icon: Icons.whatshot,
-              iconColor: AppColors.danger,
-              onTap: () => context.push(AppRoutes.lobbyPath('oh_hell')),
-            ),
-            GameTileCard(
-              title: 'Hearts',
-              subtitle: '4 players',
-              icon: Icons.favorite,
-              iconColor: AppColors.cardRed,
-              onTap: () => context.push(AppRoutes.lobbyPath('hearts')),
-            ),
-            GameTileCard(
-              title: 'Spades',
-              subtitle: '4 players',
-              icon: Icons.eco,
-              iconColor: AppColors.cardBlack,
-              onTap: () => context.push(AppRoutes.lobbyPath('spades')),
-            ),
-            GameTileCard(
-              title: 'Bridge',
-              subtitle: '4 players',
-              icon: Icons.dashboard,
-              iconColor: AppColors.accent,
-              onTap: () => context.push(AppRoutes.lobbyPath('bridge')),
-            ),
-            // Chess hidden until M4 (create-room form) ships — the beta's
-            // hardcoded max_players=4 would leave a 2-player game in a
-            // 4-seat room stuck in 'waiting'. See memory/multiplayer-room-flow-debt.
-            // GameTileCard(
-            //   title: 'Chess',
-            //   subtitle: '2 players',
-            //   icon: Icons.castle,
-            //   iconColor: AppColors.primaryDark,
-            //   onTap: () => context.push(AppRoutes.lobbyPath('chess')),
-            // ),
-            GameTileCard(
-              title: 'Ludo',
-              subtitle: '2-4 players',
-              icon: Icons.grid_view,
-              iconColor: AppColors.player3,
-              onTap: () => context.push(AppRoutes.lobbyPath('ludo')),
-            ),
-            GameTileCard(
-              title: 'Sequence',
-              subtitle: '2-4 players',
-              icon: Icons.apps,
-              iconColor: AppColors.secondary,
-              onTap: () => context.push(AppRoutes.lobbyPath('sequence')),
-            ),
-          ],
+          itemCount: tiles.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.82,
+          ),
+          itemBuilder: (context, index) {
+            final (type, title, subtitle) = tiles[index];
+            return GameTileCard.fromType(
+              gameType: type,
+              title: title,
+              subtitle: subtitle,
+              animationIndex: index,
+              onTap: () => context.push(AppRoutes.lobbyPath(type)),
+            );
+          },
         ),
       ],
     );

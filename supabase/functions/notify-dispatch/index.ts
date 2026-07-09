@@ -80,6 +80,20 @@ serve(async (req) => {
             body: 'invited you to a game — tap to join',
             data: { route: `/messages/${senderId}` },
           };
+        } else if (messageType === 'tournament_invite') {
+          const payload = record.payload as Record<string, unknown> | null;
+          const tournamentName = (payload?.name as string) ?? 'a tournament';
+          const tournamentId = payload?.tournament_id as string | undefined;
+          category = 'tournament_updates';
+          content = {
+            title: sender,
+            body: `invited you to ${tournamentName} — tap to view`,
+            data: {
+              route: tournamentId
+                ? `/tournament/${tournamentId}`
+                : `/messages/${senderId}`,
+            },
+          };
         } else {
           category = 'chat_messages';
           const text = (record.content as string) ?? '';

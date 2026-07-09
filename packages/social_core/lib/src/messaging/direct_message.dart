@@ -2,20 +2,25 @@ import 'package:equatable/equatable.dart';
 
 /// Kind of direct message. `text` is a free-form chat line. `gameInvite`
 /// carries a room reference in [DirectMessage.payload] so the recipient
-/// can join with one tap. `system` is reserved for server-emitted lines
-/// (e.g. "Friend declined invite").
-enum DirectMessageType { text, gameInvite, system }
+/// can join with one tap. `tournamentInvite` carries a tournament
+/// reference; `partyInvite` a party reference (M3). `system` is reserved
+/// for server-emitted lines (e.g. "Friend declined invite").
+enum DirectMessageType { text, gameInvite, tournamentInvite, partyInvite, system }
 
 extension DirectMessageTypeWire on DirectMessageType {
   String get wireValue => switch (this) {
         DirectMessageType.text => 'text',
         DirectMessageType.gameInvite => 'game_invite',
+        DirectMessageType.tournamentInvite => 'tournament_invite',
+        DirectMessageType.partyInvite => 'party_invite',
         DirectMessageType.system => 'system',
       };
 
   static DirectMessageType parse(String? raw) => switch (raw) {
         'text' => DirectMessageType.text,
         'game_invite' => DirectMessageType.gameInvite,
+        'tournament_invite' => DirectMessageType.tournamentInvite,
+        'party_invite' => DirectMessageType.partyInvite,
         'system' => DirectMessageType.system,
         _ => DirectMessageType.text,
       };
@@ -56,6 +61,11 @@ class DirectMessage extends Equatable {
   bool get isGameInvite =>
       type == DirectMessageType.gameInvite &&
       (payload?['room_id'] as String?) != null;
+
+  /// True only for `tournamentInvite` messages with a usable tournament id.
+  bool get isTournamentInvite =>
+      type == DirectMessageType.tournamentInvite &&
+      (payload?['tournament_id'] as String?) != null;
 
   @override
   List<Object?> get props => [

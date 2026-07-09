@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["GS59945524.app.navoiq.gameplatform"],
+        "components": [
+          { "/": "/join/*" },
+          { "/": "/add/*" },
+          { "/": "/t/*" }
+        ]
+      }
+    ]
+  }
+}

@@ -8,6 +8,7 @@ import '../../../../shared/widgets/felt_background.dart';
 import '../../../../shared/widgets/glass_app_bar.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/glass_container.dart';
+import '../../../social/widgets/invite_friends_sheet.dart';
 import '../../data/tournament_models.dart';
 import '../../providers/tournament_providers.dart';
 import '../widgets/bracket_view.dart';
@@ -99,6 +100,26 @@ class _TournamentDetailScreenState
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _buildRegistrationButton(tournament),
+          ),
+
+        // Invite friends — a registered player recruiting their table is
+        // the tournament's own acquisition loop.
+        if (tournament.isRegistrationOpen)
+          TextButton.icon(
+            key: const Key('tournament-invite-friends'),
+            onPressed: () => InviteFriendsSheet.showForTournament(
+              context,
+              tournamentId: tournament.id,
+              tournamentName: tournament.name,
+              gameType: tournament.gameType,
+              startTime: tournament.startTime,
+            ),
+            icon: const Icon(Icons.person_add_alt,
+                size: 16, color: AppColors.accent),
+            label: const Text(
+              'Invite friends',
+              style: TextStyle(fontSize: 13, color: AppColors.accent),
+            ),
           ),
 
         const SizedBox(height: 12),

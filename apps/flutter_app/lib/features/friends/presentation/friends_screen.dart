@@ -9,6 +9,7 @@ import '../../../shared/widgets/friend_activity_card.dart';
 import '../../../shared/widgets/glass_container.dart';
 import '../providers/friends_providers.dart';
 import '../../social/providers/social_providers.dart';
+import 'friend_activity_actions.dart';
 import 'widgets/friend_request_card.dart';
 
 /// Full friends management screen with three tabs:
@@ -97,9 +98,8 @@ class _FriendsTab extends ConsumerWidget {
                 gameType: friend.gameType,
                 statusDetail: friend.statusDetail,
                 roomId: friend.roomId,
-                onAction: () => context.push(
-                  AppRoutes.dmThreadPath(friend.friendId),
-                ),
+                onAction: () =>
+                    handleFriendActivityAction(context, ref, friend),
               ),
             );
           },

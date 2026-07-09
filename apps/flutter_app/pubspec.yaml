@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # State Management
   flutter_riverpod: ^2.5.1
@@ -53,6 +55,9 @@ dependencies:
   livekit_client: ^2.1.0
   permission_handler: ^11.3.0
 
+  # Deep links (gathr:// + universal links)
+  app_links: ^6.3.0
+
   # Push Notifications
   # iOS needs GoogleService-Info.plist + push entitlement before FCM works
   # there; NotificationService degrades to a no-op when Firebase init fails.
@@ -67,6 +72,11 @@ dependencies:
   purchases_flutter: ^8.0.0  # RevenueCat
   google_mobile_ads: ^5.0.0
 
+  # Dev ad gallery — HTML5 playable previews. Already resolved transitively
+  # at 4.10.0 (pubspec.lock) with the wkwebview pod already in Podfile.lock,
+  # so promoting it to a direct dep needs no pod install.
+  webview_flutter: ^4.10.0
+
   # Analytics & Monitoring
   sentry_flutter: ^9.20.0
   # posthog_flutter: temporarily removed — 5.x has a build-time bug
@@ -76,7 +86,8 @@ dependencies:
 
   # Utils
   uuid: ^4.3.3
-  intl: ^0.19.0
+  # flutter_localizations (Flutter 3.41.9) pins intl 0.20.2 exactly.
+  intl: ^0.20.2
   collection: ^1.18.0
   # Pinned to 12.x: share_plus 13.x requires Dart >=3.10 but project is on
   # Flutter 3.32 (Dart 3.8). See memory: share-plus-13-sdk-drift.md.
@@ -133,6 +144,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
 
   assets:
     - assets/cards/
@@ -141,5 +153,9 @@ flutter:
     - assets/audio/
     - assets/animations/
     - assets/icons/
+    - assets/icons/games/
     - assets/shared/
     - assets/branding/
+    # HTML5 playable-ad creatives (copies of marketing/playables/*/index.html)
+    # for the /dev/ads gallery webview previews.
+    - assets/playables/

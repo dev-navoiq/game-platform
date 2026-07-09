@@ -1,5 +1,6 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { creditCurrency } from './currency.ts';
+import { sendPush } from './push.ts';
 import { getEconomyConfig } from './rewards.ts';
 import { computeOutcomes } from './game_outcome.ts';
 import { buildInitialState, initialDbPhase } from './game_setup.ts';
@@ -102,6 +103,18 @@ export async function startTournament(
   // ── Go live + create rooms for round-1 ready matches ─────────────────────
   await admin.from('tournaments').update({ status: 'in_progress' }).eq('id', t.id);
   await autoStartReadyMatches(admin, t.id);
+
+  // Lifecycle push (M0 backbone). Failures must never abort a started
+  // tournament — the bracket is already live.
+  try {
+    await sendPush(admin, ids, 'tournament_updates', {
+      title: t.name,
+      body: 'The tournament has started — your first match is ready!',
+      data: { route: `/tournament/${t.id}` },
+    });
+  } catch (e) {
+    console.error('tournament start push failed:', e);
+  }
 
   return { status: 'started', matches: planned.length, format: t.format };
 }
@@ -487,7 +500,7 @@ export async function completeTournament(
 ): Promise<void> {
   const { data: t } = await admin
     .from('tournaments')
-    .select('id, status, prize_pool, rake_percent, settings')
+    .select('id, status, prize_pool, rake_percent, settings, is_official')
     .eq('id', tournamentId)
     .single();
   if (!t || t.status === 'completed' || t.status === 'cancelled') return;
@@ -528,15 +541,23 @@ export async function completeTournament(
   const coinScale = demandCoins > netCoins && demandCoins > 0 ? netCoins / demandCoins : 1;
   const gemScale = demandGems > netGems && demandGems > 0 ? netGems / demandGems : 1;
 
-  // Gem Cup: platform-seeded gem bonuses for top places (settings.gem_cup { "1":10,... }).
-  const gemCup = (t.settings as { gem_cup?: Record<string, number> } | null)?.gem_cup ?? {};
+  // Gem Cup: platform-FUNDED gem bonuses for top places (settings.gem_cup { "1":10,... }).
+  // These mint gems from nothing, so they are honored ONLY on official
+  // (admin-created) tournaments — player-created tournaments cannot carry a
+  // gem_cup (enforced in RLS) — and each bonus is capped as defense-in-depth
+  // against a mis-seeded config. See SECURITY-AUDIT C3 / SECURITY-GUIDELINES E5.
+  const MAX_GEM_CUP_PER_PLACE = 5000;
+  const gemCup = t.is_official
+    ? ((t.settings as { gem_cup?: Record<string, number> } | null)?.gem_cup ?? {})
+    : {};
 
   for (const prize of prizes) {
     const userId = placeToUser.get(prize.place);
     if (!userId) continue;
     const coins = Math.floor((prize.coins ?? 0) * coinScale);
     const gems = Math.floor((prize.gems ?? 0) * gemScale);
-    const gemCupBonus = gemCup[String(prize.place)] ?? 0;
+    const rawGemCup = Math.max(0, Math.floor(Number(gemCup[String(prize.place)] ?? 0)));
+    const gemCupBonus = Math.min(rawGemCup, MAX_GEM_CUP_PER_PLACE);
 
     // Per-place guard: insert-once; if it already exists, skip crediting.
     const { data: guard } = await admin
@@ -566,6 +587,31 @@ export async function completeTournament(
     final_standings: finalStandings,
     end_time: new Date().toISOString(),
   }).eq('id', tournamentId);
+
+  // Lifecycle pushes: everyone gets standings; the winner gets their moment.
+  try {
+    const { data: allParts } = await admin
+      .from('tournament_participants')
+      .select('user_id')
+      .eq('tournament_id', tournamentId);
+    const participantIds = (allParts ?? [])
+      .map((p: { user_id: string }) => p.user_id)
+      .filter((id: string) => id !== winnerId);
+    if (winnerId) {
+      await sendPush(admin, [winnerId], 'tournament_updates', {
+        title: 'Champion! 🏆',
+        body: 'You won the tournament — collect your prizes!',
+        data: { route: `/tournament/${tournamentId}` },
+      });
+    }
+    await sendPush(admin, participantIds, 'tournament_updates', {
+      title: 'Tournament finished',
+      body: 'See the final standings and payouts.',
+      data: { route: `/tournament/${tournamentId}` },
+    });
+  } catch (e) {
+    console.error('tournament complete push failed:', e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

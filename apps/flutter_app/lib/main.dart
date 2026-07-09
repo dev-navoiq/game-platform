@@ -12,6 +12,7 @@ export 'app/app.dart' show GamePlatformApp;
 import 'core/config/env_config.dart';
 import 'core/game_registry_init.dart';
 import 'core/services/config_sync_service.dart';
+import 'core/services/deep_link_service.dart';
 import 'core/services/feature_flags.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/update_service.dart';
@@ -123,5 +124,10 @@ Future<void> _initializeBackgroundServices() async {
     await NotificationService.instance.initialize();
   } catch (e) {
     debugPrint('NotificationService init failed (non-fatal): $e');
+  }
+  try {
+    await DeepLinkService.instance.initialize();
+  } catch (e) {
+    debugPrint('DeepLinkService init failed (non-fatal): $e');
   }
 }

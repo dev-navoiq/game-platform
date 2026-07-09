@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/routing/routes.dart';
-import '../../../core/theme/colors.dart';
+import '../../../core/services/deep_link_service.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/theme/colors.dart';
+import '../../social/widgets/invite_friends_sheet.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_bottom_sheet.dart';
@@ -235,9 +237,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Future<void> _shareRoomCode() async {
     final code = _roomCode;
     if (code == null) return;
-    await Share.share(
-      'Join my Gathr room — code: $code',
-      subject: 'Join my room',
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'Play with me on Gathr! Tap to join my room: '
+            '${DeepLinkService.joinLink(code)} (code: $code)',
+        subject: 'Join my room',
+      ),
+    );
+  }
+
+  void _inviteFriends() {
+    final code = _roomCode;
+    final gameType = _gameType;
+    if (code == null || gameType == null) return;
+    InviteFriendsSheet.show(
+      context,
+      roomId: _roomId,
+      roomCode: code,
+      gameType: gameType,
     );
   }
 
@@ -538,6 +555,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                           onPressed: _roomCode == null ? null : _shareRoomCode,
                           icon: const Icon(Icons.share, size: 16),
                           label: const Text('Share'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.textOnFelt,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        TextButton.icon(
+                          key: const Key('room-invite-friends'),
+                          onPressed: _roomCode == null ? null : _inviteFriends,
+                          icon: const Icon(Icons.person_add_alt, size: 16),
+                          label: const Text('Invite'),
                           style: TextButton.styleFrom(
                             foregroundColor: AppColors.textOnFelt,
                           ),

@@ -27,6 +27,10 @@ class AppRoutes {
   static const friends = '/friends';
   static const addFriends = '/friends/add';
 
+  // Deep-link landings (also reachable via gathr:// scheme + share links)
+  static const joinByLink = '/join/:roomCode';
+  static const addByCode = '/add/:friendCode';
+
   // Direct messages
   static const messages = '/messages';
   static const dmThread = '/messages/:userId';

@@ -21,6 +21,18 @@ abstract class DirectMessageRepository {
     DateTime? expiresAt,
   });
 
+  /// Send a typed `tournament_invite` message carrying a tournament
+  /// reference. The recipient renders this with a View button that opens
+  /// the tournament detail screen.
+  Future<void> sendTournamentInvite({
+    required String senderId,
+    required String recipientId,
+    required String tournamentId,
+    required String tournamentName,
+    required String gameType,
+    DateTime? startTime,
+  });
+
   /// Watch the thread between [userAId] and [userBId] in chronological
   /// order. RLS in production enforces that the caller is one of the two
   /// IDs.

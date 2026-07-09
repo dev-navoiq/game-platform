@@ -202,6 +202,10 @@ class _ThreadTile extends StatelessWidget {
     final preview = switch (lastMsg.type) {
       DirectMessageType.gameInvite =>
         '🎮 ${isMine ? 'You sent' : 'Game invite'}: ${lastMsg.payload?['game_type'] ?? 'a game'}',
+      DirectMessageType.tournamentInvite =>
+        '🏆 ${isMine ? 'You sent a tournament invite' : 'Tournament invite'}',
+      DirectMessageType.partyInvite =>
+        '🎉 ${isMine ? 'You sent a party invite' : 'Party invite'}',
       DirectMessageType.system => lastMsg.content,
       DirectMessageType.text =>
         isMine ? 'You: ${lastMsg.content}' : lastMsg.content,

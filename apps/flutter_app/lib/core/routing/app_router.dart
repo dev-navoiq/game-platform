@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../di/providers.dart';
+import '../services/deep_link_service.dart';
 import '../services/notification_service.dart';
 import '../theme/colors.dart';
 import '../../shared/animations/core/animation_constants.dart';
@@ -16,6 +17,7 @@ import '../../features/auth/presentation/onboarding_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/lobby/screens/lobby_screen.dart';
 import '../../features/lobby/presentation/join_by_code_screen.dart';
+import '../../features/lobby/presentation/join_by_link_screen.dart';
 import '../../features/lobby/presentation/room_screen.dart';
 import '../../features/lobby/models/room_member.dart';
 import '../../features/game/screens/game_screen.dart';
@@ -193,6 +195,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.addFriends,
         builder: (context, state) => const AddFriendsScreen(),
       ),
+
+      // Deep-link landings
+      GoRoute(
+        path: AppRoutes.joinByLink,
+        builder: (context, state) => JoinByLinkScreen(
+          roomCode: state.pathParameters['roomCode'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.addByCode,
+        builder: (context, state) => AddFriendsScreen(
+          initialQuery: state.pathParameters['friendCode'],
+        ),
+      ),
       GoRoute(
         path: AppRoutes.history,
         builder: (context, state) => const HistoryScreen(),
@@ -241,6 +257,14 @@ final routerProvider = Provider<GoRouter>((ref) {
   // Notification taps deep-link into the app; any tap that happened during
   // cold start was parked and replays as soon as this handler is set.
   NotificationService.instance.onTapRoute = router.go;
+
+  // External deep links (gathr:// + universal links) flush once a session
+  // exists — flushing earlier would lose the target to the /login redirect.
+  DeepLinkService.instance.navigator = router.go;
+  DeepLinkService.instance.onAuthChanged(ref.read(isLoggedInProvider));
+  ref.listen(isLoggedInProvider, (_, loggedIn) {
+    DeepLinkService.instance.onAuthChanged(loggedIn);
+  });
 
   return router;
 });

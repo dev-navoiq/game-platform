@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
+import '../../../core/services/deep_link_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
@@ -20,16 +21,20 @@ import '../data/discovery_repository.dart';
 /// and "played with recently" suggestions. Guests see the registration
 /// upsell — the social graph is registered-only.
 class AddFriendsScreen extends ConsumerStatefulWidget {
-  const AddFriendsScreen({super.key});
+  /// Pre-filled search query — used by /add/:friendCode deep links.
+  final String? initialQuery;
+
+  const AddFriendsScreen({super.key, this.initialQuery});
 
   @override
   ConsumerState<AddFriendsScreen> createState() => _AddFriendsScreenState();
 }
 
 class _AddFriendsScreenState extends ConsumerState<AddFriendsScreen> {
-  final _searchController = TextEditingController();
+  late final _searchController =
+      TextEditingController(text: widget.initialQuery ?? '');
   Timer? _debounce;
-  String _query = '';
+  late String _query = widget.initialQuery?.trim() ?? '';
 
   @override
   void dispose() {
@@ -162,8 +167,8 @@ class _MyCodeCard extends ConsumerWidget {
             icon: const Icon(Icons.ios_share, size: 20, color: AppColors.accent),
             onPressed: () => SharePlus.instance.share(
               ShareParams(
-                text:
-                    "Add me on Gathr! My friend code is $code — enter it under Friends → Add Friends.",
+                text: 'Add me on Gathr! Tap ${DeepLinkService.addFriendLink(code)} '
+                    'or enter my friend code: $code',
               ),
             ),
           ),
