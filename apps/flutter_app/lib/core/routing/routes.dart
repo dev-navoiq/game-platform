@@ -25,6 +25,7 @@ class AppRoutes {
   static const seasonPass = '/season-pass';
   static const referral = '/referral';
   static const friends = '/friends';
+  static const addFriends = '/friends/add';
 
   // Direct messages
   static const messages = '/messages';
@@ -50,6 +51,9 @@ class AppRoutes {
   // Tournaments
   static const tournaments = '/tournaments';
   static const tournament = '/tournament/:tournamentId';
+
+  // Dev tools (reachable via Settings → Developer in debug builds)
+  static const devAds = '/dev/ads';
 
   // Helpers
   static String lobbyPath(String gameType) => '/lobby/$gameType';

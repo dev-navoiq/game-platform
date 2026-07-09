@@ -5,29 +5,43 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/assets/asset_registry.dart';
 import '../../../core/di/feature_flag_providers.dart';
+import '../../../core/di/locale_provider.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/di/skin_theme_providers.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/services/feature_flags.dart';
 import '../../../core/services/update_service.dart';
+import '../../../l10n/generated/app_localizations.dart';
+import '../../friends/data/discovery_repository.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final themeMode = ref.watch(themeModeProvider);
     final soundEnabled = ref.watch(soundEnabledProvider);
     final musicEnabled = ref.watch(musicEnabledProvider);
     final cardSkin = ref.watch(cardSkinThemeProvider);
     final roomSkin = ref.watch(roomSkinThemeProvider);
+    final locale = ref.watch(localeProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(l10n.settingsTitle)),
       body: ListView(
         children: [
+          ListTile(
+            title: Text(l10n.language),
+            subtitle: Text(locale == null
+                ? l10n.languageSystemDefault
+                : localeDisplayName(locale)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showLanguagePicker(context, ref),
+          ),
+          const Divider(),
           SwitchListTile(
-            title: const Text('Dark Mode'),
+            title: Text(l10n.darkMode),
             value: themeMode == ThemeMode.dark,
             onChanged: (value) {
               ref.read(themeModeProvider.notifier).setThemeMode(
@@ -36,14 +50,14 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           SwitchListTile(
-            title: const Text('Sound Effects'),
+            title: Text(l10n.soundEffects),
             value: soundEnabled,
             onChanged: (value) {
               ref.read(soundEnabledProvider.notifier).state = value;
             },
           ),
           SwitchListTile(
-            title: const Text('Music'),
+            title: Text(l10n.music),
             value: musicEnabled,
             onChanged: (value) {
               ref.read(musicEnabledProvider.notifier).state = value;
@@ -51,28 +65,29 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
           ListTile(
-            title: const Text('Card Skin'),
+            title: Text(l10n.cardSkin),
             subtitle: Text(cardSkin.displayName),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showCardSkinPicker(context, ref),
           ),
           ListTile(
-            title: const Text('Room Theme'),
+            title: Text(l10n.roomTheme),
             subtitle: Text(roomSkin.displayName),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showRoomSkinPicker(context, ref),
           ),
           const Divider(),
-          const ListTile(
-            title: Text('Preferred Social Mode'),
-            subtitle: Text('Full — Chat + Voice + Emotes'),
+          ListTile(
+            title: Text(l10n.preferredSocialMode),
+            subtitle: Text(l10n.socialModeFullDescription),
           ),
           ListTile(
-            title: const Text('Notification Preferences'),
-            subtitle: const Text('Manage alerts, quiet hours'),
+            title: Text(l10n.notificationPreferences),
+            subtitle: Text(l10n.notificationPreferencesSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.notificationSettings),
           ),
+          const _DiscoverableTile(),
           const Divider(),
           // App version & update status
           _UpdateStatusTile(),
@@ -90,6 +105,12 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
             ),
+            ListTile(
+              title: const Text('Ad Gallery'),
+              subtitle: const Text('Preview house creatives & switch ad mode'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push(AppRoutes.devAds),
+            ),
             const _FeatureFlagsList(),
           ],
         ],
@@ -97,7 +118,51 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  void _showLanguagePicker(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final current = ref.read(localeProvider);
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                l10n.language,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+            RadioListTile<String>(
+              title: Text(l10n.languageSystemDefault),
+              value: '',
+              groupValue: current?.languageCode ?? '',
+              onChanged: (_) {
+                ref.read(localeProvider.notifier).setLocale(null);
+                Navigator.pop(context);
+              },
+            ),
+            ...supportedAppLocales.map((locale) => RadioListTile<String>(
+                  title: Text(localeDisplayName(locale)),
+                  value: locale.languageCode,
+                  groupValue: current?.languageCode ?? '',
+                  onChanged: (_) {
+                    ref.read(localeProvider.notifier).setLocale(locale);
+                    Navigator.pop(context);
+                  },
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showCardSkinPicker(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final registry = AssetRegistry.instance;
     final currentId = ref.read(selectedCardSkinProvider);
 
@@ -107,20 +172,21 @@ class SettingsScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Text(
-                'Card Skin',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                l10n.cardSkin,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
             ),
             ...registry.allCardSkins.map((skin) => RadioListTile<String>(
                   title: Text(skin.displayName),
                   subtitle: skin.isFree
-                      ? const Text('Free')
+                      ? Text(l10n.free)
                       : Text(skin.priceCoins > 0
-                          ? '${skin.priceCoins} coins'
-                          : '${skin.priceGems} gems'),
+                          ? l10n.priceCoins(skin.priceCoins)
+                          : l10n.priceGems(skin.priceGems)),
                   value: skin.id,
                   groupValue: currentId,
                   onChanged: skin.isFree || skin.id == currentId
@@ -141,6 +207,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showRoomSkinPicker(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final registry = AssetRegistry.instance;
     final currentId = ref.read(selectedRoomSkinProvider);
 
@@ -150,20 +217,21 @@ class SettingsScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Text(
-                'Room Theme',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                l10n.roomTheme,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
             ),
             ...registry.allRoomSkins.map((skin) => RadioListTile<String>(
                   title: Text(skin.displayName),
                   subtitle: skin.isFree
-                      ? const Text('Free')
+                      ? Text(l10n.free)
                       : Text(skin.priceCoins > 0
-                          ? '${skin.priceCoins} coins'
-                          : '${skin.priceGems} gems'),
+                          ? l10n.priceCoins(skin.priceCoins)
+                          : l10n.priceGems(skin.priceGems)),
                   value: skin.id,
                   groupValue: currentId,
                   onChanged: skin.isFree || skin.id == currentId
@@ -184,9 +252,45 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
+/// Search-privacy opt-out. Only meaningful for registered users (guests
+/// never appear in search); hidden for guests. Friend-code lookups still
+/// resolve when off — sharing the code is consent.
+class _DiscoverableTile extends ConsumerWidget {
+  const _DiscoverableTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider).valueOrNull;
+    if (profile == null || profile.isGuest) return const SizedBox.shrink();
+
+    return SwitchListTile(
+      title: const Text('Discoverable in search'),
+      subtitle: const Text(
+          'Off: players can only add you with your friend code'),
+      value: profile.discoverable,
+      onChanged: (value) async {
+        try {
+          await ref
+              .read(discoveryRepositoryProvider)
+              .setDiscoverable(value);
+          ref.invalidate(userProfileProvider);
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text("Couldn't save — check your connection")),
+            );
+          }
+        }
+      },
+    );
+  }
+}
+
 class _UpdateStatusTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final statusAsync = ref.watch(updateStatusProvider);
     final updateService = ref.read(updateServiceProvider);
 
@@ -200,22 +304,22 @@ class _UpdateStatusTile extends ConsumerWidget {
                   : Icons.info_outline,
           color: status == UpdateStatus.upToDate ? Colors.green : null,
         ),
-        title: const Text('App Version'),
+        title: Text(l10n.appVersion),
         subtitle: Text(updateService.statusMessage),
         trailing: status == UpdateStatus.updateAvailable
             ? TextButton(
                 onPressed: () => updateService.downloadAndInstall(),
-                child: const Text('Update'),
+                child: Text(l10n.update),
               )
             : null,
       ),
-      loading: () => const ListTile(
-        title: Text('App Version'),
-        subtitle: Text('Checking…'),
+      loading: () => ListTile(
+        title: Text(l10n.appVersion),
+        subtitle: Text(l10n.checking),
       ),
-      error: (_, __) => const ListTile(
-        title: Text('App Version'),
-        subtitle: Text('Could not check for updates'),
+      error: (_, __) => ListTile(
+        title: Text(l10n.appVersion),
+        subtitle: Text(l10n.couldNotCheckForUpdates),
       ),
     );
   }

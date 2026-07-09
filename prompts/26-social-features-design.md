@@ -68,10 +68,20 @@ Every pillar below serves one loop. Priorities follow from it:
 ## 3. Pillar A — Discovery & the friend graph
 
 ### 3.1 Username search
+**Refined 2026-07-08 (locked):** claimable usernames are a REGISTERED-ONLY concept. Guests keep
+auto-generated names, get no claim prompt, no friend code, and never appear in search — their
+relationships are session-scoped by construction (identity doc §2 + hardening RLS), and wanting
+persistence IS the conversion trigger. Guests may edit non-unique `display_name` (cosmetic, for
+rosters/chat). A converting guest claims a username right after upgrade via the same one-time
+claim sheet shown to any registered user without a claimed name — so the register form needs no
+username field. Renames: allowed with a 30-day cooldown (`username_changed_at`); friend code is
+the stable identifier. `profiles.discoverable boolean default true` opts out of search (friend
+code still works). Recent-players suggestions filter to registered co-players only.
+
 - `profiles.username` today: trigger-generated `guest_<uuid>` / `<prefix>_<uuid>`, no uniqueness
   guarantee designed for search. Add:
-  - `unique index on lower(username)`; usernames become claimable at registration (identity build
-    already adds a register form — add a username field there).
+  - `unique index on lower(username)`; claimed via the one-time claim sheet (tracked by
+    `username_claimed_at`).
   - Validation: 3–20 chars, `[a-z0-9_]`, no leading `_`, reserved-word list (admin, gathr, system).
 - Search is an **RPC, not open table reads**: `search_profiles(p_query text) returns setof
   (id, username, display_name, avatar_url, level, account_type)`:

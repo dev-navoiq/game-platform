@@ -24,6 +24,14 @@ class FriendsScreen extends ConsumerWidget {
         key: const Key('friends-screen'),
         appBar: AppBar(
           title: const Text('Friends & Activity'),
+          actions: [
+            IconButton(
+              key: const Key('add-friends-button'),
+              tooltip: 'Add friends',
+              icon: const Icon(Icons.person_add_alt),
+              onPressed: () => context.push(AppRoutes.addFriends),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(key: Key('friends-tab'), text: 'Friends'),
@@ -55,11 +63,22 @@ class _FriendsTab extends ConsumerWidget {
     return activities.when(
       data: (friends) {
         if (friends.isEmpty) {
-          return const Center(
-            child: Text(
-              'No friends yet.\nTap + to add a friend!',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'No friends yet',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => context.push(AppRoutes.addFriends),
+                  icon: const Icon(Icons.person_add_alt, size: 18),
+                  label: const Text('Find friends'),
+                ),
+              ],
             ),
           );
         }

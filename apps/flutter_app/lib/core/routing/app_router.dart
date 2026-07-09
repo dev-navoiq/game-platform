@@ -29,13 +29,16 @@ import '../../features/referral/presentation/referral_screen.dart';
 import '../../features/friends/presentation/friends_screen.dart';
 import '../../features/history/presentation/history_screen.dart';
 import '../../features/history/presentation/replay_screen.dart';
+import '../../features/friends/presentation/add_friends_screen.dart';
 import '../../features/social/presentation/notification_settings_screen.dart';
 import '../../features/social/presentation/messages_screen.dart';
 import '../../features/social/presentation/dm_thread_screen.dart';
 import '../../features/social/providers/messaging_providers.dart';
+import '../../features/social/widgets/username_claim_sheet.dart';
 import '../../features/shop/presentation/subscription_screen.dart';
 import '../../features/tournaments/presentation/screens/tournaments_screen.dart';
 import '../../features/tournaments/presentation/screens/tournament_detail_screen.dart';
+import '../../features/dev/presentation/ad_gallery_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
@@ -187,6 +190,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const FriendsScreen(),
       ),
       GoRoute(
+        path: AppRoutes.addFriends,
+        builder: (context, state) => const AddFriendsScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.history,
         builder: (context, state) => const HistoryScreen(),
       ),
@@ -219,6 +226,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => DmThreadScreen(
           otherUserId: state.pathParameters['userId'] ?? '',
         ),
+      ),
+
+      // Dev tools
+      GoRoute(
+        path: AppRoutes.devAds,
+        builder: (context, state) => const AdGalleryScreen(),
       ),
     ],
 
@@ -279,6 +292,17 @@ class _MainShell extends ConsumerWidget {
     // signed-in user. Watching it from the shell keeps it alive for the
     // whole authenticated session and tears it down on sign-out.
     ref.watch(presenceBootstrapProvider);
+
+    // One-time username claim prompt for registered users still on an
+    // auto-generated name (incl. freshly upgraded guests). Fires once the
+    // profile loads; internally guarded against repeats.
+    ref.listen(userProfileProvider, (previous, next) {
+      if (next.valueOrNull != null && previous?.valueOrNull == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) UsernameClaimSheet.maybeShow(context, ref);
+        });
+      }
+    });
 
     return Scaffold(
       backgroundColor: AppColors.feltDark,

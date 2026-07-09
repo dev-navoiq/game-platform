@@ -15,6 +15,10 @@ class UserModel extends Equatable {
   final String? referralCode;
   final String preferredSocialMode;
   final DateTime createdAt;
+  final String accountType;
+  final String? friendCode;
+  final bool discoverable;
+  final DateTime? usernameClaimedAt;
 
   const UserModel({
     required this.id,
@@ -31,7 +35,20 @@ class UserModel extends Equatable {
     this.referralCode,
     this.preferredSocialMode = 'full',
     required this.createdAt,
+    this.accountType = 'guest',
+    this.friendCode,
+    this.discoverable = true,
+    this.usernameClaimedAt,
   });
+
+  bool get isGuest => accountType == 'guest';
+
+  /// XXXX-XXXX display formatting for the raw 8-char friend code.
+  String? get friendCodeDisplay {
+    final code = friendCode;
+    if (code == null || code.length != 8) return code;
+    return '${code.substring(0, 4)}-${code.substring(4)}';
+  }
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -49,6 +66,12 @@ class UserModel extends Equatable {
       referralCode: json['referral_code'] as String?,
       preferredSocialMode: json['preferred_social_mode'] as String? ?? 'full',
       createdAt: DateTime.parse(json['created_at'] as String),
+      accountType: json['account_type'] as String? ?? 'guest',
+      friendCode: json['friend_code'] as String?,
+      discoverable: json['discoverable'] as bool? ?? true,
+      usernameClaimedAt: json['username_claimed_at'] != null
+          ? DateTime.parse(json['username_claimed_at'] as String)
+          : null,
     );
   }
 
