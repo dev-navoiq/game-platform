@@ -76,19 +76,21 @@ if [ "$TARGET" = "device" ]; then
   fi
 fi
 
-# 6. LAN IP matches env_config (development env only).
+# 6. Dev backend reachable via the URL baked into env_config (development
+# only). env_config uses the Mac's mDNS name (<host>.local) so router IP
+# reshuffles no longer break device builds; this check curls the actual
+# configured URL, which also catches a renamed Mac or stopped Supabase.
 if [ "$ENV_NAME" = "development" ]; then
-  current_ip="$(ipconfig getifaddr en0 2>/dev/null || true)"
-  if [ -z "$current_ip" ]; then
-    yellow "Could not read Mac LAN IP (en0 down?). Dev backend will be unreachable from device."
+  dev_url="$(grep -oE "defaultValue: 'http://[^']+'" "$APP_DIR/lib/core/config/env_config.dart" | head -1 | sed "s/defaultValue: '//;s/'\$//")"
+  if [ -z "$dev_url" ]; then
+    yellow "Could not extract dev SUPABASE_URL from env_config.dart"
   else
-    if grep -q "$current_ip" "$APP_DIR/lib/core/config/env_config.dart" 2>/dev/null; then
-      green "LAN IP $current_ip matches env_config"
+    if curl -sS -o /dev/null --max-time 5 "$dev_url/auth/v1/health" 2>/dev/null; then
+      green "Dev Supabase reachable at $dev_url"
     else
-      configured_ip="$(grep -oE '192\.168\.[0-9]+\.[0-9]+' "$APP_DIR/lib/core/config/env_config.dart" | head -1)"
-      yellow "LAN IP drift: en0=$current_ip, env_config=$configured_ip"
-      echo "   Either update env_config.dart + Info.plist NSExceptionDomains,"
-      echo "   or launch with --dart-define=SUPABASE_URL=http://$current_ip:54321"
+      yellow "Dev Supabase NOT reachable at $dev_url"
+      echo "   Check: supabase status; scutil --get LocalHostName matches env_config;"
+      echo "   or launch with --dart-define=SUPABASE_URL=http://\$(ipconfig getifaddr en0):54321"
     fi
   fi
 fi

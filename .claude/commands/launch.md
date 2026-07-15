@@ -29,11 +29,13 @@ Examples of `$ARGUMENTS`:
      ```
      cd /Users/ambar/Developer/game-platform/apps/flutter_app && fvm flutter run --release -d 00008150-00141D4C0C61401C --dart-define=ENV=<env>
      ```
+     **When env is `development`, also pass `--dart-define=ALLOW_DEV_RELEASE=true`** — main.dart has a fail-closed guard (SECURITY-AUDIT M7) that throws on release+development, which otherwise leaves the app dead on the native splash screen. Never pass this flag for staging/production builds.
    - For `sim`: use **debug mode** (hot reload works). Note that sim is currently affected by the Xcode 26.4.1 CoreSimulator regression — if pre-flight didn't catch it, the run will fail with "Unable to find a destination matching id=...". Fall back to device.
      ```
      cd /Users/ambar/Developer/game-platform/apps/flutter_app && fvm flutter run -d 93B3CE12-584D-4F1D-8C42-C1F94C109893 --dart-define=ENV=<env>
      ```
-   - Launch in background using Bash with `run_in_background=true` and pipe output to `/tmp/flutter-launch.log`. Watch the log via a background Bash with an `until grep` loop, exit on "Flutter run key commands" (ready) OR any error pattern. Notify the user when ready or with the error context.
+   - Launch in background using Bash with `run_in_background=true` and pipe output to a **session-unique log path** (e.g. `/tmp/flutter-launch-$$.log` or a file in the session scratchpad — NOT a fixed `/tmp/flutter-launch.log`, which collides when two sessions deploy concurrently). Watch the log via a background Bash with an `until grep` loop, exit on "Flutter run key commands" (ready) OR any error pattern. Notify the user when ready or with the error context.
+   - Before launching, check `pgrep -f "flutter_tools.snapshot run"` — another session may already be mid-deploy to the same device; two concurrent xcodebuilds on this workspace corrupt each other. If one is running, surface it to the user instead of racing it.
 
 4. **After successful launch:**
    - Report which env/URL the app is now pointed at (read from `apps/flutter_app/lib/core/config/env_config.dart`)

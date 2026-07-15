@@ -4,9 +4,13 @@
 <dict>
 	<key>aps-environment</key>
 	<string>development</string>
+	<!-- Universal links: re-add once Xcode has an Apple ID signed in
+	     (Settings → Accounts) so automatic signing can regenerate the
+	     provisioning profile with the Associated Domains capability:
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:game-platform-staging.web.app</string>
 	</array>
+	-->
 </dict>
 </plist>

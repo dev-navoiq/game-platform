@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
+
 enum Environment { development, staging, production }
 
 class EnvConfig {
@@ -29,17 +32,19 @@ class EnvConfig {
 
     switch (env) {
       case Environment.development:
-        // Mac LAN IP — confirm with `ipconfig getifaddr en0` each session and
-        // override at launch via --dart-define=SUPABASE_URL=http://<ip>:54321
-        // if the Mac's IP has changed. Same applies to LIVEKIT_URL.
+        // Mac's Bonjour/mDNS name — survives router IP reshuffles (which
+        // repeatedly broke login on device builds). iOS + simulator resolve
+        // .local natively; Android devices often DON'T — override at launch
+        // via --dart-define=SUPABASE_URL=http://<lan-ip>:54321 there.
+        // Same applies to LIVEKIT_URL.
         _supabaseUrl = const String.fromEnvironment(
           'SUPABASE_URL',
-          defaultValue: 'http://192.168.1.17:54321',
+          defaultValue: 'http://ambars-macbook-air.local:54321',
         );
         _supabaseAnonKey = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
         _livekitUrl = const String.fromEnvironment(
           'LIVEKIT_URL',
-          defaultValue: 'ws://192.168.1.17:7880',
+          defaultValue: 'ws://ambars-macbook-air.local:7880',
         );
         _revenueCatApiKey = 'your-dev-rc-key';
         _sentryDsn = '';
@@ -67,6 +72,51 @@ class EnvConfig {
         _sentryDsn = 'your-prod-sentry-dsn';
         _posthogApiKey = 'your-prod-posthog-key';
         break;
+    }
+  }
+
+  // ── AdMob (Google Mobile Ads) ──────────────────────────────────────────────
+  // Google's official universal TEST ad-unit IDs. Safe (and required) for
+  // dev/staging; clicking them never generates invalid traffic.
+  static const String _admobTestBannerAndroid =
+      'ca-app-pub-3940256099942544/6300978111';
+  static const String _admobTestBannerIos =
+      'ca-app-pub-3940256099942544/2934735716';
+  static const String _admobTestInterstitialAndroid =
+      'ca-app-pub-3940256099942544/1033173712';
+  static const String _admobTestInterstitialIos =
+      'ca-app-pub-3940256099942544/4411468910';
+
+  static bool get _isIosLike => defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// Banner ad unit for the lobby banner placement.
+  static String get admobBannerAdUnitId {
+    switch (_environment) {
+      case Environment.development:
+      case Environment.staging:
+        return _isIosLike ? _admobTestBannerIos : _admobTestBannerAndroid;
+      case Environment.production:
+        // TODO(ads): replace with the real production banner ad-unit IDs
+        // once the AdMob app + units are created. Test units until then so
+        // we can never accidentally serve unapproved live inventory.
+        return _isIosLike ? _admobTestBannerIos : _admobTestBannerAndroid;
+    }
+  }
+
+  /// Interstitial ad unit for the game-end interstitial placement.
+  static String get admobInterstitialAdUnitId {
+    switch (_environment) {
+      case Environment.development:
+      case Environment.staging:
+        return _isIosLike
+            ? _admobTestInterstitialIos
+            : _admobTestInterstitialAndroid;
+      case Environment.production:
+        // TODO(ads): replace with the real production interstitial ad-unit
+        // IDs once the AdMob app + units are created.
+        return _isIosLike
+            ? _admobTestInterstitialIos
+            : _admobTestInterstitialAndroid;
     }
   }
 }
