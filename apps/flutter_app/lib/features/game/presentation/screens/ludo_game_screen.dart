@@ -15,6 +15,8 @@ import '../../../../shared/widgets/rewarded_ad_modal.dart';
 import '../../../../shared/animations/celebrations/confetti_animation.dart';
 import '../widgets/game_table.dart';
 import '../ludo/ludo_animated_board.dart';
+import '../ludo/ludo_skin_catalog.dart';
+import '../ludo/ludo_skin_picker_sheet.dart';
 import '../widgets/ludo_dice_widget.dart';
 import '../widgets/turn_timer.dart';
 
@@ -196,6 +198,20 @@ class _LudoGameScreenState extends ConsumerState<LudoGameScreen> {
         child: showTimer ? const TurnTimer(seconds: 30) : null,
       );
 
+  /// Opens the character picker (skins are local cosmetics, so spectators can
+  /// use it too and changes apply mid-game).
+  Widget _skinButton() => GestureDetector(
+        onTap: () => LudoSkinPickerSheet.show(context),
+        child: const GlassContainer(
+          padding: EdgeInsets.all(8),
+          child: Icon(
+            Icons.two_wheeler,
+            size: 20,
+            color: AppColors.textDark,
+          ),
+        ),
+      );
+
   Widget _board(LudoState state, Set<String> movable, {double maxSize = 520}) =>
       Center(
         child: ConstrainedBox(
@@ -205,6 +221,8 @@ class _LudoGameScreenState extends ConsumerState<LudoGameScreen> {
             child: LudoAnimatedBoard(
               state: state,
               movableTokenIds: movable,
+              skin: ref.watch(ludoRiderSkinProvider),
+              sponsor: ref.watch(ludoSponsorBrandingProvider),
               onTokenTap:
                   _isMyTurn && !_isSpectator ? _onTokenTap : null,
             ),
@@ -284,6 +302,8 @@ class _LudoGameScreenState extends ConsumerState<LudoGameScreen> {
               _turnPill(state),
               const SizedBox(width: 10),
               _timerSlot(showTimer),
+              const SizedBox(width: 10),
+              _skinButton(),
             ],
           ),
         ),
@@ -333,6 +353,8 @@ class _LudoGameScreenState extends ConsumerState<LudoGameScreen> {
                           child: Center(child: _timerSlot(showTimer))),
                       const SizedBox(height: 18),
                       _diceRow(state),
+                      const SizedBox(height: 12),
+                      _skinButton(),
                       const Spacer(),
                       _emoji(state),
                     ],

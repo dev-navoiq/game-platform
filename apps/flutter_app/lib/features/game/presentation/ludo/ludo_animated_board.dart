@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -7,6 +8,7 @@ import 'package:game_ludo/game_ludo.dart';
 import '../../../../core/theme/colors.dart';
 import 'ludo_board_geometry.dart';
 import 'ludo_rider_skin.dart';
+import 'ludo_sponsor_branding.dart';
 
 /// Dark board surface — scooters and colored cells pop against it.
 const _boardBg = Color(0xFF0C0E14);
@@ -24,6 +26,11 @@ class LudoAnimatedBoard extends StatefulWidget {
   final ValueChanged<String>? onTokenTap;
   final LudoRiderSkin skin;
 
+  /// When set (a sponsored skin is equipped) the board gets the sponsor's
+  /// accent: a faint brand-color wash plus a center-court roundel. Purely
+  /// cosmetic and local, like the skin itself.
+  final SponsorBranding? sponsor;
+
   const LudoAnimatedBoard({
     super.key,
     required this.state,
@@ -31,6 +38,7 @@ class LudoAnimatedBoard extends StatefulWidget {
     this.movableTokenIds = const {},
     this.onTokenTap,
     this.skin = const ScooterSkin(),
+    this.sponsor,
   });
 
   @override
@@ -46,6 +54,7 @@ class _LudoAnimatedBoardState extends State<LudoAnimatedBoard>
   late final Ticker _ticker;
   final _frame = ValueNotifier<int>(0);
   Duration _last = Duration.zero;
+  double _clock = 0; // monotonic seconds, handed to skins for idle life
 
   /// Per-token visual state, keyed by token id.
   final Map<String, _Rider> _riders = {};
@@ -139,6 +148,7 @@ class _LudoAnimatedBoardState extends State<LudoAnimatedBoard>
         : (now - _last).inMicroseconds / 1e6;
     _last = now;
     final clamped = dt.clamp(0.0, 0.05); // avoid jumps after a stall
+    _clock += clamped;
 
     final currentColor = widget.state.playerColors[widget.state.currentPlayerId];
     for (final entry in _riders.entries) {
@@ -208,6 +218,8 @@ class _LudoAnimatedBoardState extends State<LudoAnimatedBoard>
                     geo: _geo,
                     cell: cell,
                     skin: widget.skin,
+                    sponsor: widget.sponsor,
+                    time: () => _clock,
                     selectedTokenId: widget.selectedTokenId,
                     movableTokenIds: widget.movableTokenIds,
                     colors: _colors,
@@ -229,6 +241,7 @@ class _Rider {
   double scale = 1;
   double alpha = 1;
   double spin = 0;
+  double lean = 0; // smoothed turn rate, for skins that bank into corners
   RiderPhase phase = RiderPhase.idle;
 
   // drive
@@ -312,13 +325,16 @@ class _Rider {
         final p = _segT.clamp(0.0, 1.0);
         pos = Offset.lerp(a, b, p)!;
         final target = math.atan2(b.dy - a.dy, b.dx - a.dx) + math.pi / 2;
-        angle += _angDiff(angle, target) * 0.35;
+        final d = _angDiff(angle, target);
+        angle += d * 0.35;
+        lean += (d.clamp(-1.2, 1.2) - lean) * 0.3;
         scale = 1 + 0.12 * math.sin(p * math.pi); // little hop
       }
       return;
     }
 
     // idle — gentle pulse on the active player's movable riders
+    lean *= 0.82; // straighten up after the last corner
     final pulse = active ? 1 + 0.06 * math.sin(_idleClock += dt * 5) : 1.0;
     scale += (pulse - scale) * 0.25;
   }
@@ -339,6 +355,11 @@ class _BoardPainter extends CustomPainter {
   final LudoBoardGeometry geo;
   final double cell;
   final LudoRiderSkin skin;
+  final SponsorBranding? sponsor;
+
+  /// Getter, not a value: the painter instance outlives many ticks (it is only
+  /// rebuilt on widget rebuilds) and must read the live clock on each repaint.
+  final double Function() time;
   final String? selectedTokenId;
   final Set<String> movableTokenIds;
   final Map<LudoColor, Color> colors;
@@ -350,6 +371,8 @@ class _BoardPainter extends CustomPainter {
     required this.geo,
     required this.cell,
     required this.skin,
+    this.sponsor,
+    required this.time,
     required this.selectedTokenId,
     required this.movableTokenIds,
     required this.colors,
@@ -357,8 +380,61 @@ class _BoardPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (sponsor != null) _paintSponsorWash(canvas, size);
     _paintChrome(canvas);
+    if (sponsor != null) _paintSponsorRoundel(canvas);
     _paintRiders(canvas);
+  }
+
+  /// Faint radial wash of the sponsor's primary color, under the cells — the
+  /// whole surface reads subtly on-brand without hurting cell contrast.
+  void _paintSponsorWash(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          size.center(Offset.zero),
+          size.shortestSide * 0.72,
+          [
+            sponsor!.primary.withValues(alpha: 0.14),
+            sponsor!.primary.withValues(alpha: 0.03),
+          ],
+        ),
+    );
+  }
+
+  /// Center-court sponsor roundel over the pinwheel — badge text drawn, no
+  /// image assets (a real deal could swap in a drawn glyph or Rive artboard).
+  void _paintSponsorRoundel(Canvas canvas) {
+    final s = sponsor!;
+    final center = Offset(7.5 * cell, 7.5 * cell);
+    final r = cell * 0.95;
+    canvas.drawCircle(
+        center, r, Paint()..color = s.primary.withValues(alpha: 0.92));
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..color = s.secondary
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = cell * 0.09,
+    );
+    // Scale the wordmark down for longer badge texts so it stays inside.
+    final fontSize = math.min(cell * 0.42, r * 2.6 / s.badgeText.length);
+    final text = TextPainter(
+      text: TextSpan(
+        text: s.badgeText,
+        style: TextStyle(
+          color: s.secondary,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          letterSpacing: cell * 0.03,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    text.paint(
+        canvas, center - Offset(text.width / 2, text.height / 2));
   }
 
   void _paintChrome(Canvas canvas) {
@@ -440,6 +516,7 @@ class _BoardPainter extends CustomPainter {
         int rank(LudoToken t) => t.isInPlay ? 1 : 0;
         return rank(a).compareTo(rank(b));
       });
+    final now = time();
     for (final t in ordered) {
       final rider = riders[t.id];
       if (rider == null) continue;
@@ -457,6 +534,9 @@ class _BoardPainter extends CustomPainter {
           selected: selectedTokenId == t.id,
           movable: movableTokenIds.contains(t.id),
           phase: rider.phase,
+          // Per-token phase offset so idle head-bobs never sync up.
+          timeSec: now + (t.id.hashCode % 628) / 100.0,
+          lean: rider.lean,
         ),
       );
     }
