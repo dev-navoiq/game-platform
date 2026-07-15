@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/di/providers.dart';
 import '../../../core/services/supabase_service.dart';
+import '../local/local_game_session.dart';
 import 'game_provider.dart';
 
 /// Info about bots in the current room.
@@ -87,6 +88,12 @@ class BotMoveController {
   /// → PLAYER_MISMATCH).
   void startWatching({required String roomId}) {
     _closeSubscriptions();
+
+    // On-device practice rooms ("Practice vs Bots") are driven entirely by
+    // LocalGameCoordinator, which computes AND applies bot moves itself.
+    // Skip all wiring so this controller never dispatches to the server or
+    // opens a realtime channel for a room that doesn't exist there.
+    if (LocalGameSession.isLocalRoomId(roomId)) return;
 
     _providerSubscriptions.add(
       _ref.listen<GameState?>(gameStateProvider, (prev, next) {

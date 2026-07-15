@@ -7,6 +7,7 @@ import '../../../../core/routing/routes.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_button.dart';
+import '../../local/local_game_session.dart';
 import '../../providers/game_provider.dart';
 
 /// Action buttons panel for the game screen (leave, settings, etc.).
@@ -120,6 +121,10 @@ class GameActions extends ConsumerWidget {
       // can resume from the home screen and forfeit again.
       return;
     }
+    if (LocalGameSession.isLocalRoomId(roomId)) {
+      // On-device practice game — there is no server room to leave.
+      return;
+    }
     final supabase = ref.read(supabaseServiceProvider);
     supabase.leaveRoom(roomId: roomId, reason: reason).catchError((error) {
       // ignore: avoid_print — surfaces on flutter run in release.
@@ -140,6 +145,8 @@ Future<void> confirmAndForfeitGame(
   void dispatch(String reason) {
     final roomId = ref.read(currentRoomIdProvider);
     if (roomId == null) return;
+    // On-device practice game — there is no server room to leave.
+    if (LocalGameSession.isLocalRoomId(roomId)) return;
     final supabase = ref.read(supabaseServiceProvider);
     supabase.leaveRoom(roomId: roomId, reason: reason).catchError((error) {
       // ignore: avoid_print

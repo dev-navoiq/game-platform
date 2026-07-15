@@ -5,11 +5,13 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/routing/routes.dart';
 import '../../../core/theme/colors.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_bottom_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
+import '../../game/local/practice_launcher.dart';
 import '../models/room_member.dart';
 import '../presentation/widgets/room_list_card.dart';
 
@@ -28,36 +30,37 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   /// second create is allowed after backing out.
   bool _navigating = false;
 
-  String get _displayName {
+  String _displayName(AppLocalizations l10n) {
     switch (widget.gameType) {
       case 'twenty_nine':
-        return 'Twenty-Nine';
+        return l10n.gameNameTwentyNine;
       case 'oh_hell':
-        return 'Oh Hell';
+        return l10n.gameNameOhHell;
       case 'hearts':
-        return 'Hearts';
+        return l10n.gameNameHearts;
       case 'spades':
-        return 'Spades';
+        return l10n.gameNameSpades;
       case 'bridge':
-        return 'Bridge';
+        return l10n.gameNameBridge;
       case 'chess':
-        return 'Chess';
+        return l10n.gameNameChess;
       case 'ludo':
-        return 'Ludo';
+        return l10n.gameNameLudo;
       case 'sequence':
-        return 'Sequence';
+        return l10n.gameNameSequence;
       default:
-        return 'Game';
+        return l10n.gameNameGeneric;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return FeltBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,
-        appBar: GlassAppBar(title: '$_displayName Lobby'),
+        appBar: GlassAppBar(title: l10n.lobbyTitle(_displayName(l10n))),
         body: Padding(
           padding: EdgeInsets.only(
             top: MediaQuery.of(context).padding.top + 56 + 16,
@@ -68,7 +71,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             children: [
               // Join by Code button — opens the join screen
               GlassButton(
-                label: 'Join by Code',
+                label: l10n.joinByCode,
                 onPressed: () => context.push(AppRoutes.joinByCodePath(widget.gameType)),
                 size: GlassButtonSize.large,
                 width: double.infinity,
@@ -76,6 +79,21 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 icon: const Icon(Icons.vpn_key_outlined,
                     color: Colors.white, size: 20),
               ),
+
+              // Practice vs Bots — fully on-device game, no room/server needed.
+              if (practiceSupportedGameTypes.contains(widget.gameType)) ...[
+                const SizedBox(height: 12),
+                GlassButton(
+                  label: l10n.practiceVsBots,
+                  onPressed: () =>
+                      startPracticeVsBots(context, ref, gameType: widget.gameType),
+                  size: GlassButtonSize.large,
+                  width: double.infinity,
+                  variant: GlassButtonVariant.outlined,
+                  icon: const Icon(Icons.smart_toy_outlined,
+                      color: Colors.white, size: 20),
+                ),
+              ],
               const SizedBox(height: 16),
 
               // Room list (placeholder — sample rooms until matchmaking is wired)
@@ -92,7 +110,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 24, top: 12),
                 child: GlassButton(
-                  label: 'Create Room',
+                  label: l10n.createRoom,
                   onPressed: _onCreateRoom,
                   size: GlassButtonSize.large,
                   width: double.infinity,
@@ -136,16 +154,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Future<int?> _showOhHellPlayerCountSheet(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return GlassBottomSheet.show<int>(
       context: context,
-      title: 'How many players?',
+      title: l10n.howManyPlayers,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Oh Hell needs 4 to 6 players. You can add bots in the room.',
+              l10n.ohHellPlayerCountHint,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: 12.5,
@@ -201,7 +220,7 @@ class _PlayerCountChoice extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              'players',
+              AppLocalizations.of(context).players,
               style: GoogleFonts.inter(
                 fontSize: 11,
                 color: AppColors.textMuted,
@@ -243,7 +262,9 @@ class _RoomList extends StatelessWidget {
           socialMode: room.socialMode,
           onTap: () {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Room ${room.code} — join via code coming soon')),
+              SnackBar(
+                  content: Text(AppLocalizations.of(context)
+                      .roomJoinComingSoon(room.code))),
             );
           },
         );

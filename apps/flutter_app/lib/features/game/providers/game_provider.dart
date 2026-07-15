@@ -6,6 +6,7 @@ import 'package:game_oh_hell/game_oh_hell.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
 import '../../../core/services/supabase_service.dart';
+import '../local/local_game_session.dart';
 
 final gameStateProvider =
     StateNotifierProvider<GameNotifier, GameState?>((ref) {
@@ -34,6 +35,19 @@ class GameNotifier extends StateNotifier<GameState?> {
 
   GameNotifier(this._supabase) : super(null);
 
+  /// On-device practice session ("Practice vs Bots"). While attached, moves
+  /// whose roomId matches the session are applied by the local engine and no
+  /// realtime subscription is opened — zero server round-trips.
+  LocalGameSession? _localSession;
+
+  /// Attach a local practice session. Any previous session is disposed so a
+  /// stale coordinator can't keep publishing into this notifier.
+  void attachLocalSession(LocalGameSession session) {
+    if (identical(_localSession, session)) return;
+    _localSession?.dispose();
+    _localSession = session;
+  }
+
   /// Set the active game type for state deserialization.
   void setGameType(String gameType) {
     _gameType = gameType;
@@ -41,6 +55,11 @@ class GameNotifier extends StateNotifier<GameState?> {
 
   /// Subscribe to real-time game state updates for a room.
   Future<void> subscribeToGame({required String roomId}) async {
+    // Local practice sessions have no server row to subscribe to — the
+    // attached LocalGameSession publishes states via updateState directly.
+    if (_localSession != null && LocalGameSession.isLocalRoomId(roomId)) {
+      return;
+    }
     print('[GameNotifier] subscribeToGame roomId=$roomId gameType=$_gameType');
     _supabase.subscribeToGameState(
       roomId: roomId,
@@ -68,9 +87,22 @@ class GameNotifier extends StateNotifier<GameState?> {
     required String roomId,
     required dynamic move,
   }) async {
+    if (_routeToLocalSession(roomId)) {
+      await _localSession!.handleWireMove(_asWireMap(move));
+      return;
+    }
     final response = await _supabase.sendMove(roomId: roomId, move: move);
     _applyServerResponse(response);
   }
+
+  /// True when [roomId] belongs to the attached on-device practice session,
+  /// meaning the move must be applied locally instead of sent to the server.
+  bool _routeToLocalSession(String roomId) =>
+      _localSession != null && _localSession!.roomId == roomId;
+
+  static Map<String, dynamic> _asWireMap(dynamic move) => move is Map
+      ? Map<String, dynamic>.from(move)
+      : (move as dynamic).toJson() as Map<String, dynamic>;
 
   /// Send a move with an optimistic local prediction.
   ///
@@ -84,6 +116,13 @@ class GameNotifier extends StateNotifier<GameState?> {
     required GameMove localMove,
     required dynamic wireMove,
   }) async {
+    // Local practice session: the on-device engine IS authoritative — no
+    // optimistic prediction needed, the applied state comes back instantly.
+    if (_routeToLocalSession(roomId)) {
+      await _localSession!.handleWireMove(_asWireMap(wireMove));
+      return;
+    }
+
     final before = state;
     final gameType = _gameType;
 
@@ -177,9 +216,21 @@ class GameNotifier extends StateNotifier<GameState?> {
 
   /// Clear the game state (e.g., on game exit).
   void clearState() {
+    _localSession?.dispose();
+    _localSession = null;
     state = null;
     _gameType = null;
     _appliedVersion = -1;
+  }
+
+  @override
+  void dispose() {
+    // GameScreen.dispose invalidates gameStateProvider, which lands here —
+    // tear the practice session down with the notifier so no bot timer keeps
+    // firing into a disposed StateNotifier.
+    _localSession?.dispose();
+    _localSession = null;
+    super.dispose();
   }
 }
 
