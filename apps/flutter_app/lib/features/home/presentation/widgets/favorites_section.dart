@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/routing/routes.dart';
 import '../../../../core/theme/colors.dart';
+import '../../../../shared/theme/glass_tokens.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../../favorites/providers/favorites_providers.dart';
 import '../../../history/providers/history_providers.dart';
+import '../game_visuals.dart';
 
 /// Horizontal sections on the home screen for favorites and recently played.
 class FavoritesSection extends ConsumerWidget {
@@ -25,16 +28,15 @@ class FavoritesSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Favorites row
         if (favorites.isNotEmpty) ...[
-          _SectionHeader(
+          const _SectionHeader(
             title: 'Favorites',
-            icon: Icons.star,
-            iconColor: Colors.amber,
+            icon: Icons.star_rounded,
+            iconColor: Color(0xFFE8A84F),
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: 120,
+            height: 128,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: favorites.length,
@@ -48,22 +50,28 @@ class FavoritesSection extends ConsumerWidget {
                   onFavoriteToggle: () => ref
                       .read(favoritesProvider.notifier)
                       .toggle(favorites[index]),
-                );
+                )
+                    .animate()
+                    .fadeIn(duration: 300.ms, delay: (50 * index).ms)
+                    .slideX(
+                      begin: 0.06,
+                      end: 0,
+                      duration: 320.ms,
+                      delay: (50 * index).ms,
+                    );
               },
             ),
           ),
           const SizedBox(height: 16),
         ],
-
-        // Recently played row
         if (recentGames.isNotEmpty) ...[
-          _SectionHeader(
+          const _SectionHeader(
             title: 'Recently Played',
-            icon: Icons.history,
+            icon: Icons.history_rounded,
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: 120,
+            height: 128,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: recentGames.length,
@@ -89,8 +97,6 @@ class FavoritesSection extends ConsumerWidget {
   }
 }
 
-// ── Private widgets ─────────────────────────────────────────────────────────
-
 class _FavoriteGameCard extends StatelessWidget {
   final String gameType;
   final bool isFavorite;
@@ -106,55 +112,83 @@ class _FavoriteGameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visual = GameVisuals.of(gameType);
+
     return GlassContainer(
-      width: 140,
+      width: 148,
       borderRadius: 16,
       onTap: onTap,
-      padding: const EdgeInsets.all(12),
+      // Explicit warm elevated glass — never white-on-glass.
+      surfaceColor: const Color(0xFFFFF8F0),
+      surfaceOpacity: 0.78,
+      padding: const EdgeInsets.all(10),
       child: Stack(
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  _getGameIcon(gameType),
-                  color: Colors.white,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 64,
+                  child: visual.imageAsset != null
+                      ? Image.asset(
+                          visual.imageAsset!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _IconBadge(visual: visual),
+                        )
+                          .animate(onPlay: (c) => c.repeat(reverse: true))
+                          .scale(
+                            begin: const Offset(1, 1),
+                            end: const Offset(1.05, 1.05),
+                            duration: 2600.ms,
+                            curve: Curves.easeInOut,
+                          )
+                      : _IconBadge(visual: visual),
                 ),
               ),
               const Spacer(),
               Text(
-                _getDisplayName(gameType),
+                visual.title,
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  color: AppColors.textDark,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               Text(
-                _getSubtitle(gameType),
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 12,
+                visual.subtitle,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
           Positioned(
-            top: 0,
-            right: 0,
-            child: GestureDetector(
-              onTap: onFavoriteToggle,
-              child: Icon(
-                isFavorite ? Icons.star : Icons.star_border,
-                color: isFavorite ? Colors.amber : Colors.white54,
-                size: 20,
+            top: 2,
+            right: 2,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.25),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onFavoriteToggle,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: isFavorite
+                        ? GlassTokens.accentSoft
+                        : Colors.white.withValues(alpha: 0.9),
+                    size: 18,
+                  ),
+                ),
               ),
             ),
           ),
@@ -162,65 +196,25 @@ class _FavoriteGameCard extends StatelessWidget {
       ),
     );
   }
+}
 
-  static IconData _getGameIcon(String gameType) {
-    switch (gameType) {
-      case 'twenty_nine':
-        return Icons.style;
-      case 'oh_hell':
-        return Icons.whatshot;
-      case 'hearts':
-        return Icons.favorite;
-      case 'spades':
-        return Icons.eco;
-      case 'chess':
-        return Icons.castle;
-      case 'ludo':
-        return Icons.grid_view;
-      case 'sequence':
-        return Icons.apps;
-      default:
-        return Icons.games;
-    }
-  }
+class _IconBadge extends StatelessWidget {
+  final GameVisual visual;
 
-  static String _getDisplayName(String gameType) {
-    switch (gameType) {
-      case 'twenty_nine':
-        return 'Twenty-Nine';
-      case 'oh_hell':
-        return 'Oh Hell';
-      case 'hearts':
-        return 'Hearts';
-      case 'spades':
-        return 'Spades';
-      case 'chess':
-        return 'Chess';
-      case 'ludo':
-        return 'Ludo';
-      case 'sequence':
-        return 'Sequence';
-      default:
-        return gameType;
-    }
-  }
+  const _IconBadge({required this.visual});
 
-  static String _getSubtitle(String gameType) {
-    switch (gameType) {
-      case 'twenty_nine':
-      case 'hearts':
-      case 'spades':
-        return '4 players';
-      case 'oh_hell':
-        return '3-7 players';
-      case 'chess':
-        return '2 players';
-      case 'ludo':
-      case 'sequence':
-        return '2-4 players';
-      default:
-        return '';
-    }
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: visual.accentColor.withValues(alpha: 0.15),
+      child: Center(
+        child: Icon(
+          visual.fallbackIcon,
+          color: visual.accentColor,
+          size: 28,
+        ),
+      ),
+    );
   }
 }
 
@@ -243,7 +237,7 @@ class _SectionHeader extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           title,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: AppColors.textOnFelt,

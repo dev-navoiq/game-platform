@@ -44,8 +44,9 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
           height: height + topPadding,
           padding: EdgeInsets.only(top: topPadding),
           decoration: BoxDecoration(
-            color:
-                Colors.white.withOpacity(GlassTokens.surfaceOpacity),
+            color: AppColors.glass.withValues(
+              alpha: GlassTokens.surfaceOpacity,
+            ),
             border: Border(
               bottom: BorderSide(
                 color: AppColors.glassBorder,

@@ -17,10 +17,11 @@ class GlassTokens {
   static const double blurHeavy = 40.0;
 
   // ── Surface opacities ─────────────────────────────────────────
-  static const double surfaceOpacity = 0.52; // standard glass
-  static const double surfaceOpacityHover = 0.60;
-  static const double surfaceOpacityPressed = 0.68;
-  static const double borderOpacity = 0.72; // standard glass border
+  // Bumped for home / dense UI: 0.52 bled green felt into body text.
+  static const double surfaceOpacity = 0.72;
+  static const double surfaceOpacityHover = 0.80;
+  static const double surfaceOpacityPressed = 0.86;
+  static const double borderOpacity = 0.88;
 
   // ── Border widths ─────────────────────────────────────────────
   static const double borderThin = 0.5;
@@ -45,37 +46,37 @@ class GlassTokens {
 
   // ── Colours (delegated to AppColors) ──────────────────────────
 
-  // Surface
-  static const Color surface = AppColors.glass; // white 52%
-  static const Color surfaceBorder = AppColors.glassBorder; // white 72%
+  // Surface — warm cream glass for readable dark text
+  static const Color surface = AppColors.glass;
+  static const Color surfaceBorder = AppColors.glassBorder;
 
   // Text on glass
-  static const Color textOnGlass = AppColors.textDark; // #241810
-  static const Color textOnGlassMuted = AppColors.textMuted; // #9c7d62
+  static const Color textOnGlass = AppColors.textDark;
+  static const Color textOnGlassMuted = AppColors.textMuted;
 
   // Text on felt
-  static const Color textOnFelt = AppColors.textOnFelt; // white 90%
-  static const Color textOnFeltMuted = AppColors.textFeltMuted; // white 50%
+  static const Color textOnFelt = AppColors.textOnFelt;
+  static const Color textOnFeltMuted = AppColors.textFeltMuted;
 
   // Accent
-  static const Color accentPrimary = AppColors.accent; // #C47B2B
-  static const Color accentSoft = AppColors.accentSoft; // #E8A84F
-  static const Color accentGlow = AppColors.accentGlow; // gold 22%
+  static const Color accentPrimary = AppColors.accent;
+  static const Color accentSoft = AppColors.accentSoft;
+  static const Color accentGlow = AppColors.accentGlow;
 
   // Dark-mode surface
-  static const Color darkSurface = AppColors.feltDark; // #122e1d
+  static const Color darkSurface = AppColors.feltDark;
 
   // Status (supplementary)
-  static const Color success = AppColors.success; // #27ae60
-  static const Color danger = AppColors.danger; // #e74c3c
+  static const Color success = AppColors.success;
+  static const Color danger = AppColors.danger;
   static const Color warning = Color(0xFFF59E0B); // Amber
   static const Color info = Color(0xFF3B82F6); // Blue
 
   // ── Standard box shadow for glass panels ──────────────────────
   static const BoxShadow glassShadow = BoxShadow(
-    color: Color(0x1A3C2814),
-    blurRadius: 20,
-    offset: Offset(0, 4),
+    color: Color(0x26000000),
+    blurRadius: 18,
+    offset: Offset(0, 6),
   );
 
   static const BoxShadow glassInnerHighlight = BoxShadow(

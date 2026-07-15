@@ -48,7 +48,9 @@ class CurrencyDisplay extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(GlassTokens.radiusRound),
-            color: Colors.white.withOpacity(GlassTokens.surfaceOpacity),
+            color: AppColors.glass.withValues(
+              alpha: GlassTokens.surfaceOpacity,
+            ),
             border: Border.all(
               color: AppColors.glassBorder,
               width: GlassTokens.borderThin,

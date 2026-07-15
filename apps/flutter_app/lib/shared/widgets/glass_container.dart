@@ -52,9 +52,9 @@ class GlassContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveSurfaceColor = surfaceColor ?? Colors.white;
+    final effectiveSurfaceColor = surfaceColor ?? const Color(0xFFFFF8F0);
     final effectiveOpacity =
-        surfaceOpacity ?? GlassTokens.surfaceOpacity; // 0.52
+        surfaceOpacity ?? GlassTokens.surfaceOpacity; // 0.72
     final effectiveBorderColor = borderColor ?? AppColors.glassBorder;
     final effectiveGlowColor = glowColor ?? GlassTokens.accentGlow;
 

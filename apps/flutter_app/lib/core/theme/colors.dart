@@ -4,35 +4,37 @@ class AppColors {
   AppColors._();
 
   // Felt surface (game table background)
-  static const feltDark = Color(0xFF122e1d);
-  static const feltMid = Color(0xFF1d4a2e);
-  static const feltLight = Color(0xFF2a6641);
+  // Slightly deeper base so frosted glass cards separate more cleanly.
+  static const feltDark = Color(0xFF0E2618);
+  static const feltMid = Color(0xFF1A4530);
+  static const feltLight = Color(0xFF2F7048);
 
-  // Gold accent
-  static const accent = Color(0xFFC47B2B);
+  // Gold accent — kept warm, nudged slightly brighter for CTAs/icons
+  static const accent = Color(0xFFD08A2E);
   static const accentSoft = Color(0xFFE8A84F);
-  static const accentGlow = Color(0x38C47B2B); // 22% opacity
+  static const accentGlow = Color(0x40C47B2B); // ~25% opacity
 
-  // Glass morphism
-  static const glass = Color(0x85FFFFFF); // 52% opacity
-  static const glassBorder = Color(0xB8FFFFFF); // 72% opacity
+  // Glass morphism — warm cream tint + higher opacity so green felt
+  // doesn't muddy body text (main home-screen contrast fix).
+  static const glass = Color(0xB8FFF8F0); // warm cream ~72%
+  static const glassBorder = Color(0xE0FFFFFF); // 88%
 
-  // Text on glass
-  static const textDark = Color(0xFF241810);
-  static const textMuted = Color(0xFF9c7d62);
+  // Text on glass — darker muted for WCAG-friendly secondary labels
+  static const textDark = Color(0xFF1A120C);
+  static const textMuted = Color(0xFF5C4638);
 
   // Text on felt
-  static const textOnFelt = Color(0xE6FFFFFF); // 90% opacity
-  static const textFeltMuted = Color(0xB3FFFFFF); // 70% opacity — bumped from 50% for legibility on dark felt
+  static const textOnFelt = Color(0xF2FFFFFF); // 95%
+  static const textFeltMuted = Color(0xCCFFFFFF); // 80%
 
   // Status
-  static const success = Color(0xFF27ae60);
-  static const danger = Color(0xFFe74c3c);
+  static const success = Color(0xFF2FBF6A);
+  static const danger = Color(0xFFE74C3C);
 
   // Cards
   static const cardBg = Color(0xFFFFFFFF);
-  static const cardRed = Color(0xFFc0392b);
-  static const cardBlack = Color(0xFF1a1a2a);
+  static const cardRed = Color(0xFFC0392B);
+  static const cardBlack = Color(0xFF1A1A2A);
 
   // Primary palette (for Material theme)
   static const primary = Color(0xFF6366F1);

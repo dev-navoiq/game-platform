@@ -107,8 +107,11 @@ class _GlassCardState extends State<GlassCard>
                     decoration: BoxDecoration(
                       borderRadius:
                           BorderRadius.circular(widget.borderRadius),
-                      color: Colors.white.withOpacity(
-                          _isHovered ? 0.58 : GlassTokens.surfaceOpacity),
+                      color: AppColors.glass.withValues(
+                        alpha: _isHovered
+                            ? GlassTokens.surfaceOpacityHover
+                            : GlassTokens.surfaceOpacity,
+                      ),
                       border: Border.all(
                         color: AppColors.glassBorder,
                         width: GlassTokens.borderMedium,
