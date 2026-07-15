@@ -17,6 +17,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loggedIn = ref.read(sessionProvider) != null;
       final atLogin = state.matchedLocation == '/login';
       if (!loggedIn) return atLogin ? null : '/login';
+
+      // M5 — gate on ADMIN status, not merely "has a session". The console is a
+      // public Firebase Hosting URL sharing the same Supabase auth pool as the
+      // game app, so a plain game account must not reach admin screens even
+      // though server-side RLS/edge functions are the real defense.
+      final adminAsync = ref.read(isAdminProvider);
+      if (adminAsync.isLoading) {
+        // Hold at /login until the allow-list check resolves; the refresh
+        // listenable re-runs this redirect when isAdminProvider settles.
+        return atLogin ? null : '/login';
+      }
+      final isAdmin = adminAsync.valueOrNull ?? false;
+      if (!isAdmin) return atLogin ? null : '/login';
       if (atLogin) return '/tournaments';
       return null;
     },
@@ -43,9 +56,11 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-/// Bridges Riverpod auth changes to GoRouter's Listenable refresh.
+/// Bridges Riverpod auth changes to GoRouter's Listenable refresh. Also listens
+/// to the admin allow-list check so the redirect re-runs once it resolves.
 class _AuthRefresh extends ChangeNotifier {
   _AuthRefresh(Ref ref) {
     ref.listen(authStateProvider, (_, __) => notifyListeners());
+    ref.listen(isAdminProvider, (_, __) => notifyListeners());
   }
 }
