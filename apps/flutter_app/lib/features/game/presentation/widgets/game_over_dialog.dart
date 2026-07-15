@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../../core/services/game_end_ad_controller.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/animations/celebrations/confetti_animation.dart';
 import '../../../../shared/animations/transitions/modal_transitions.dart';
@@ -9,7 +11,13 @@ import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/glass_container.dart';
 
 /// End-game modal showing results with confetti for winners.
-class GameOverDialog extends StatelessWidget {
+///
+/// Appearing exactly once per finished game, this widget is also the
+/// central hook for the game-end interstitial: on first frame it notifies
+/// [GameEndAdController], which applies tier + cadence gating (free users
+/// only, every 2nd game, 3-minute gap, every 3rd slot = Pro-upsell house
+/// ad). The game is already over here, so it can never fire mid-game.
+class GameOverDialog extends ConsumerStatefulWidget {
   final bool isWinner;
   final String? winnerName;
   final Map<String, int> finalScores;
@@ -34,7 +42,32 @@ class GameOverDialog extends StatelessWidget {
   });
 
   @override
+  ConsumerState<GameOverDialog> createState() => _GameOverDialogState();
+}
+
+class _GameOverDialogState extends ConsumerState<GameOverDialog> {
+  @override
+  void initState() {
+    super.initState();
+    // Game-end interstitial (free tier, cadence-gated). Post-frame so the
+    // results are on screen before any full-screen ad appears on top.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(gameEndAdControllerProvider).onGameFinished(context);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isWinner = widget.isWinner;
+    final winnerName = widget.winnerName;
+    final finalScores = widget.finalScores;
+    final onPlayAgain = widget.onPlayAgain;
+    final onLeave = widget.onLeave;
+    final coinsEarned = widget.coinsEarned;
+    final xpEarned = widget.xpEarned;
+    final onDoubleCoins = widget.onDoubleCoins;
+
     return Stack(
       children: [
         // Backdrop

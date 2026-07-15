@@ -13,6 +13,9 @@ export 'src/models/gem_pack.dart';
 // Services
 export 'src/services/currency_service.dart';
 export 'src/services/ad_service.dart';
+export 'src/services/ad_platform.dart';
+export 'src/services/google_ad_platform.dart';
+export 'src/services/game_end_interstitial_cadence.dart';
 export 'src/services/challenge_service.dart';
 export 'src/services/season_service.dart';
 export 'src/services/skin_service.dart';

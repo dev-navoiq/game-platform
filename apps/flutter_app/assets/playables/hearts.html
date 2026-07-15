@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Gathr — Hearts</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body {
+    width:100%; height:100%; overflow:hidden;
+    background:#122e1d;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select:none; -webkit-user-select:none; touch-action:manipulation;
+    color:#f4efe6;
+  }
+  :root {
+    --gold:#C47B2B;
+    --gold-lite:#e7c98f;
+    --cw:clamp(50px, min(16.5vw, 10.5vh), 92px);
+    --ch:calc(var(--cw) * 1.42);
+  }
+  #stage {
+    position:fixed; inset:0;
+    background:
+      radial-gradient(130% 95% at 50% 32%, #1e5233 0%, #16402a 42%, #122e1d 78%),
+      #122e1d;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+  #stage::after { /* vignette */
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 45%, transparent 55%, rgba(0,0,0,.38) 100%);
+  }
+
+  .glass {
+    background:rgba(255,255,255,.09);
+    border:1px solid rgba(255,255,255,.16);
+    border-radius:16px;
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    box-shadow:0 8px 24px rgba(0,0,0,.28);
+  }
+
+  /* ---------- top: brand + rule banner ---------- */
+  #topbar {
+    position:relative; z-index:6;
+    padding:calc(10px + env(safe-area-inset-top)) 12px 6px;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+  }
+  #brand {
+    display:inline-flex; align-items:center; gap:7px;
+    padding:5px 14px; border-radius:999px;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    font-weight:700; font-size:14px; letter-spacing:.6px;
+  }
+  #brand .suit { color:var(--gold-lite); font-size:15px; }
+  #banner {
+    max-width:min(92vw, 460px);
+    padding:9px 16px; border-radius:14px;
+    font-size:clamp(12.5px, 3.6vw, 15.5px); font-weight:600; text-align:center; line-height:1.35;
+    transition:opacity .35s ease, transform .35s ease;
+  }
+  #banner b { color:var(--gold-lite); }
+  #banner .qs { color:#ffdca8; white-space:nowrap; }
+  #banner.swap { opacity:0; transform:translateY(-6px); }
+
+  /* ---------- table / trick area ---------- */
+  #table { position:relative; flex:1 1 auto; z-index:2; min-height:0; }
+
+  .opp {
+    position:absolute; z-index:3;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    transform:translate(-50%,-50%);
+  }
+  .opp .av {
+    width:clamp(38px, 11vw, 54px); height:clamp(38px, 11vw, 54px);
+    border-radius:50%;
+    background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.22);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:clamp(14px,4vw,19px); color:var(--gold-lite);
+    box-shadow:0 6px 16px rgba(0,0,0,.3);
+    transition:box-shadow .3s ease, border-color .3s ease;
+  }
+  .opp.took .av { border-color:rgba(255,120,120,.75); box-shadow:0 0 16px rgba(220,80,80,.45); }
+  .opp .nm {
+    font-size:clamp(9.5px,2.7vw,12px); font-weight:600; opacity:.75; letter-spacing:.3px;
+    padding:1px 8px; border-radius:999px; background:rgba(0,0,0,.25);
+  }
+  #oppN { left:50%; top:9%; }
+  #oppW { left:11%; top:34%; }
+  #oppE { left:89%; top:34%; }
+
+  #trick { position:absolute; inset:0; z-index:2; pointer-events:none; }
+
+  /* ---------- cards ---------- */
+  .card {
+    width:var(--cw); height:var(--ch);
+    position:absolute;
+    transform-style:preserve-3d;
+    will-change:transform;
+  }
+  .card .cf, .card .cb {
+    position:absolute; inset:0; border-radius:calc(var(--cw) * .12);
+    backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    box-shadow:0 6px 16px rgba(0,0,0,.35);
+  }
+  .card .cf {
+    background:linear-gradient(160deg, #ffffff 0%, #f4f4f7 100%);
+    border:1px solid rgba(0,0,0,.10);
+    color:#1d1d26;
+  }
+  .card.red .cf { color:#c62f3b; }
+  .card .cb {
+    transform:rotateY(180deg);
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,.07) 0 6px, transparent 6px 12px),
+      linear-gradient(160deg, #235c38 0%, #16402a 100%);
+    border:1px solid rgba(231,201,143,.5);
+  }
+  .card .cb::after {
+    content:"G"; position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:calc(var(--cw) * .42); color:var(--gold-lite);
+    text-shadow:0 1px 4px rgba(0,0,0,.4); opacity:.9;
+  }
+  .card .ix {
+    position:absolute; top:calc(var(--cw)*.07); left:calc(var(--cw)*.09);
+    font-weight:700; font-size:calc(var(--cw) * .23); line-height:1.02; text-align:center;
+  }
+  .card .ix small { display:block; font-size:calc(var(--cw) * .21); }
+  .card .ix2 {
+    position:absolute; bottom:calc(var(--cw)*.07); right:calc(var(--cw)*.09);
+    transform:rotate(180deg);
+    font-weight:700; font-size:calc(var(--cw) * .23); line-height:1.02; text-align:center;
+  }
+  .card .ix2 small { display:block; font-size:calc(var(--cw) * .21); }
+  .card .pip {
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--cw) * .58);
+    text-shadow:0 1px 1px rgba(0,0,0,.08);
+  }
+
+  /* hand cards */
+  #handzone {
+    position:relative; z-index:4;
+    height:calc(var(--ch) * 1.28 + env(safe-area-inset-bottom));
+    flex:0 0 auto;
+  }
+  #hand { position:absolute; left:0; right:0; bottom:calc(6px + env(safe-area-inset-bottom)); top:0; }
+  #hand .card {
+    left:50%; bottom:calc(var(--ch) * -0.22);
+    transition:transform .45s cubic-bezier(.2,.8,.25,1), opacity .3s ease;
+    cursor:pointer;
+  }
+  .card.glow .cf {
+    border-color:rgba(231,201,143,.9);
+    box-shadow:0 0 0 2.5px rgba(196,123,43,.95), 0 0 20px 7px rgba(196,123,43,.5), 0 6px 16px rgba(0,0,0,.35);
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  .card.glow.urgent .cf { animation:pulse .6s ease-in-out infinite; }
+  @keyframes pulse {
+    0%,100% { box-shadow:0 0 0 2.5px rgba(196,123,43,.95), 0 0 14px 4px rgba(196,123,43,.4), 0 6px 16px rgba(0,0,0,.35); }
+    50%     { box-shadow:0 0 0 3.5px rgba(231,201,143,1), 0 0 26px 11px rgba(196,123,43,.65), 0 6px 16px rgba(0,0,0,.35); }
+  }
+
+  /* trick cards */
+  #trick .card { left:0; top:0; }
+
+  /* ---------- hint bubble ---------- */
+  #hint {
+    position:absolute; z-index:7; left:50%; bottom:calc(var(--ch) * 1.34 + env(safe-area-inset-bottom));
+    transform:translateX(-50%) translateY(8px);
+    padding:8px 16px; border-radius:999px;
+    background:rgba(0,0,0,.55); border:1px solid rgba(231,201,143,.55);
+    font-size:clamp(12px,3.4vw,14px); font-weight:600; color:var(--gold-lite);
+    opacity:0; pointer-events:none; white-space:nowrap;
+    transition:opacity .3s ease, transform .3s ease;
+  }
+  #hint.show { opacity:1; transform:translateX(-50%) translateY(0); animation:hbob 1.2s ease-in-out infinite; }
+  @keyframes hbob { 0%,100%{ margin-bottom:0; } 50%{ margin-bottom:6px; } }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position:absolute; z-index:8; left:50%; top:46%;
+    transform:translate(-50%,-50%) scale(.6);
+    padding:14px 26px; border-radius:18px;
+    background:rgba(18,46,29,.72); border:1px solid rgba(231,201,143,.6);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 12px 34px rgba(0,0,0,.45);
+    font-size:clamp(18px,5.6vw,26px); font-weight:800; text-align:center;
+    color:var(--gold-lite); letter-spacing:.4px; white-space:nowrap;
+    opacity:0; pointer-events:none;
+    transition:opacity .28s ease, transform .28s cubic-bezier(.2,.9,.3,1.4);
+  }
+  #toast .sub { display:block; font-size:clamp(12px,3.4vw,14px); font-weight:600; color:#f4efe6; opacity:.85; margin-top:4px; letter-spacing:.2px; }
+  #toast.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
+
+  /* ---------- end card ---------- */
+  #end {
+    position:fixed; inset:0; z-index:20;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(9,22,14,.66);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    opacity:0; pointer-events:none;
+    transition:opacity .45s ease;
+  }
+  #end.show { opacity:1; pointer-events:auto; }
+  #endpanel {
+    width:min(84vw, 380px);
+    padding:30px 26px 26px; border-radius:24px; text-align:center;
+    background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.20);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 20px 60px rgba(0,0,0,.5);
+    transform:scale(.9) translateY(14px);
+    transition:transform .45s cubic-bezier(.2,.9,.3,1.25);
+  }
+  #end.show #endpanel { transform:scale(1) translateY(0); }
+  #endpanel .logo {
+    font-size:clamp(34px,10vw,44px); font-weight:800; letter-spacing:1px;
+    color:var(--gold-lite);
+    text-shadow:0 2px 14px rgba(196,123,43,.45);
+  }
+  #endpanel .suits { font-size:clamp(17px,5vw,21px); letter-spacing:9px; margin:8px 0 14px; opacity:.95; }
+  #endpanel .suits .r { color:#e8737e; }
+  #endpanel .suits .b { color:#e9e4d8; }
+  #endpanel h2 {
+    font-size:clamp(16px,4.6vw,19px); font-weight:700; line-height:1.4; margin-bottom:20px; color:#f7f3ea;
+  }
+  #cta {
+    display:block; width:100%; border:0; cursor:pointer;
+    padding:15px 10px; border-radius:16px;
+    background:linear-gradient(160deg, #d78d3c 0%, var(--gold) 60%, #a86420 100%);
+    color:#fff; font-family:inherit; font-size:clamp(17px,5vw,20px); font-weight:800; letter-spacing:.5px;
+    box-shadow:0 10px 26px rgba(196,123,43,.42), inset 0 1px 0 rgba(255,255,255,.35);
+    animation:ctapulse 1.5s ease-in-out infinite;
+  }
+  @keyframes ctapulse { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.045); } }
+  #endpanel .fine { margin-top:12px; font-size:11px; opacity:.6; font-weight:500; }
+
+  /* ---------- confetti ---------- */
+  #confetti { position:fixed; inset:0; z-index:15; pointer-events:none; overflow:hidden; }
+  .cft {
+    position:absolute; top:-4vh; border-radius:2px;
+    animation:fall linear forwards;
+  }
+  @keyframes fall {
+    from { transform:translateY(0) rotate(0deg); opacity:1; }
+    85%  { opacity:1; }
+    to   { transform:translateY(118vh) rotate(var(--r)); opacity:0; }
+  }
+
+  /* landscape tweaks */
+  @media (orientation:landscape) and (max-height:480px) {
+    :root { --cw:clamp(44px, 9vh * 1.6, 76px); }
+    #oppN { top:13%; }
+    #oppW { left:16%; top:40%; }
+    #oppE { left:84%; top:40%; }
+    #topbar { padding-top:6px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="topbar">
+    <div id="brand"><span class="suit">♠</span>Gathr<span class="suit">♥</span></div>
+    <div id="banner" class="glass">Dodge the <b class="qs">Queen of Spades ♠Q</b> — don't take hearts!</div>
+  </div>
+  <div id="table">
+    <div class="opp" id="oppN"><div class="av">M</div><div class="nm">Maya</div></div>
+    <div class="opp" id="oppW"><div class="av">R</div><div class="nm">Ravi</div></div>
+    <div class="opp" id="oppE"><div class="av">Z</div><div class="nm">Zoe</div></div>
+    <div id="trick"></div>
+    <div id="toast"></div>
+  </div>
+  <div id="handzone"><div id="hand"></div></div>
+  <div id="hint">Tap the glowing card</div>
+</div>
+
+<div id="confetti"></div>
+
+<div id="end">
+  <div id="endpanel">
+    <div class="logo">Gathr</div>
+    <div class="suits"><span class="b">♠</span><span class="r">♥</span><span class="r">♦</span><span class="b">♣</span></div>
+    <h2>Hearts, 29, Ludo &amp; more —<br>play with real friends</h2>
+    <button id="cta" type="button">Install Gathr</button>
+    <div class="fine">Free to play · Real-time multiplayer</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============================== store / MRAID ============================== */
+var APP_STORE_URL  = 'https://apps.apple.com/app/id0000000000';                    // TODO: real App Store URL
+var PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.todo.gathr'; // TODO: real Play Store URL
+
+function storeUrl() {
+  var ua = navigator.userAgent || '';
+  var ios = /iPad|iPhone|iPod|Macintosh/i.test(ua);
+  return ios ? APP_STORE_URL : PLAY_STORE_URL;
+}
+
+var lastStoreOpen = 0;
+function openStore() {
+  var now = Date.now();               // guard: pointerdown + click can both fire per tap
+  if (now - lastStoreOpen < 700) return;
+  lastStoreOpen = now;
+  var url = storeUrl();
+  try {
+    if (typeof mraid !== 'undefined' && mraid && typeof mraid.open === 'function') {
+      mraid.open(url);
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  window.open(url, '_blank');
+}
+
+/* ============================== helpers ============================== */
+var $ = function (id) { return document.getElementById(id); };
+var handEl = $('hand'), trickEl = $('trick'), toastEl = $('toast'),
+    bannerEl = $('banner'), hintEl = $('hint'), endEl = $('end'),
+    confettiEl = $('confetti'), tableEl = $('table');
+
+function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+
+var RED = { '♥': true, '♦': true };
+
+function makeCard(rank, suit) {
+  var c = document.createElement('div');
+  c.className = 'card' + (RED[suit] ? ' red' : '');
+  c.innerHTML =
+    '<div class="cf">' +
+      '<div class="ix">' + rank + '<small>' + suit + '</small></div>' +
+      '<div class="pip">' + suit + '</div>' +
+      '<div class="ix2">' + rank + '<small>' + suit + '</small></div>' +
+    '</div>' +
+    '<div class="cb"></div>';
+  return c;
+}
+
+function centerOf(el) {
+  var r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+/* ============================== trick slots ============================== */
+/* percentages within #trick layer, plus a resting rotation */
+var SLOT = {
+  N: { x: 50, y: 27, r: -3 },
+  E: { x: 66, y: 47, r:  7 },
+  S: { x: 50, y: 70, r:  2 },
+  W: { x: 34, y: 47, r: -7 }
+};
+var AVATAR = { N: 'oppN', E: 'oppE', W: 'oppW' };
+
+var trickCards = []; // cards currently on the table
+
+function slotCenter(seat) {
+  var r = trickEl.getBoundingClientRect();
+  return { x: r.left + r.width * SLOT[seat].x / 100, y: r.top + r.height * SLOT[seat].y / 100 };
+}
+
+/* Animate a card into a trick slot from an arbitrary screen point. flip=true starts face-down. */
+function playToTrick(card, seat, from, flip, dur) {
+  dur = dur || 550;
+  card.style.transition = 'none';
+  card.style.left = SLOT[seat].x + '%';
+  card.style.top  = SLOT[seat].y + '%';
+  trickEl.appendChild(card);
+
+  var to = slotCenter(seat);
+  var dx = from.x - to.x, dy = from.y - to.y;
+  var startRot = (seat === 'W' ? -24 : seat === 'E' ? 24 : seat === 'N' ? -10 : 8);
+  card.style.transform = 'translate(-50%,-50%) translate(' + dx + 'px,' + dy + 'px) ' +
+                         'rotate(' + startRot + 'deg)' + (flip ? ' rotateY(180deg)' : '') + ' scale(.92)';
+  void card.offsetWidth; // reflow
+  card.style.transition = 'transform ' + dur + 'ms cubic-bezier(.2,.8,.25,1)';
+  card.style.transform = 'translate(-50%,-50%) rotate(' + SLOT[seat].r + 'deg)';
+  trickCards.push(card);
+  return sleep(dur + 60);
+}
+
+function oppPlay(seat, rank, suit) {
+  var from = centerOf($(AVATAR[seat]).querySelector('.av'));
+  return playToTrick(makeCard(rank, suit), seat, from, true);
+}
+
+/* Sweep the trick to the winner and clear the table */
+function sweepTrick(winnerSeat) {
+  var to = winnerSeat === 'S'
+    ? { x: window.innerWidth / 2, y: window.innerHeight + 60 }
+    : centerOf($(AVATAR[winnerSeat]).querySelector('.av'));
+  trickCards.forEach(function (card, i) {
+    var c = centerOf(card);
+    var dx = to.x - c.x, dy = to.y - c.y;
+    card.style.transition = 'transform .55s cubic-bezier(.5,0,.8,.4) ' + (i * 45) + 'ms, opacity .5s ease ' + (i * 45 + 120) + 'ms';
+    card.style.transform += ' translate(' + dx + 'px,' + dy + 'px) scale(.3)';
+    card.style.opacity = '0';
+  });
+  var doomed = trickCards; trickCards = [];
+  return sleep(800).then(function () {
+    doomed.forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+  });
+}
+
+/* ============================== hand ============================== */
+var handCards = [];
+
+function layoutHand() {
+  var n = handCards.length;
+  if (!n) return;
+  var cw = handCards[0].offsetWidth || 70;
+  var spread = Math.min(window.innerWidth - cw - 28, n * cw * 0.74);
+  handCards.forEach(function (card, i) {
+    var t = n === 1 ? 0 : i / (n - 1) - 0.5;
+    var x = t * spread;
+    var y = t * t * 52;
+    var r = t * 22;
+    card.style.transform = 'translate(-50%,0) translate(' + x + 'px,' + y + 'px) rotate(' + r + 'deg)';
+  });
+}
+
+function dealHand(cards) {
+  cards.forEach(function (spec) {
+    var card = makeCard(spec[0], spec[1]);
+    card.style.transform = 'translate(-50%,0) translateY(45vh)';
+    handEl.appendChild(card);
+    handCards.push(card);
+  });
+  void handEl.offsetWidth;
+  layoutHand();
+  return sleep(520);
+}
+
+function findHandCard(rank, suit) {
+  for (var i = 0; i < handCards.length; i++) {
+    var ix = handCards[i].querySelector('.ix');
+    if (ix && ix.textContent === rank + suit) return handCards[i];
+  }
+  return null;
+}
+
+/* Play a card from the user's hand into the S slot */
+function playFromHand(card) {
+  card.classList.remove('glow', 'urgent');
+  var from = centerOf(card);
+  var idx = handCards.indexOf(card);
+  if (idx >= 0) handCards.splice(idx, 1);
+  var p = playToTrick(card, 'S', from, false, 480);
+  layoutHand();
+  return p;
+}
+
+/* ============================== UI bits ============================== */
+function setBanner(html) {
+  bannerEl.classList.add('swap');
+  return sleep(320).then(function () {
+    bannerEl.innerHTML = html;
+    bannerEl.classList.remove('swap');
+  });
+}
+
+function toast(main, sub, ms) {
+  toastEl.innerHTML = main + (sub ? '<span class="sub">' + sub + '</span>' : '');
+  toastEl.classList.add('show');
+  return sleep(ms || 1500).then(function () { toastEl.classList.remove('show'); });
+}
+
+function confetti() {
+  var colors = ['#C47B2B', '#e7c98f', '#ffffff', '#4caf7d', '#e8737e'];
+  for (var i = 0; i < 80; i++) {
+    var p = document.createElement('div');
+    p.className = 'cft';
+    var s = 6 + Math.random() * 7;
+    p.style.width = s + 'px';
+    p.style.height = s * (0.5 + Math.random()) + 'px';
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.background = colors[i % colors.length];
+    p.style.animationDuration = (2.2 + Math.random() * 1.8) + 's';
+    p.style.animationDelay = (Math.random() * 0.6) + 's';
+    p.style.setProperty('--r', (Math.random() * 900 - 450) + 'deg');
+    confettiEl.appendChild(p);
+  }
+}
+
+/* ============================== tap / idle handling ============================== */
+var tapResolver = null;
+var idleT1 = null, idleT2 = null;
+var glowingCard = null;
+var ended = false;
+
+function clearIdle() {
+  if (idleT1) { clearTimeout(idleT1); idleT1 = null; }
+  if (idleT2) { clearTimeout(idleT2); idleT2 = null; }
+  hintEl.classList.remove('show');
+  if (glowingCard) glowingCard.classList.remove('urgent');
+}
+
+/* Wait for the user's tap; 4s idle => pulse hint; 8s idle => auto-play */
+function awaitTap(card) {
+  glowingCard = card;
+  card.classList.add('glow');
+  return new Promise(function (res) {
+    tapResolver = res;
+    idleT1 = setTimeout(function () {
+      hintEl.classList.add('show');
+      card.classList.add('urgent');
+    }, 4000);
+    idleT2 = setTimeout(function () { resolveTap(); }, 8000);
+  });
+}
+
+function resolveTap() {
+  if (!tapResolver) return;
+  var r = tapResolver;
+  tapResolver = null;
+  clearIdle();
+  glowingCard = null;
+  r();
+}
+
+function onTap(e) {
+  if (ended) {
+    e.preventDefault();
+    openStore();
+    return;
+  }
+  if (tapResolver) resolveTap(); // any tap plays the scripted safe card
+}
+document.addEventListener('pointerdown', onTap, { passive: false });
+document.addEventListener('click', function (e) { if (ended) { e.preventDefault(); openStore(); } });
+
+$('cta').addEventListener('pointerdown', function (e) { e.stopPropagation(); e.preventDefault(); openStore(); });
+
+window.addEventListener('resize', function () { layoutHand(); });
+window.addEventListener('orientationchange', function () { setTimeout(layoutHand, 250); });
+
+/* ============================== the scripted round ============================== */
+function run() {
+  var q; // promise chain
+  q = sleep(400)
+    /* --- deal + opening trick, mid-play --- */
+    .then(function () {
+      return dealHand([['9', '♠'], ['2', '♠'], ['6', '♥'], ['8', '♣'], ['A', '♦']]);
+    })
+    .then(function () { return sleep(350); })
+    .then(function () { return oppPlay('N', '5', '♠'); })
+    .then(function () { return sleep(250); })
+    .then(function () { return oppPlay('E', 'Q', '♠'); })       // the Queen appears!
+    .then(function () { return sleep(200); })
+    .then(function () {
+      return setBanner('Zoe played the <b class="qs">♠Q — 13 points!</b> Slip under it with your <b>♠2</b>');
+    })
+    .then(function () { return sleep(400); })
+    .then(function () { return awaitTap(findHandCard('2', '♠')); })
+
+    /* --- user dodges --- */
+    .then(function () { return playFromHand(findHandCard('2', '♠')); })
+    .then(function () { return sleep(300); })
+    .then(function () { return oppPlay('W', 'K', '♠'); })        // K♠ takes the Queen
+    .then(function () { return sleep(550); })
+    .then(function () {
+      $('oppW').classList.add('took');
+      return sweepTrick('W');
+    })
+    .then(function () { return toast('Dodged! +0 points', 'Ravi takes the Queen — ouch', 1600); })
+    .then(function () { return setBanner('Nice! Now win a <b>clean</b> trick — no hearts, no Queen'); })
+
+    /* --- second trick: win it cleanly --- */
+    .then(function () { return sleep(350); })
+    .then(function () { return oppPlay('N', '4', '♦'); })
+    .then(function () { return sleep(220); })
+    .then(function () { return oppPlay('E', '9', '♦'); })
+    .then(function () { return sleep(250); })
+    .then(function () { return awaitTap(findHandCard('A', '♦')); })
+    .then(function () { return playFromHand(findHandCard('A', '♦')); })
+    .then(function () { return sleep(280); })
+    .then(function () { return oppPlay('W', '7', '♦'); })
+    .then(function () { return sleep(500); })
+    .then(function () { return sweepTrick('S'); })
+    .then(function () {
+      confetti();
+      return toast('Perfect round! ✦', 'You: 0 points', 1700);
+    })
+
+    /* --- end card --- */
+    .then(function () { return sleep(300); })
+    .then(function () {
+      ended = true;
+      endEl.classList.add('show');
+    });
+  return q;
+}
+
+/* ============================== boot (MRAID-aware) ============================== */
+function boot() {
+  var started = false;
+  function start() {
+    if (started) return;
+    started = true;
+    run();
+  }
+  try {
+    if (typeof mraid !== 'undefined' && mraid && typeof mraid.getState === 'function') {
+      if (mraid.getState() === 'loading') {
+        mraid.addEventListener('ready', start);
+        setTimeout(start, 4000); // safety net if 'ready' never fires
+      } else {
+        start();
+      }
+      return;
+    }
+  } catch (e) { /* fall through to standalone */ }
+  start();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+</script>
+</body>
+</html>

@@ -8,6 +8,7 @@ enum AdType { banner, interstitial, rewarded, native }
 enum AdPlacement {
   lobbyBanner,
   gameEndInterstitial,
+  gameStartInterstitial,
   rewardedDoubleCoins,
   lobbyNative,
 }

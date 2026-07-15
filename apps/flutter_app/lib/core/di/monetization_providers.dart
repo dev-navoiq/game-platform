@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:monetization/monetization.dart';
 
@@ -6,9 +9,13 @@ import '../../features/season_pass/data/supabase_season_repository.dart';
 import '../../features/shop/data/supabase_ad_repository.dart';
 import '../../features/shop/data/supabase_currency_repository.dart';
 import '../../features/shop/data/supabase_skin_repository.dart';
+import '../config/env_config.dart';
 import '../models/subscription_tier.dart' as app;
+import '../services/ad_mode.dart';
+import '../services/house_ads/house_ad_rotation.dart';
 import '../services/mock_ad_platform.dart';
 import '../services/mock_revenue_cat.dart';
+import '../services/shared_prefs_game_end_ad_store.dart';
 import '../services/subscription_service.dart';
 import 'providers.dart';
 
@@ -42,10 +49,79 @@ final revenueCatProvider = Provider<RevenueCatWrapper>((ref) {
   return MockRevenueCat();
 });
 
-/// Ad platform — uses [MockAdPlatform] during local dev.
-/// Override with a real AdMob implementation for production.
+bool get _isFlutterTest =>
+    !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
+
+/// Which implementation serves the ad slots (house / google / mock).
+///
+/// Defaults: `mock` under `flutter test`, `google` in production, `house`
+/// in development/staging (so the team sees our own creatives in the real
+/// slots by default). Runtime-overridable — the `/dev/ads` gallery flips
+/// this live via `ref.read(adModeProvider.notifier).state = …`.
+final adModeProvider = StateProvider<AdMode>((ref) {
+  return resolveDefaultAdMode(
+    isTest: _isFlutterTest,
+    environment: () => EnvConfig.environment,
+  );
+});
+
+/// Ad platform — real Google AdMob only when [adModeProvider] is
+/// [AdMode.google] on an Android/iOS device outside `flutter test`;
+/// [MockAdPlatform] otherwise. In [AdMode.house] the slots are drawn
+/// natively by the house-ad widgets, so no ad SDK is involved at all.
+///
+/// [GoogleAdPlatform] is cheap to construct: the Mobile Ads SDK is only
+/// initialized lazily on the first ad load, which is itself gated on
+/// [showAdsProvider] — so Pro/Max users never pay the SDK startup cost.
 final adPlatformProvider = Provider<AdPlatform>((ref) {
+  final mode = ref.watch(adModeProvider);
+  final isMobileDevice = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  if (mode == AdMode.google && isMobileDevice && !_isFlutterTest) {
+    final platform = GoogleAdPlatform(
+      adUnitIds: GoogleAdUnitIds(
+        banner: EnvConfig.admobBannerAdUnitId,
+        interstitial: EnvConfig.admobInterstitialAdUnitId,
+      ),
+    );
+    ref.onDispose(platform.dispose);
+    return platform;
+  }
   return MockAdPlatform();
+});
+
+/// Round-robin rotation over the house creative catalog, persisted via
+/// shared_preferences so "which creative is next" survives restarts.
+final houseAdRotationProvider = Provider<HouseAdRotation>((ref) {
+  // shared_preferences has no host binding under `flutter test`; keep the
+  // rotation in memory there so widget tests never hit the platform channel.
+  return HouseAdRotation(
+    _isFlutterTest
+        ? InMemoryHouseAdRotationStore()
+        : SharedPrefsHouseAdRotationStore(),
+  );
+});
+
+/// Cadence policy for the game-end interstitial (free tier only):
+/// every 2nd completed game, at least 3 minutes apart, and every 3rd
+/// consumed slot serves the in-house Pro-upsell overlay instead of AdMob.
+/// Counters persist across restarts via shared_preferences.
+final gameEndAdCadenceProvider = Provider<GameEndInterstitialCadence>((ref) {
+  return GameEndInterstitialCadence(
+    SharedPrefsGameEndAdStore(),
+    isFatigued: () async {
+      // Reuse the AdService fatigue signal (N ad closes within the window).
+      try {
+        final userId = ref.read(currentUserProvider)?.id;
+        if (userId == null) return false;
+        final closes = await ref
+            .read(adRepositoryProvider)
+            .getCloseCountInWindow(userId, AdService.fatigueWindow);
+        return closes >= AdService.fatigueCloseThreshold;
+      } catch (_) {
+        return false; // Fatigue is best-effort; fail open.
+      }
+    },
+  );
 });
 
 /// Subscription service backed by the RevenueCat wrapper.
