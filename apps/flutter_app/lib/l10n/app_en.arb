@@ -1,0 +1,90 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Gathr",
+
+  "settingsTitle": "Settings",
+  "language": "Language",
+  "languageSystemDefault": "System default",
+  "darkMode": "Dark Mode",
+  "soundEffects": "Sound Effects",
+  "music": "Music",
+  "cardSkin": "Card Skin",
+  "roomTheme": "Room Theme",
+  "preferredSocialMode": "Preferred Social Mode",
+  "socialModeFullDescription": "Full — Chat + Voice + Emotes",
+  "notificationPreferences": "Notification Preferences",
+  "notificationPreferencesSubtitle": "Manage alerts, quiet hours",
+  "appVersion": "App Version",
+  "update": "Update",
+  "checking": "Checking…",
+  "couldNotCheckForUpdates": "Could not check for updates",
+  "free": "Free",
+  "priceCoins": "{count} coins",
+  "@priceCoins": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "priceGems": "{count} gems",
+  "@priceGems": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+
+  "chooseAGame": "Choose a Game",
+  "tournaments": "Tournaments",
+  "resumeGame": "Resume Game",
+  "resumeInGame": "A game is in progress",
+  "resumeInLobby": "You're waiting in a lobby",
+  "resumeSpectating": "You're spectating a game",
+  "resumeTapToRejoin": "Tap to rejoin",
+  "friends": "Friends",
+  "seeAll": "See All",
+  "dailyChallenges": "Daily Challenges",
+  "resetsIn": "Resets in {hours}h",
+  "@resetsIn": {
+    "placeholders": {
+      "hours": {"type": "int"}
+    }
+  },
+  "games": "Games",
+  "playerCountRange": "{range} players",
+  "@playerCountRange": {
+    "description": "Player count shown under a game tile, e.g. '2-4 players'",
+    "placeholders": {
+      "range": {"type": "String"}
+    }
+  },
+
+  "lobbyTitle": "{gameName} Lobby",
+  "@lobbyTitle": {
+    "placeholders": {
+      "gameName": {"type": "String"}
+    }
+  },
+  "joinByCode": "Join by Code",
+  "practiceVsBots": "Practice vs Bots",
+  "createRoom": "Create Room",
+  "howManyPlayers": "How many players?",
+  "ohHellPlayerCountHint": "Oh Hell needs 4 to 6 players. You can add bots in the room.",
+  "players": "players",
+  "roomJoinComingSoon": "Room {code} — join via code coming soon",
+  "@roomJoinComingSoon": {
+    "placeholders": {
+      "code": {"type": "String"}
+    }
+  },
+
+  "gameNameTwentyNine": "Twenty-Nine",
+  "gameNameOhHell": "Oh Hell",
+  "gameNameHearts": "Hearts",
+  "gameNameSpades": "Spades",
+  "gameNameBridge": "Bridge",
+  "gameNameChess": "Chess",
+  "gameNameLudo": "Ludo",
+  "gameNameSequence": "Sequence",
+  "gameNameRummy": "Rummy",
+  "gameNameGeneric": "Game"
+}

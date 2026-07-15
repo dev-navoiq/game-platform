@@ -24,4 +24,5 @@ class AppConstants {
   static const String keyCardSkin = 'card_skin';
   static const String keyRoomSkin = 'room_skin';
   static const String keySocialMode = 'social_mode';
+  static const String keyLanguageCode = 'language_code';
 }
