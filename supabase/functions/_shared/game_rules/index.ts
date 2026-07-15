@@ -24,7 +24,7 @@ export function validateMove(
     case 'ludo':
       return validateLudoMove(stateData, move);
     default:
-      return passthroughValidate(stateData, move);
+      return passthroughValidate(stateData, move, gameType);
   }
 }
 

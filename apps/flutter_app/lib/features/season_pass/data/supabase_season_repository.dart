@@ -60,12 +60,9 @@ class SupabaseSeasonRepository implements SeasonRepository {
 
   @override
   Future<UserSeasonProgress> saveProgress(UserSeasonProgress progress) async {
-    await _client.from('user_season_progress').upsert({
-      'user_id': progress.userId,
-      'season_id': progress.seasonId,
-      'xp': progress.currentXp,
-      'level': progress.currentLevel,
-    }, onConflict: 'user_id,season_id');
+    // No-op: season xp/level is server-authoritative (advanced by rewards.ts
+    // addSeasonXp on game-end and by the reward-claim flow) and locked to
+    // service-role writes. Clients read progress; they do not write it.
     return progress;
   }
 
@@ -151,19 +148,22 @@ class SupabaseSeasonRepository implements SeasonRepository {
 
   @override
   Future<CurrencyBalance> deductGems(String userId, int amount) async {
-    final current = await getBalance(userId);
-    if (current.gems < amount) {
-      throw StateError('Insufficient gems: have ${current.gems}, need $amount');
-    }
-    final newGems = current.gems - amount;
-    await _client.from('profiles').update({'gems': newGems}).eq('id', userId);
-    await _client.from('currency_transactions').insert({
-      'user_id': userId,
+    // profiles.gems is locked to service-role writes; spends go through the
+    // server-authoritative spend-currency function.
+    // NOTE: granting the premium pass entitlement (user_season_progress.
+    // premium_purchased_at) is also server-managed and must be set by a
+    // dedicated buy-season-pass edge function — tracked in SECURITY-GUIDELINES §7.
+    final res = await _client.functions.invoke('spend-currency', body: {
       'currency': 'gems',
-      'amount': -amount,
-      'balance_after': newGems,
+      'amount': amount,
       'reason': 'season_pass_purchase',
     });
-    return current.copyWith(gems: newGems);
+    if (res.status >= 400) {
+      final data = (res.data as Map<String, dynamic>?) ?? const {};
+      throw StateError(
+        (data['error'] as String?) ?? 'Spend failed (${res.status})',
+      );
+    }
+    return getBalance(userId);
   }
 }

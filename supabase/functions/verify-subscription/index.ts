@@ -14,6 +14,16 @@ import { creditCurrency } from '../_shared/currency.ts';
  * RevenueCat event types we handle:
  *   INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION
  */
+
+/** Length-independent constant-accumulation compare (inputs already length-checked). */
+function timingSafeEqual(a: string, b: string): boolean {
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 serve(async (req) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
@@ -21,11 +31,18 @@ serve(async (req) => {
   try {
     const admin = getSupabaseAdmin();
 
-    // ── Verify webhook secret ─────────────────────────────────────────────
+    // ── Verify webhook secret (FAIL CLOSED) ───────────────────────────────
+    // Previously the check was skipped entirely when the secret was unset,
+    // letting anyone POST a fake purchase and grant themselves Max + currency.
+    // Now: no secret configured → reject. See SECURITY-AUDIT H1 / GUIDELINES E2.
     const webhookSecret = Deno.env.get('REVENUECAT_WEBHOOK_SECRET');
-    const authHeader = req.headers.get('Authorization');
-
-    if (webhookSecret && authHeader !== `Bearer ${webhookSecret}`) {
+    if (!webhookSecret) {
+      console.error('verify-subscription: REVENUECAT_WEBHOOK_SECRET not set; rejecting.');
+      return errorResponse('Webhook not configured', 503, 'WEBHOOK_UNCONFIGURED');
+    }
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const expected = `Bearer ${webhookSecret}`;
+    if (authHeader.length !== expected.length || !timingSafeEqual(authHeader, expected)) {
       return errorResponse('Invalid webhook secret', 401);
     }
 
@@ -33,6 +50,14 @@ serve(async (req) => {
     const event = payload.event;
 
     if (!event) return errorResponse('Missing event', 400);
+
+    // Idempotency key: RevenueCat sends a stable event.id. We tag currency
+    // grants with it and a unique index blocks replays of the same event.
+    // reference_id is a uuid column, so only use the id if it is UUID-shaped;
+    // otherwise fall back to no reference (grant still applies, just un-deduped).
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const rawEventId = (event.id as string) || (event.transaction_id as string) || '';
+    const eventId = UUID_RE.test(rawEventId) ? rawEventId : null;
 
     const eventType = event.type as string;
     const appUserId = event.app_user_id as string;
@@ -69,14 +94,24 @@ serve(async (req) => {
           price_usd: event.price_in_purchased_currency || null,
         });
 
-        // Grant monthly currency on initial purchase
+        // Grant monthly currency on initial purchase / renewal. Tag each grant
+        // with the RevenueCat event id so a replayed webhook can't double-credit
+        // (a unique index on currency_transactions enforces this). Each real
+        // renewal carries a distinct event id, so legitimate monthly grants pass.
         if (eventType === 'INITIAL_PURCHASE' || eventType === 'RENEWAL') {
           const monthly = getMonthlyGrant(tier);
-          if (monthly.coins > 0) {
-            await creditCurrency(admin, appUserId, 'coins', monthly.coins, 'subscription_monthly');
-          }
-          if (monthly.gems > 0) {
-            await creditCurrency(admin, appUserId, 'gems', monthly.gems, 'subscription_monthly');
+          try {
+            if (monthly.coins > 0) {
+              await creditCurrency(admin, appUserId, 'coins', monthly.coins, 'subscription_monthly', eventId ?? undefined);
+            }
+            if (monthly.gems > 0) {
+              await creditCurrency(admin, appUserId, 'gems', monthly.gems, 'subscription_monthly', eventId ?? undefined);
+            }
+          } catch (e) {
+            // Unique-index violation = this event was already processed; ignore.
+            const msg = e instanceof Error ? e.message : String(e);
+            if (!/duplicate key|unique constraint/i.test(msg)) throw e;
+            console.log('verify-subscription: duplicate event grant skipped', eventId);
           }
         }
 

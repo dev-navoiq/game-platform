@@ -5,7 +5,9 @@ class Validators {
     if (value == null || value.isEmpty) {
       return 'Email is required';
     }
-    final emailRegex = RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$');
+    // TLD is 2+ chars, unbounded: modern TLDs (.games, .online, .museum) and
+    // local test domains (.local) exceed the old {2,4} cap.
+    final emailRegex = RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,}$');
     if (!emailRegex.hasMatch(value)) {
       return 'Invalid email address';
     }

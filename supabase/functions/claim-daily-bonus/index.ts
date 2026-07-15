@@ -35,27 +35,30 @@ serve(async (req) => {
     if (auth.error) return auth.error;
     const user = auth.user;
 
-    // ── Check last claim ──────────────────────────────────────────────────
-    const { data: lastClaim } = await admin
+    // ── Claim history (server-authoritative) ──────────────────────────────
+    // Derive the streak from the ledger, NOT from profiles.current_activity
+    // (client-writable — H4). We walk consecutive UTC days backwards from
+    // today over the recorded daily_bonus transactions.
+    const { data: claimRows } = await admin
       .from('currency_transactions')
       .select('created_at')
       .eq('user_id', user.id)
       .eq('reason', 'daily_bonus')
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(400);
+
+    const claimDays = new Set<string>(
+      (claimRows ?? []).map((r) => (r.created_at as string).split('T')[0]),
+    );
 
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
-    if (lastClaim) {
-      const lastClaimDate = lastClaim.created_at.split('T')[0];
-      if (lastClaimDate === todayStr) {
-        return errorResponse('Already claimed today', 400, 'ALREADY_CLAIMED');
-      }
+    if (claimDays.has(todayStr)) {
+      return errorResponse('Already claimed today', 400, 'ALREADY_CLAIMED');
     }
 
-    // ── Calculate streak ──────────────────────────────────────────────────
+    // ── Calculate streak from consecutive prior days ──────────────────────
     const { data: profile } = await admin
       .from('profiles')
       .select('current_activity')
@@ -63,21 +66,17 @@ serve(async (req) => {
       .single();
 
     const activity = (profile?.current_activity as Record<string, unknown>) || {};
-    let streak = 1;
 
-    if (lastClaim) {
-      const lastDate = new Date(lastClaim.created_at);
-      const yesterday = new Date(today);
-      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-      const lastStr = lastDate.toISOString().split('T')[0];
-
-      if (lastStr === yesterdayStr) {
-        // Consecutive day
-        streak = ((activity.daily_streak as number) || 0) + 1;
-      }
-      // else streak resets to 1
+    // Count how many consecutive days ending yesterday are present in the
+    // ledger; today's claim extends that run by one.
+    let priorStreak = 0;
+    const cursor = new Date(today);
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    while (claimDays.has(cursor.toISOString().split('T')[0])) {
+      priorStreak++;
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
     }
+    const streak = priorStreak + 1;
 
     // Cycle after day 30
     const effectiveDay = streak > 30 ? ((streak - 1) % 30) + 1 : streak;

@@ -61,7 +61,15 @@ class SupabaseCurrencyRepository implements CurrencyRepository {
     int amount,
     String reason,
   ) {
-    return _mutate(userId, type, amount, reason);
+    // Credits are server-authoritative: game-end rewards, tournament prizes,
+    // subscription grants, referrals and daily bonuses are written by edge
+    // functions. profiles.coins/gems are locked to service-role writes, so a
+    // client can no longer credit its own balance. Callers should trigger the
+    // relevant server flow and re-read via getBalance().
+    throw UnsupportedError(
+      'Currency credits are server-authoritative; use the relevant edge '
+      'function (rewards/tournament/subscription) — clients cannot self-credit.',
+    );
   }
 
   @override
@@ -70,36 +78,20 @@ class SupabaseCurrencyRepository implements CurrencyRepository {
     CurrencyType type,
     int amount,
     String reason,
-  ) {
-    return _mutate(userId, type, -amount, reason);
-  }
-
-  Future<CurrencyBalance> _mutate(
-    String userId,
-    CurrencyType type,
-    int delta,
-    String reason,
   ) async {
-    final column = type == CurrencyType.gems ? 'gems' : 'coins';
-    final current = await getBalance(userId);
-    final currentVal = type == CurrencyType.gems ? current.gems : current.coins;
-    final newVal = currentVal + delta;
-    if (newVal < 0) {
-      throw StateError('Insufficient $column: have $currentVal, need ${-delta}');
-    }
-
-    await _client.from('profiles').update({column: newVal}).eq('id', userId);
-    await _client.from('currency_transactions').insert({
-      'user_id': userId,
-      'currency': column,
-      'amount': delta,
-      'balance_after': newVal,
+    // Spends route through the server-authoritative spend-currency function,
+    // which enforces sufficient balance and writes the ledger atomically.
+    final res = await _client.functions.invoke('spend-currency', body: {
+      'currency': type == CurrencyType.gems ? 'gems' : 'coins',
+      'amount': amount,
       'reason': reason,
     });
-
-    return current.copyWith(
-      coins: type == CurrencyType.coins ? newVal : current.coins,
-      gems: type == CurrencyType.gems ? newVal : current.gems,
-    );
+    if (res.status >= 400) {
+      final data = (res.data as Map<String, dynamic>?) ?? const {};
+      throw StateError(
+        (data['error'] as String?) ?? 'Spend failed (${res.status})',
+      );
+    }
+    return getBalance(userId);
   }
 }

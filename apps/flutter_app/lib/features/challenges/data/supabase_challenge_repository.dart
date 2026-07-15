@@ -141,20 +141,19 @@ class SupabaseChallengeRepository implements ChallengeRepository {
 
   @override
   Future<CurrencyBalance> deductCoins(String userId, int amount) async {
-    final current = await getBalance(userId);
-    if (current.coins < amount) {
-      throw StateError(
-          'Insufficient coins: have ${current.coins}, need $amount');
-    }
-    final newCoins = current.coins - amount;
-    await _client.from('profiles').update({'coins': newCoins}).eq('id', userId);
-    await _client.from('currency_transactions').insert({
-      'user_id': userId,
+    // profiles.coins is locked to service-role writes; spends go through the
+    // server-authoritative spend-currency function.
+    final res = await _client.functions.invoke('spend-currency', body: {
       'currency': 'coins',
-      'amount': -amount,
-      'balance_after': newCoins,
+      'amount': amount,
       'reason': 'challenge_reroll',
     });
-    return current.copyWith(coins: newCoins);
+    if (res.status >= 400) {
+      final data = (res.data as Map<String, dynamic>?) ?? const {};
+      throw StateError(
+        (data['error'] as String?) ?? 'Spend failed (${res.status})',
+      );
+    }
+    return getBalance(userId);
   }
 }
