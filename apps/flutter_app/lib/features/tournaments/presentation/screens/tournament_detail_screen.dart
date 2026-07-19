@@ -216,17 +216,34 @@ class _TournamentDetailScreenState
     final userId = ref.read(currentUserProvider)?.id;
     if (userId == null) return;
 
+    // Team tournaments: pick a mode first (create / join / solo).
+    bool createTeam = false;
+    String? joinTeamId;
+    if (tournament.isTeamTournament) {
+      final choice = await _pickTeamMode(tournament);
+      if (choice == null) return; // dismissed
+      createTeam = choice.createTeam;
+      joinTeamId = choice.joinTeamId;
+    }
+
     setState(() => _isRegistering = true);
 
     final repo = ref.read(tournamentRepositoryProvider);
-    final result = await repo.register(widget.tournamentId, userId);
+    final result = await repo.register(
+      widget.tournamentId,
+      userId,
+      createTeam: createTeam,
+      joinTeamId: joinTeamId,
+    );
 
     setState(() => _isRegistering = false);
 
     if (!mounted) return;
 
     final message = switch (result) {
-      TournamentRegistrationResult.success => 'Registered successfully!',
+      TournamentRegistrationResult.success => createTeam
+          ? 'Team created — get a partner to join!'
+          : 'Registered successfully!',
       TournamentRegistrationResult.alreadyRegistered => 'Already registered',
       TournamentRegistrationResult.tournamentFull => 'Tournament is full',
       TournamentRegistrationResult.insufficientFunds =>
@@ -235,6 +252,10 @@ class _TournamentDetailScreenState
         'Registration is closed',
       TournamentRegistrationResult.tierRequired =>
         'Subscription required',
+      TournamentRegistrationResult.teamRequired =>
+        'This tournament needs a team — create or join one',
+      TournamentRegistrationResult.teamFull => 'That team is already full',
+      TournamentRegistrationResult.teamNotFound => 'Team not found',
       _ => 'Registration failed',
     };
 
@@ -252,9 +273,111 @@ class _TournamentDetailScreenState
       ref.invalidate(tournamentDetailProvider(widget.tournamentId));
       ref.invalidate(myParticipationProvider(widget.tournamentId));
       ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
+      ref.invalidate(tournamentTeamsProvider(widget.tournamentId));
       ref.invalidate(myTournamentsProvider);
       ref.invalidate(userProfileProvider); // entry fee changed the balance
     }
+  }
+
+  /// Bottom sheet: how to enter a 2v2 tournament. Returns null if dismissed.
+  Future<({bool createTeam, String? joinTeamId})?> _pickTeamMode(
+    Tournament tournament,
+  ) async {
+    return showModalBottomSheet<({bool createTeam, String? joinTeamId})>(
+      context: context,
+      backgroundColor: AppColors.surfaceDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Enter as a team of 2',
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.group_add, color: AppColors.accent),
+                title: const Text('Create a team'),
+                subtitle: const Text('Open a team and invite your partner'),
+                onTap: () => Navigator.pop(
+                    sheetContext, (createTeam: true, joinTeamId: null)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.groups, color: AppColors.accent),
+                title: const Text('Join a team'),
+                subtitle: const Text('Fill an open seat on an existing team'),
+                onTap: () async {
+                  final teamId = await _pickOpenTeam(sheetContext);
+                  if (teamId != null && sheetContext.mounted) {
+                    Navigator.pop(
+                        sheetContext, (createTeam: false, joinTeamId: teamId));
+                  }
+                },
+              ),
+              if (tournament.allowSoloPairing)
+                ListTile(
+                  leading:
+                      const Icon(Icons.person, color: AppColors.accent),
+                  title: const Text('Enter solo'),
+                  subtitle: const Text(
+                      "We'll pair you with a partner at start time"),
+                  onTap: () => Navigator.pop(
+                      sheetContext, (createTeam: false, joinTeamId: null)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Picker over open (1-member) teams. Returns the chosen team id.
+  Future<String?> _pickOpenTeam(BuildContext parentContext) async {
+    final teams = await ref
+        .read(tournamentRepositoryProvider)
+        .getTeams(widget.tournamentId);
+    final open = teams.where((t) => t.isOpen).toList();
+    if (!parentContext.mounted) return null;
+    if (open.isEmpty) {
+      ScaffoldMessenger.of(parentContext).showSnackBar(
+        const SnackBar(content: Text('No open teams yet — create one!')),
+      );
+      return null;
+    }
+    return showModalBottomSheet<String>(
+      context: parentContext,
+      backgroundColor: AppColors.surfaceDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text('Open teams',
+                style: Theme.of(ctx).textTheme.titleMedium,
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            for (final team in open)
+              ListTile(
+                leading: const Icon(Icons.flag, color: AppColors.accent),
+                title: Text(team.displayName),
+                subtitle: const Text('1 of 2 seats filled'),
+                trailing: const Text('Join'),
+                onTap: () => Navigator.pop(ctx, team.id),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _unregister(Tournament tournament) async {

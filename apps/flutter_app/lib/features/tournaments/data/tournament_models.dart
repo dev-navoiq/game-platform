@@ -157,6 +157,8 @@ class Tournament extends Equatable {
   final Map<String, dynamic>? finalStandings;
   final String minSubscriptionTier;
   final String roomSocialMode;
+  final int teamSize;
+  final bool allowSoloPairing;
   final DateTime createdAt;
 
   const Tournament({
@@ -183,9 +185,12 @@ class Tournament extends Equatable {
     this.finalStandings,
     this.minSubscriptionTier = 'free',
     this.roomSocialMode = 'focus',
+    this.teamSize = 1,
+    this.allowSoloPairing = false,
     required this.createdAt,
   });
 
+  bool get isTeamTournament => teamSize > 1;
   bool get isFree => entryFeeCoins == 0 && entryFeeGems == 0;
   bool get isFull => currentParticipants >= maxParticipants;
   bool get isRegistrationOpen =>
@@ -231,6 +236,8 @@ class Tournament extends Equatable {
       minSubscriptionTier:
           (json['min_subscription_tier'] as String?) ?? 'free',
       roomSocialMode: (json['room_social_mode'] as String?) ?? 'focus',
+      teamSize: (json['team_size'] as int?) ?? 1,
+      allowSoloPairing: (json['allow_solo_pairing'] as bool?) ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -247,6 +254,7 @@ class TournamentParticipant extends Equatable {
   final String userId;
   final String? username;
   final String? avatarUrl;
+  final String? teamId;
   final ParticipantStatus status;
   final int? seed;
   final int currentRound;
@@ -266,6 +274,7 @@ class TournamentParticipant extends Equatable {
     required this.userId,
     this.username,
     this.avatarUrl,
+    this.teamId,
     this.status = ParticipantStatus.registered,
     this.seed,
     this.currentRound = 0,
@@ -289,6 +298,7 @@ class TournamentParticipant extends Equatable {
           json['username'] as String?,
       avatarUrl: json['profile']?['avatar_url'] as String? ??
           json['avatar_url'] as String?,
+      teamId: json['team_id'] as String?,
       status: ParticipantStatus.fromDb(json['status'] as String),
       seed: json['seed'] as int?,
       currentRound: (json['current_round'] as int?) ?? 0,
@@ -461,5 +471,49 @@ enum TournamentRegistrationResult {
   tournamentFull,
   insufficientFunds,
   tierRequired,
+  teamRequired,
+  teamFull,
+  teamNotFound,
   error,
+}
+
+// ── Teams (2v2 tournaments) ──────────────────────────────────────────────────
+
+class TournamentTeam extends Equatable {
+  final String id;
+  final String tournamentId;
+  final String captainId;
+  final String? name;
+  final List<TournamentParticipant> members;
+
+  const TournamentTeam({
+    required this.id,
+    required this.tournamentId,
+    required this.captainId,
+    this.name,
+    this.members = const [],
+  });
+
+  bool get isOpen => members.length < 2;
+  String get displayName =>
+      name ??
+      (members.isNotEmpty
+          ? "${members.first.username ?? 'Team'}'s team"
+          : 'Team');
+
+  factory TournamentTeam.fromJson(
+    Map<String, dynamic> json, {
+    List<TournamentParticipant> members = const [],
+  }) {
+    return TournamentTeam(
+      id: json['id'] as String,
+      tournamentId: json['tournament_id'] as String,
+      captainId: json['captain_id'] as String,
+      name: json['name'] as String?,
+      members: members,
+    );
+  }
+
+  @override
+  List<Object?> get props => [id, members];
 }

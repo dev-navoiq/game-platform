@@ -6,10 +6,10 @@ import '../providers.dart';
 import '../services/admin_api.dart';
 import '../theme.dart';
 
-const _gameTypes = [
-  'twenty_nine', 'oh_hell', 'hearts', 'spades', 'bridge',
-  'rummy', 'chess', 'ludo', 'sequence',
-];
+// Server allow-lists (admin-create-tournament rejects anything else): only
+// games with server-side rules + outcome adapters, per match shape.
+const _games1v1 = ['twenty_nine', 'oh_hell', 'ludo'];
+const _games2v2 = ['twenty_nine', 'bridge'];
 // Server-supported start formats (bracket generation exists for these).
 const _formats = ['single_elimination', 'round_robin', 'swiss'];
 const _tiers = ['free', 'pro', 'max'];
@@ -41,10 +41,14 @@ class _CreateTournamentScreenState
   final _feeCoins = TextEditingController(text: '0');
   final _feeGems = TextEditingController(text: '0');
 
-  String _gameType = _gameTypes.first;
+  String _gameType = _games1v1.first;
   String _format = _formats.first;
   String _tier = _tiers.first;
   String _socialMode = _socialModes.first;
+  int _teamSize = 1;
+  bool _allowSoloPairing = false;
+
+  List<String> get _gameChoices => _teamSize == 2 ? _games2v2 : _games1v1;
   DateTime _startTime = DateTime.now().add(const Duration(hours: 1));
   final List<_PrizeRow> _prizes = [_PrizeRow(1), _PrizeRow(2)];
   bool _busy = false;
@@ -105,6 +109,9 @@ class _CreateTournamentScreenState
       'prize_pool': prizePool,
       'min_subscription_tier': _tier,
       'room_social_mode': _socialMode,
+      'team_size': _teamSize,
+      if (_teamSize == 2 && _gameType != 'bridge')
+        'allow_solo_pairing': _allowSoloPairing,
       if (gemCup.isNotEmpty) 'settings': {'gem_cup': gemCup},
     };
   }
@@ -173,7 +180,16 @@ class _CreateTournamentScreenState
                   Row(
                     children: [
                       Expanded(
-                          child: _dropdown('Game', _gameType, _gameTypes,
+                          child: _dropdown('Mode', _teamSize == 2 ? '2v2 teams' : '1v1',
+                              const ['1v1', '2v2 teams'], (v) => setState(() {
+                                _teamSize = v == '2v2 teams' ? 2 : 1;
+                                if (!_gameChoices.contains(_gameType)) {
+                                  _gameType = _gameChoices.first;
+                                }
+                              }))),
+                      const SizedBox(width: 14),
+                      Expanded(
+                          child: _dropdown('Game', _gameType, _gameChoices,
                               (v) => setState(() => _gameType = v))),
                       const SizedBox(width: 14),
                       Expanded(
@@ -181,6 +197,15 @@ class _CreateTournamentScreenState
                               (v) => setState(() => _format = v))),
                     ],
                   ),
+                  if (_teamSize == 2 && _gameType != 'bridge') ...[
+                    const SizedBox(height: 6),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Allow solo entries (paired at start)'),
+                      value: _allowSoloPairing,
+                      onChanged: (v) => setState(() => _allowSoloPairing = v),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   InkWell(
                     onTap: _pickStart,

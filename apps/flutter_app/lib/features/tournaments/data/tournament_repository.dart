@@ -123,14 +123,23 @@ class TournamentRepository {
   // edge function debits the entry fee (coins/gems), enforces tier / gem-gate /
   // capacity, and writes the participant + entry ledger atomically. `userId` is
   // taken from the auth JWT server-side; the param is kept for call-site compat.
+  // Team tournaments (team_size = 2): pass `createTeam` to open a new team,
+  // `joinTeamId` to fill an open one, or neither for a solo entry (server
+  // pairs solos at start when the tournament allows it).
   Future<TournamentRegistrationResult> register(
     String tournamentId,
-    String userId,
-  ) async {
+    String userId, {
+    bool createTeam = false,
+    String? joinTeamId,
+  }) async {
     try {
       await _supabase.functions.invoke(
         'tournament-register',
-        body: {'tournament_id': tournamentId},
+        body: {
+          'tournament_id': tournamentId,
+          if (createTeam) 'create_team': true,
+          if (joinTeamId != null) 'join_team': joinTeamId,
+        },
       );
       return TournamentRegistrationResult.success;
     } on FunctionException catch (e) {
@@ -156,10 +165,45 @@ class TournamentRepository {
         return TournamentRegistrationResult.tournamentNotFound;
       case 'TIER_REQUIRED':
         return TournamentRegistrationResult.tierRequired;
+      case 'TEAM_REQUIRED':
+        return TournamentRegistrationResult.teamRequired;
+      case 'TEAM_FULL':
+        return TournamentRegistrationResult.teamFull;
+      case 'TEAM_NOT_FOUND':
+        return TournamentRegistrationResult.teamNotFound;
       default:
         // REGISTERED_REQUIRED / TOO_MANY_ACTIVE_TOURNAMENTS
         return TournamentRegistrationResult.error;
     }
+  }
+
+  // ── Teams (2v2 tournaments) ────────────────────────────────────────────────
+
+  // Teams with members (captain first). Members come from participants so the
+  // list reflects live membership, not just team rows.
+  Future<List<TournamentTeam>> getTeams(String tournamentId) async {
+    final teamRows = await _supabase
+        .from('tournament_teams')
+        .select()
+        .eq('tournament_id', tournamentId)
+        .order('created_at', ascending: true);
+    if (teamRows.isEmpty) return [];
+
+    final participants = await getParticipants(tournamentId);
+    final byTeam = <String, List<TournamentParticipant>>{};
+    for (final p in participants) {
+      if (p.teamId != null) {
+        byTeam.putIfAbsent(p.teamId!, () => []).add(p);
+      }
+    }
+
+    return teamRows.map((r) {
+      final id = r['id'] as String;
+      final captainId = r['captain_id'] as String;
+      final members = byTeam[id] ?? const <TournamentParticipant>[];
+      members.sort((a, b) => a.userId == captainId ? -1 : (b.userId == captainId ? 1 : 0));
+      return TournamentTeam.fromJson(r, members: members);
+    }).toList();
   }
 
   // Unregister + refund is handled server-side by `tournament-unregister`.

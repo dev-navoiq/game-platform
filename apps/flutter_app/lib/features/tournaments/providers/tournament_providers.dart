@@ -58,6 +58,14 @@ final tournamentParticipantsProvider =
   return repo.getParticipants(tournamentId);
 });
 
+/// Teams (with members, captain first) for 2v2 tournaments.
+final tournamentTeamsProvider =
+    FutureProvider.family<List<TournamentTeam>, String>(
+        (ref, tournamentId) async {
+  final repo = ref.watch(tournamentRepositoryProvider);
+  return repo.getTeams(tournamentId);
+});
+
 /// Current user's participation in a tournament (null if not registered).
 final myParticipationProvider =
     FutureProvider.family<TournamentParticipant?, String>(
