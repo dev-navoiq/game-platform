@@ -4,6 +4,7 @@ import { getSupabaseClient, getSupabaseAdmin } from '../_shared/supabase.ts';
 import { requireAuth, jsonResponse, errorResponse } from '../_shared/validation.ts';
 import { debitCurrency, creditCurrency } from '../_shared/currency.ts';
 import { getEconomyConfig } from '../_shared/rewards.ts';
+import { startTournament } from '../_shared/tournament_report.ts';
 
 interface RegisterRequest { tournament_id: string; }
 
@@ -26,7 +27,7 @@ serve(async (req) => {
     // ── Load tournament ────────────────────────────────────────────────────
     const { data: t } = await admin
       .from('tournaments')
-      .select('id, status, max_participants, current_participants, entry_fee_coins, entry_fee_gems, min_subscription_tier')
+      .select('id, status, max_participants, current_participants, entry_fee_coins, entry_fee_gems, min_subscription_tier, settings')
       .eq('id', body.tournament_id)
       .single();
     if (!t) return errorResponse('Tournament not found', 404, 'NOT_FOUND');
@@ -114,7 +115,27 @@ serve(async (req) => {
       return errorResponse('Tournament is full', 409, 'TOURNAMENT_FULL');
     }
 
-    return jsonResponse({ ok: true, coins_balance: coinsAfter, gems_balance: gemsAfter });
+    // ── Auto-start when the last seat fills ────────────────────────────────
+    // There is no scheduler yet (see prompts/25 §T1): without this, a full
+    // tournament sits in 'registration' until an admin force-starts it.
+    // Opt out per-tournament via settings.auto_start_when_full = false.
+    // startTournament is race-safe here: a concurrent start loses the status
+    // gate ('registration'/'starting' only) and returns BAD_STATUS, which we
+    // deliberately ignore.
+    let started = false;
+    const autoStart =
+      (t.settings as { auto_start_when_full?: boolean } | null)?.auto_start_when_full !== false;
+    if (autoStart && t2 && t2.current_participants >= t2.max_participants) {
+      try {
+        const r = await startTournament(admin, t.id);
+        started = r.status === 'started';
+      } catch (e) {
+        // Registration itself succeeded — never fail the request over this.
+        console.error('auto-start after fill failed:', e);
+      }
+    }
+
+    return jsonResponse({ ok: true, coins_balance: coinsAfter, gems_balance: gemsAfter, started });
   } catch (error) {
     console.error('tournament-register error:', error);
     return errorResponse('Internal server error', 500);
