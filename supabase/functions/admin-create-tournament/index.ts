@@ -10,6 +10,15 @@ import { requireAdmin } from '../_shared/admin.ts';
 // final authority on categorical fields — an invalid value fails the insert.
 const FORMATS = ['single_elimination', 'double_elimination', 'round_robin', 'swiss', 'multi_stage'];
 
+// Server-authoritative tournament support (prompts/25 §T3): only games whose
+// rules + outcome adapters exist server-side, per match shape. Spades/hearts/
+// chess/rummy/sequence have no server rules yet; bridge's state builder
+// requires exactly 4 players so it is team-play only.
+const GAMES_1V1 = ['twenty_nine', 'oh_hell', 'ludo'];
+const GAMES_2V2 = ['twenty_nine', 'bridge'];
+// Random pairing needs partnership-agnostic play; bridge conventions rule it out.
+const NO_SOLO_PAIRING = ['bridge'];
+
 interface PrizeRow { place: number; coins?: number; gems?: number; skin_id?: string; title?: string; }
 
 interface CreateRequest {
@@ -29,6 +38,8 @@ interface CreateRequest {
   min_subscription_tier?: string;
   room_social_mode?: string;
   is_official?: boolean;
+  team_size?: number;
+  allow_solo_pairing?: boolean;
 }
 
 serve(async (req) => {
@@ -50,11 +61,29 @@ serve(async (req) => {
     if (missing) return errorResponse(missing, 400, 'MISSING_FIELD');
     if (!FORMATS.includes(body.format)) return errorResponse(`Unknown format ${body.format}`, 400, 'BAD_FORMAT');
 
-    // ── Capacity ────────────────────────────────────────────────────────────
+    // ── Team shape + game allow-list ───────────────────────────────────────
+    const teamSize = body.team_size ?? 1;
+    if (teamSize !== 1 && teamSize !== 2) return errorResponse('team_size must be 1 or 2', 400, 'BAD_TEAM_SIZE');
+    const allowedGames = teamSize === 2 ? GAMES_2V2 : GAMES_1V1;
+    if (!allowedGames.includes(body.game_type)) {
+      return errorResponse(
+        `${body.game_type} is not supported for ${teamSize === 2 ? '2v2 team' : '1v1'} tournaments (supported: ${allowedGames.join(', ')})`,
+        400, 'GAME_UNSUPPORTED',
+      );
+    }
+    let allowSoloPairing = teamSize === 2 && (body.allow_solo_pairing ?? false);
+    if (allowSoloPairing && NO_SOLO_PAIRING.includes(body.game_type)) {
+      return errorResponse(`${body.game_type} tournaments are teams-only (no solo pairing)`, 400, 'TEAMS_ONLY');
+    }
+
+    // ── Capacity (counts PLAYERS; team tournaments need even, >= 2 teams) ──
     const minP = body.min_participants ?? 4;
     const maxP = body.max_participants ?? 32;
-    if (minP < 2) return errorResponse('min_participants must be >= 2', 400, 'BAD_CAPACITY');
+    if (minP < teamSize * 2) return errorResponse(`min_participants must be >= ${teamSize * 2}`, 400, 'BAD_CAPACITY');
     if (maxP < minP) return errorResponse('max_participants must be >= min_participants', 400, 'BAD_CAPACITY');
+    if (teamSize === 2 && (minP % 2 !== 0 || maxP % 2 !== 0)) {
+      return errorResponse('Team tournaments need even min/max participants', 400, 'BAD_CAPACITY');
+    }
 
     // ── Fees ──────────────────────────────────────────────────────────────────
     const feeCoins = body.entry_fee_coins ?? 0;
@@ -91,6 +120,8 @@ serve(async (req) => {
       min_subscription_tier: body.min_subscription_tier ?? 'free',
       room_social_mode: body.room_social_mode ?? 'focus',
       status: 'registration',
+      team_size: teamSize,
+      allow_solo_pairing: allowSoloPairing,
     };
 
     const { data, error } = await admin

@@ -44,8 +44,30 @@ serve(async (req) => {
       }
     }
 
+    // Capture team membership before deleting (FK is ON DELETE SET NULL).
+    const { data: me } = await admin
+      .from('tournament_participants')
+      .select('team_id')
+      .eq('tournament_id', t.id).eq('user_id', user.id)
+      .maybeSingle();
+
     await admin.from('tournament_participants')
       .delete().eq('tournament_id', t.id).eq('user_id', user.id);
+
+    // ── Team cleanup: promote the remaining member, or drop an empty team ──
+    if (me?.team_id) {
+      const { data: rest } = await admin
+        .from('tournament_participants')
+        .select('user_id')
+        .eq('team_id', me.team_id);
+      if (!rest || rest.length === 0) {
+        await admin.from('tournament_teams').delete().eq('id', me.team_id);
+      } else {
+        await admin.from('tournament_teams')
+          .update({ captain_id: rest[0].user_id })
+          .eq('id', me.team_id);
+      }
+    }
 
     return jsonResponse({ ok: true });
   } catch (error) {

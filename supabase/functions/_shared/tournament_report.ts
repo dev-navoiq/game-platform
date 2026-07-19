@@ -42,7 +42,7 @@ export async function startTournament(
 ): Promise<StartResult> {
   const { data: t } = await admin
     .from('tournaments')
-    .select('id, status, format, min_participants, current_participants')
+    .select('id, name, status, format, min_participants, current_participants, team_size, allow_solo_pairing')
     .eq('id', tournamentId)
     .single();
   if (!t) return { status: 'error', code: 'NOT_FOUND', httpStatus: 404 };
@@ -65,31 +65,116 @@ export async function startTournament(
   const config = await getEconomyConfig(admin);
   await admin.from('tournaments').update({ rake_percent: config.rake_percent_default }).eq('id', t.id);
 
-  // ── Seed participants: by level desc, random tiebreak ────────────────────
+  // ── Build entrants: individuals, or teams keyed by captain ───────────────
+  // The bracket operates on ENTRANT ids. For team tournaments the entrant is
+  // the team, represented by its captain's user id (player1/2_id stay
+  // captains, so seeds/swiss/forfeit paths are shape-uniform), with
+  // team1/2_id carried alongside on matches.
   const { data: participants } = await admin
     .from('tournament_participants')
-    .select('user_id, profiles!inner(level)')
+    .select('user_id, team_id, profiles!inner(level)')
     .eq('tournament_id', t.id);
   if (!participants || participants.length < 2) {
     return { status: 'error', code: 'NOT_ENOUGH_PARTICIPANTS', httpStatus: 409 };
   }
+  const levelOf = (p: { profiles: unknown }) =>
+    (p.profiles as { level: number }).level ?? 1;
 
-  const ranked = participants
-    .map((p) => ({
-      userId: p.user_id as string,
-      level: (p.profiles as unknown as { level: number }).level ?? 1,
-      rand: crypto.getRandomValues(new Uint32Array(1))[0],
-    }))
+  interface Entrant { captainId: string; teamId: string | null; members: string[]; level: number }
+  let entrants: Entrant[];
+
+  if (t.team_size === 2) {
+    const { data: teamRows } = await admin
+      .from('tournament_teams')
+      .select('id, captain_id')
+      .eq('tournament_id', t.id);
+    const captainOf = new Map((teamRows ?? []).map((r) => [r.id as string, r.captain_id as string]));
+
+    const byTeam = new Map<string, { user_id: string; level: number }[]>();
+    let solos: { user_id: string; level: number }[] = [];
+    for (const p of participants) {
+      const entry = { user_id: p.user_id as string, level: levelOf(p) };
+      if (p.team_id) {
+        const list = byTeam.get(p.team_id as string) ?? [];
+        list.push(entry);
+        byTeam.set(p.team_id as string, list);
+      } else {
+        solos.push(entry);
+      }
+    }
+
+    // Pair solos strongest-with-weakest → balanced scratch teams.
+    if (t.allow_solo_pairing) {
+      solos.sort((a, b) => b.level - a.level);
+      while (solos.length >= 2) {
+        const a = solos.shift()!;
+        const b = solos.pop()!;
+        const { data: team } = await admin
+          .from('tournament_teams')
+          .insert({ tournament_id: t.id, captain_id: a.user_id })
+          .select('id')
+          .single();
+        if (!team) { solos.unshift(a); break; }
+        await admin.from('tournament_participants')
+          .update({ team_id: team.id })
+          .eq('tournament_id', t.id)
+          .in('user_id', [a.user_id, b.user_id]);
+        byTeam.set(team.id as string, [a, b]);
+        captainOf.set(team.id as string, a.user_id);
+      }
+    }
+
+    // Drop + refund anyone without a complete team (leftover solos, 1-member teams).
+    const dropped: string[] = solos.map((s) => s.user_id);
+    for (const [teamId, members] of [...byTeam.entries()]) {
+      if (members.length !== t.team_size) {
+        dropped.push(...members.map((m) => m.user_id));
+        byTeam.delete(teamId);
+        await admin.from('tournament_teams').delete().eq('id', teamId);
+      }
+    }
+    for (const uid of dropped) {
+      await refundAndDropParticipant(admin, t.id, uid);
+    }
+
+    entrants = [...byTeam.entries()].map(([teamId, members]) => ({
+      captainId: captainOf.get(teamId) ?? members[0].user_id,
+      teamId,
+      members: [
+        captainOf.get(teamId) ?? members[0].user_id,
+        ...members.map((m) => m.user_id).filter((id) => id !== (captainOf.get(teamId) ?? members[0].user_id)),
+      ],
+      level: members.reduce((s, m) => s + m.level, 0) / members.length,
+    }));
+
+    // Re-check viability after drops (min counts PLAYERS).
+    if (entrants.length < 2 || entrants.length * t.team_size < t.min_participants) {
+      await refundAllEntries(admin, t.id);
+      await admin.from('tournaments').update({ status: 'cancelled' }).eq('id', t.id);
+      return { status: 'cancelled', reason: 'insufficient_participants' };
+    }
+  } else {
+    entrants = participants.map((p) => ({
+      captainId: p.user_id as string,
+      teamId: null,
+      members: [p.user_id as string],
+      level: levelOf(p),
+    }));
+  }
+
+  // ── Seed entrants: by level desc, random tiebreak ────────────────────────
+  const ranked = entrants
+    .map((e) => ({ ...e, rand: crypto.getRandomValues(new Uint32Array(1))[0] }))
     .sort((a, b) => b.level - a.level || a.rand - b.rand);
 
-  const ids = ranked.map((r) => r.userId);
+  const ids = ranked.map((r) => r.captainId);
   const seeds = ranked.map((_, i) => i + 1);
 
-  // Persist seed + activate.
+  // Persist seed + activate (every member of an entrant shares the seed).
   for (let i = 0; i < ranked.length; i++) {
     await admin.from('tournament_participants')
       .update({ seed: i + 1, status: 'active' })
-      .eq('tournament_id', t.id).eq('user_id', ranked[i].userId);
+      .eq('tournament_id', t.id).in('user_id', ranked[i].members);
   }
 
   // ── Generate + insert bracket ────────────────────────────────────────────
@@ -98,7 +183,10 @@ export async function startTournament(
   else if (t.format === 'round_robin') planned = generateRoundRobin(ids);
   else planned = generateSwissFirstRound(ids, seeds); // swiss
 
-  await insertPlannedMatches(admin, t.id, planned);
+  const teamByCaptain = t.team_size === 2
+    ? new Map(ranked.map((r) => [r.captainId, r.teamId as string]))
+    : undefined;
+  await insertPlannedMatches(admin, t.id, planned, teamByCaptain);
 
   // ── Go live + create rooms for round-1 ready matches ─────────────────────
   await admin.from('tournaments').update({ status: 'in_progress' }).eq('id', t.id);
@@ -107,8 +195,8 @@ export async function startTournament(
   // Lifecycle push (M0 backbone). Failures must never abort a started
   // tournament — the bracket is already live.
   try {
-    await sendPush(admin, ids, 'tournament_updates', {
-      title: t.name,
+    await sendPush(admin, ranked.flatMap((r) => r.members), 'tournament_updates', {
+      title: t.name ?? 'Tournament',
       body: 'The tournament has started — your first match is ready!',
       data: { route: `/tournament/${t.id}` },
     });
@@ -117,6 +205,34 @@ export async function startTournament(
   }
 
   return { status: 'started', matches: planned.length, format: t.format };
+}
+
+// Refund (via ledger guard) + remove a participant who cannot play — used for
+// unpaired solos / incomplete teams at start time.
+async function refundAndDropParticipant(
+  admin: SupabaseClient,
+  tournamentId: string,
+  userId: string,
+): Promise<void> {
+  const { data: row } = await admin
+    .from('tournament_entry_ledger')
+    .select('id, coins_paid, gems_paid, refunded')
+    .eq('tournament_id', tournamentId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (row && !row.refunded) {
+    const { data: flipped } = await admin
+      .from('tournament_entry_ledger')
+      .update({ refunded: true })
+      .eq('id', row.id).eq('refunded', false)
+      .select('id');
+    if (flipped && flipped.length > 0) {
+      if (row.coins_paid > 0) await creditCurrency(admin, userId, 'coins', row.coins_paid, 'tournament_refund', tournamentId);
+      if (row.gems_paid > 0) await creditCurrency(admin, userId, 'gems', row.gems_paid, 'tournament_refund', tournamentId);
+    }
+  }
+  await admin.from('tournament_participants')
+    .delete().eq('tournament_id', tournamentId).eq('user_id', userId);
 }
 
 function genRoomCode(): string {
@@ -135,7 +251,7 @@ export async function startTournamentMatch(
 ): Promise<{ room_id: string } | null> {
   const { data: match } = await admin
     .from('tournament_matches')
-    .select('id, tournament_id, player1_id, player2_id, status, room_id')
+    .select('id, tournament_id, player1_id, player2_id, team1_id, team2_id, status, room_id')
     .eq('id', matchId)
     .single();
   if (!match) return null;
@@ -151,7 +267,28 @@ export async function startTournamentMatch(
     .single();
   if (!tournament) return null;
 
-  const playerIds = [match.player1_id, match.player2_id];
+  // ── Seat order ───────────────────────────────────────────────────────────
+  // Team matches seat partners OPPOSITE (0/2 vs 1/3): the 29/bridge outcome
+  // adapters team by seat parity (idx % 2), so [t1a, t2a, t1b, t2b] puts
+  // team1 on parity 0 and team2 on parity 1. Captains (player1/2_id) sit
+  // first within their team.
+  let seatOrder: string[];
+  if (match.team1_id && match.team2_id) {
+    const { data: members } = await admin
+      .from('tournament_participants')
+      .select('user_id, team_id')
+      .in('team_id', [match.team1_id, match.team2_id]);
+    const side = (teamId: string, captain: string) => {
+      const ids = (members ?? []).filter((m) => m.team_id === teamId).map((m) => m.user_id as string);
+      return [captain, ...ids.filter((id) => id !== captain)];
+    };
+    const t1 = side(match.team1_id as string, match.player1_id as string);
+    const t2 = side(match.team2_id as string, match.player2_id as string);
+    if (t1.length !== 2 || t2.length !== 2) return null; // roster incomplete — repair tick will retry
+    seatOrder = [t1[0], t2[0], t1[1], t2[1]];
+  } else {
+    seatOrder = [match.player1_id as string, match.player2_id as string];
+  }
   const socialMode = tournament.room_social_mode ?? 'focus';
 
   // Create the room (server-owned; skips create-room's private-room limits).
@@ -163,8 +300,8 @@ export async function startTournamentMatch(
       status: 'playing',
       social_mode: socialMode,
       created_by: match.player1_id,
-      max_players: 2,
-      current_players: 2,
+      max_players: seatOrder.length,
+      current_players: seatOrder.length,
       is_private: true,
       config: { tournament_id: match.tournament_id, tournament_match_id: matchId },
     })
@@ -172,15 +309,16 @@ export async function startTournamentMatch(
     .single();
   if (roomErr || !newRoom) throw new Error(`tournament room create failed: ${roomErr?.message}`);
 
-  // Seat the two players (1v1 => no teams).
-  await admin.from('room_players').insert([
-    { room_id: newRoom.id, user_id: match.player1_id, seat_index: 0, is_spectator: false },
-    { room_id: newRoom.id, user_id: match.player2_id, seat_index: 1, is_spectator: false },
-  ]);
+  // Seat everyone in order (partners land opposite for team matches).
+  await admin.from('room_players').insert(
+    seatOrder.map((uid, i) => ({
+      room_id: newRoom.id, user_id: uid, seat_index: i, is_spectator: false,
+    })),
+  );
 
   // Build the authoritative initial state and create the game_states row.
-  const dealerIndex = crypto.getRandomValues(new Uint8Array(1))[0] % 2;
-  const state = buildInitialState(tournament.game_type, playerIds, dealerIndex, socialMode);
+  const dealerIndex = crypto.getRandomValues(new Uint8Array(1))[0] % seatOrder.length;
+  const state = buildInitialState(tournament.game_type, seatOrder, dealerIndex, socialMode);
   await admin.from('game_states').insert({
     room_id: newRoom.id,
     phase: initialDbPhase(state),
@@ -194,7 +332,7 @@ export async function startTournamentMatch(
     .eq('id', matchId);
 
   // Presence
-  for (const pid of playerIds) {
+  for (const pid of seatOrder) {
     await admin.from('profiles').update({
       current_activity: {
         type: 'in_game', game_type: tournament.game_type,
@@ -238,27 +376,29 @@ export async function reportTournamentMatchResult(
   if (!gameState) return;
 
   const outcomes = computeOutcomes(room!.game_type, gameState.state_data as Record<string, unknown>);
-  const p1 = match.player1_id as string;
-  const p2 = match.player2_id as string;
-  const o1 = outcomes.find((o) => o.user_id === p1);
-  const o2 = outcomes.find((o) => o.user_id === p2);
+  const sides = await matchSides(admin, match);
+  // Any member's outcome represents the side — team adapters (29/bridge) give
+  // every member of a partnership the same result.
+  const o1 = outcomes.find((o) => sides.side1.includes(o.user_id));
+  const o2 = outcomes.find((o) => sides.side2.includes(o.user_id));
 
   // Resolve winner (tiebreak draws by better seed = lower seed number).
-  let winnerId: string;
+  let side1Wins: boolean;
   let isDraw = false;
   if (o1 && o2 && o1.result === 'draw' && o2.result === 'draw') {
     isDraw = true;
-    const s1 = match.player1_seed ?? 9999;
-    const s2 = match.player2_seed ?? 9999;
-    winnerId = s1 <= s2 ? p1 : p2;
+    side1Wins = (match.player1_seed ?? 9999) <= (match.player2_seed ?? 9999);
   } else if (o1?.result === 'win') {
-    winnerId = p1;
+    side1Wins = true;
   } else if (o2?.result === 'win') {
-    winnerId = p2;
+    side1Wins = false;
   } else {
-    winnerId = (o1?.position ?? 99) <= (o2?.position ?? 99) ? p1 : p2;
+    side1Wins = (o1?.position ?? 99) <= (o2?.position ?? 99);
   }
-  const loserId = winnerId === p1 ? p2 : p1;
+  const winnerId = side1Wins ? sides.cap1 : sides.cap2;
+  const winnerTeamId = side1Wins ? sides.team1 : sides.team2;
+  const winnerSide = side1Wins ? sides.side1 : sides.side2;
+  const loserSide = side1Wins ? sides.side2 : sides.side1;
 
   await admin.from('tournament_matches').update({
     winner_id: winnerId,
@@ -277,17 +417,49 @@ export async function reportTournamentMatchResult(
   const format = tournament?.format as string;
   const isElim = format === 'single_elimination' || format === 'double_elimination';
 
-  // Update participant standings.
-  await bumpParticipant(admin, match.tournament_id, winnerId, { win: true, draw: isDraw });
-  await bumpParticipant(admin, match.tournament_id, loserId, { win: false, draw: isDraw, eliminate: isElim && !isDraw });
+  // Update participant standings (every member of each side).
+  for (const uid of winnerSide) {
+    await bumpParticipant(admin, match.tournament_id, uid, { win: true, draw: isDraw });
+  }
+  for (const uid of loserSide) {
+    await bumpParticipant(admin, match.tournament_id, uid, { win: false, draw: isDraw, eliminate: isElim && !isDraw });
+  }
 
   // Advance winner into the next match (elimination brackets).
   if (match.next_match_id && match.next_match_slot) {
-    await advanceInto(admin, match.next_match_id, match.next_match_slot, winnerId);
+    await advanceInto(admin, match.next_match_id, match.next_match_slot, winnerId, winnerTeamId);
   }
 
   // Progress / completion.
   await checkTournamentProgress(admin, match.tournament_id, format);
+}
+
+// Resolve a match's two sides: captains, full member lists, and team ids.
+// Individual matches degrade to singleton sides.
+async function matchSides(
+  admin: SupabaseClient,
+  match: Record<string, unknown>,
+): Promise<{
+  cap1: string; cap2: string;
+  side1: string[]; side2: string[];
+  team1: string | null; team2: string | null;
+}> {
+  const cap1 = match.player1_id as string;
+  const cap2 = match.player2_id as string;
+  const team1 = (match.team1_id as string | null) ?? null;
+  const team2 = (match.team2_id as string | null) ?? null;
+  if (!team1 || !team2) {
+    return { cap1, cap2, side1: [cap1], side2: [cap2], team1, team2 };
+  }
+  const { data: members } = await admin
+    .from('tournament_participants')
+    .select('user_id, team_id')
+    .in('team_id', [team1, team2]);
+  const of = (teamId: string, captain: string) => {
+    const ids = (members ?? []).filter((m) => m.team_id === teamId).map((m) => m.user_id as string);
+    return ids.length ? ids : [captain];
+  };
+  return { cap1, cap2, side1: of(team1, cap1), side2: of(team2, cap2), team1, team2 };
 }
 
 async function bumpParticipant(
@@ -326,9 +498,13 @@ async function advanceInto(
   nextMatchId: string,
   slot: number,
   playerId: string,
+  teamId: string | null = null,
 ): Promise<void> {
   const col = slot === 1 ? 'player1_id' : 'player2_id';
-  await admin.from('tournament_matches').update({ [col]: playerId }).eq('id', nextMatchId);
+  const teamCol = slot === 1 ? 'team1_id' : 'team2_id';
+  await admin.from('tournament_matches')
+    .update({ [col]: playerId, ...(teamId ? { [teamCol]: teamId } : {}) })
+    .eq('id', nextMatchId);
 
   // If both slots now filled, mark ready and start it.
   const { data: nm } = await admin
@@ -403,7 +579,20 @@ async function generateNextSwissRound(
     .eq('tournament_id', tournamentId);
   if (!participants) return;
 
-  const standings: SwissStanding[] = participants.map((p) => ({
+  // Team tournaments pair by CAPTAIN (one standing per team — members carry
+  // identical stats, so captains represent their team without double-counting).
+  const { data: teamRows } = await admin
+    .from('tournament_teams')
+    .select('id, captain_id')
+    .eq('tournament_id', tournamentId);
+  const teamByCaptain = (teamRows && teamRows.length > 0)
+    ? new Map(teamRows.map((r) => [r.captain_id as string, r.id as string]))
+    : undefined;
+  const standing = teamByCaptain
+    ? participants.filter((p) => teamByCaptain.has(p.user_id as string))
+    : participants;
+
+  const standings: SwissStanding[] = standing.map((p) => ({
     playerId: p.user_id, points: p.points ?? 0, buchholz: Number(p.buchholz ?? 0),
   }));
 
@@ -418,15 +607,18 @@ async function generateNextSwissRound(
   }
 
   const planned = generateSwissNextRound(roundNumber, standings, previous, allMatches.length + 1);
-  await insertPlannedMatches(admin, tournamentId, planned);
+  await insertPlannedMatches(admin, tournamentId, planned, teamByCaptain);
   await autoStartReadyMatches(admin, tournamentId, roundNumber);
 }
 
 // Insert planned matches; resolve nextMatch linkage localId → uuid in a 2nd pass.
+// teamByCaptain (team tournaments): captain user id → team id, so match rows
+// carry team1/2_id alongside the captain in player1/2_id.
 export async function insertPlannedMatches(
   admin: SupabaseClient,
   tournamentId: string,
   planned: PlannedMatch[],
+  teamByCaptain?: Map<string, string>,
 ): Promise<void> {
   const rows = planned.map((m) => ({
     tournament_id: tournamentId,
@@ -437,6 +629,8 @@ export async function insertPlannedMatches(
     player2_id: m.player2Id,
     player1_seed: m.player1Seed,
     player2_seed: m.player2Seed,
+    team1_id: m.player1Id ? teamByCaptain?.get(m.player1Id) ?? null : null,
+    team2_id: m.player2Id ? teamByCaptain?.get(m.player2Id) ?? null : null,
     status: m.isBye ? 'bye' : (m.player1Id && m.player2Id ? 'ready' : 'pending'),
   }));
 
@@ -468,7 +662,9 @@ export async function insertPlannedMatches(
   for (const m of planned) {
     if (!m.isBye || !m.nextMatchLocalId || !m.player1Id) continue;
     const nextId = idByLocal.get(m.nextMatchLocalId);
-    if (nextId && m.nextMatchSlot) await advanceInto(admin, nextId, m.nextMatchSlot, m.player1Id);
+    if (nextId && m.nextMatchSlot) {
+      await advanceInto(admin, nextId, m.nextMatchSlot, m.player1Id, teamByCaptain?.get(m.player1Id) ?? null);
+    }
   }
 }
 
@@ -500,17 +696,34 @@ export async function completeTournament(
 ): Promise<void> {
   const { data: t } = await admin
     .from('tournaments')
-    .select('id, status, prize_pool, rake_percent, settings, is_official')
+    .select('id, status, prize_pool, rake_percent, settings, is_official, team_size')
     .eq('id', tournamentId)
     .single();
   if (!t || t.status === 'completed' || t.status === 'cancelled') return;
 
   // Standings: wins desc, points desc, losses asc, seed asc.
+  // Team tournaments rank one ENTRY per team (captain represents; members
+  // carry identical stats) and remember the members for prize splitting.
   const { data: participants } = await admin
     .from('tournament_participants')
-    .select('user_id, wins, losses, draws, points, seed')
+    .select('user_id, team_id, wins, losses, draws, points, seed')
     .eq('tournament_id', tournamentId);
-  const ranked = [...(participants ?? [])].sort((a, b) =>
+  const { data: teamRows } = await admin
+    .from('tournament_teams')
+    .select('id, captain_id')
+    .eq('tournament_id', tournamentId);
+  const captainOf = new Map((teamRows ?? []).map((r) => [r.id as string, r.captain_id as string]));
+
+  const isTeams = t.team_size === 2 && captainOf.size > 0;
+  const entries = isTeams
+    ? (participants ?? []).filter((p) => p.team_id && captainOf.get(p.team_id as string) === p.user_id)
+    : (participants ?? []);
+  const membersOf = (p: { user_id: string; team_id: string | null }) =>
+    p.team_id
+      ? (participants ?? []).filter((m) => m.team_id === p.team_id).map((m) => m.user_id as string)
+      : [p.user_id as string];
+
+  const ranked = [...entries].sort((a, b) =>
     (b.wins ?? 0) - (a.wins ?? 0) ||
     (b.points ?? 0) - (a.points ?? 0) ||
     (a.losses ?? 0) - (b.losses ?? 0) ||
@@ -518,9 +731,14 @@ export async function completeTournament(
 
   const finalStandings = ranked.map((p, i) => ({
     place: i + 1, user_id: p.user_id, wins: p.wins, losses: p.losses, points: p.points,
+    ...(isTeams ? { team_id: p.team_id, members: membersOf(p) } : {}),
   }));
   const placeToUser = new Map<number, string>();
-  finalStandings.forEach((s) => placeToUser.set(s.place, s.user_id));
+  const placeToMembers = new Map<number, string[]>();
+  ranked.forEach((p, i) => {
+    placeToUser.set(i + 1, p.user_id as string);
+    placeToMembers.set(i + 1, membersOf(p));
+  });
 
   // Entry pool from the ledger (authoritative), minus rake.
   const { data: ledger } = await admin
@@ -553,13 +771,16 @@ export async function completeTournament(
 
   for (const prize of prizes) {
     const userId = placeToUser.get(prize.place);
-    if (!userId) continue;
+    const members = placeToMembers.get(prize.place) ?? (userId ? [userId] : []);
+    if (!userId || members.length === 0) continue;
     const coins = Math.floor((prize.coins ?? 0) * coinScale);
     const gems = Math.floor((prize.gems ?? 0) * gemScale);
     const rawGemCup = Math.max(0, Math.floor(Number(gemCup[String(prize.place)] ?? 0)));
     const gemCupBonus = Math.min(rawGemCup, MAX_GEM_CUP_PER_PLACE);
 
     // Per-place guard: insert-once; if it already exists, skip crediting.
+    // For team places the payout row records the captain + FULL amounts; the
+    // credits below split equally between members (remainder → captain).
     const { data: guard } = await admin
       .from('tournament_payouts')
       .upsert(
@@ -569,16 +790,27 @@ export async function completeTournament(
       .select('id');
     if (!guard || guard.length === 0) continue; // already paid
 
-    if (coins > 0) await creditCurrency(admin, userId, 'coins', coins, 'tournament_prize', tournamentId);
-    if (gems > 0) await creditCurrency(admin, userId, 'gems', gems, 'tournament_prize', tournamentId);
-    if (gemCupBonus > 0) await creditCurrency(admin, userId, 'gems', gemCupBonus, 'tournament_prize', tournamentId);
+    const n = members.length;
+    const shareOf = (total: number, memberIdx: number) => {
+      const base = Math.floor(total / n);
+      // Captain (members[0]) takes the integer remainder.
+      return memberIdx === 0 ? total - base * (n - 1) : base;
+    };
+    for (let i = 0; i < members.length; i++) {
+      const uid = members[i];
+      const c = shareOf(coins, i);
+      const g = shareOf(gems, i) + shareOf(gemCupBonus, i);
+      if (c > 0) await creditCurrency(admin, uid, 'coins', c, 'tournament_prize', tournamentId);
+      if (g > 0) await creditCurrency(admin, uid, 'gems', g, 'tournament_prize', tournamentId);
+    }
   }
 
   const winnerId = placeToUser.get(1) ?? null;
-  if (winnerId) {
+  const winnerMembers = placeToMembers.get(1) ?? (winnerId ? [winnerId] : []);
+  if (winnerMembers.length > 0) {
     await admin.from('tournament_participants')
       .update({ status: 'winner' })
-      .eq('tournament_id', tournamentId).eq('user_id', winnerId);
+      .eq('tournament_id', tournamentId).in('user_id', winnerMembers);
   }
 
   await admin.from('tournaments').update({
@@ -596,9 +828,9 @@ export async function completeTournament(
       .eq('tournament_id', tournamentId);
     const participantIds = (allParts ?? [])
       .map((p: { user_id: string }) => p.user_id)
-      .filter((id: string) => id !== winnerId);
-    if (winnerId) {
-      await sendPush(admin, [winnerId], 'tournament_updates', {
+      .filter((id: string) => !winnerMembers.includes(id));
+    if (winnerMembers.length > 0) {
+      await sendPush(admin, winnerMembers, 'tournament_updates', {
         title: 'Champion! 🏆',
         body: 'You won the tournament — collect your prizes!',
         data: { route: `/tournament/${tournamentId}` },
@@ -657,7 +889,18 @@ export async function forfeitTournamentMatch(
     .single();
   if (!match || match.status === 'completed') return;
 
-  const winnerId = match.player1_id === forfeitingUserId ? match.player2_id : match.player1_id;
+  // A forfeit by ANY member forfeits their whole side (a 29/bridge partnership
+  // cannot play short-handed).
+  const sides = await matchSides(admin, match);
+  let side1Forfeits: boolean;
+  if (sides.side1.includes(forfeitingUserId)) side1Forfeits = true;
+  else if (sides.side2.includes(forfeitingUserId)) side1Forfeits = false;
+  else return; // not a player in this match
+
+  const winnerId = side1Forfeits ? sides.cap2 : sides.cap1;
+  const winnerTeamId = side1Forfeits ? sides.team2 : sides.team1;
+  const winnerSide = side1Forfeits ? sides.side2 : sides.side1;
+  const loserSide = side1Forfeits ? sides.side1 : sides.side2;
   if (!winnerId) return;
 
   await admin.from('tournament_matches').update({
@@ -669,11 +912,15 @@ export async function forfeitTournamentMatch(
 
   const { data: t } = await admin.from('tournaments').select('format').eq('id', match.tournament_id).single();
   const isElim = t?.format === 'single_elimination' || t?.format === 'double_elimination';
-  await bumpParticipant(admin, match.tournament_id, winnerId, { win: true, draw: false });
-  await bumpParticipant(admin, match.tournament_id, forfeitingUserId, { win: false, draw: false, eliminate: isElim });
+  for (const uid of winnerSide) {
+    await bumpParticipant(admin, match.tournament_id, uid, { win: true, draw: false });
+  }
+  for (const uid of loserSide) {
+    await bumpParticipant(admin, match.tournament_id, uid, { win: false, draw: false, eliminate: isElim });
+  }
 
   if (match.next_match_id && match.next_match_slot) {
-    await advanceInto(admin, match.next_match_id, match.next_match_slot, winnerId);
+    await advanceInto(admin, match.next_match_id, match.next_match_slot, winnerId, winnerTeamId);
   }
   await checkTournamentProgress(admin, match.tournament_id, t?.format ?? '');
 }

@@ -108,10 +108,19 @@ serve(async (req) => {
         const match = matchByRoom.get(gs.room_id as string);
         if (!match) continue;
 
-        // Culprit: whoever the game is waiting on; worse seed as fallback.
+        // Everyone seated in the room (2 for 1v1, 4 for team matches).
+        const { data: seated } = await admin
+          .from('room_players')
+          .select('user_id')
+          .eq('room_id', gs.room_id);
+        const seatedIds = (seated ?? []).map((r) => r.user_id as string);
+
+        // Culprit: whoever the game is waiting on (any seated player — for
+        // team matches this may be a non-captain); worse seed as fallback.
+        // forfeitTournamentMatch resolves the culprit's whole side.
         const turnId = (gs.state_data as { currentPlayerId?: string } | null)?.currentPlayerId;
         let culprit: string | null = null;
-        if (turnId && (turnId === match.player1_id || turnId === match.player2_id)) {
+        if (turnId && seatedIds.includes(turnId)) {
           culprit = turnId;
         } else {
           const s1 = match.player1_seed ?? 9999;
@@ -124,10 +133,9 @@ serve(async (req) => {
           await forfeitTournamentMatch(admin, match.id as string, culprit);
           // Close the room so clients stop treating it as live.
           await admin.from('game_rooms').update({ status: 'abandoned' }).eq('id', gs.room_id);
-          for (const pid of [match.player1_id, match.player2_id]) {
-            if (pid) {
-              await admin.from('profiles').update({ current_activity: null }).eq('id', pid);
-            }
+          const toClear = seatedIds.length ? seatedIds : [match.player1_id, match.player2_id].filter(Boolean) as string[];
+          for (const pid of toClear) {
+            await admin.from('profiles').update({ current_activity: null }).eq('id', pid);
           }
           summary.forfeited.push({ match_id: match.id as string, forfeited_user: culprit });
         } catch (e) {
