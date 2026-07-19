@@ -66,7 +66,16 @@ update races. This layer needs no rework.
 
 ### Gaps, ranked by how much they block a real tournament product
 
-**T1 — No scheduler. Everything is manual.** *(the big one)*
+> **Update 2026-07-19:** T1 + T2 are SHIPPED (`tournament-tick` edge fn +
+> pg_cron migration `20260719000000`, live on staging; local 14/14 + staging
+> cron E2E green). Also shipped: auto-start-when-full in `tournament-register`
+> (opt-out `settings.auto_start_when_full=false`), and a `game_setup` fix —
+> `% 4` first-player indexing made half of all 2-player 29/hearts/spades
+> states start on an undefined player. New environments must seed
+> `app_config` (`edge_base_url`, `edge_anon_key`) or the cron is a no-op.
+> T3 onward below remain open.
+
+**T1 — ~~No scheduler. Everything is manual.~~ SHIPPED 2026-07-19** *(was the big one)*
 `registration_start/end` and `start_time` are stored but nothing acts on
 them; no pg_cron, no scheduled functions (verified: zero cron config in
 migrations or config.toml). Today a tournament starts only when an organizer
@@ -79,7 +88,7 @@ or admin presses force-start. Design sketch:
   dashboard) every minute. Keep the tick idempotent — it already would be,
   since `startTournament` rejects non-`registration/starting` states.
 
-**T2 — Stalled matches: forfeits only fire on explicit leave.**
+**T2 — ~~Stalled matches: forfeits only fire on explicit leave.~~ SHIPPED 2026-07-19** (tick sweep: 10-min no-write → forfeit on-turn player, abandon room)
 `forfeitTournamentMatch` is called from exactly one place: `leave-room`. A
 player who simply never opens the room (or disconnects silently) stalls the
 match — and `checkTournamentProgress` then never completes the tournament.
@@ -89,7 +98,9 @@ absent player; double no-show → mark match `bye`-like and advance the better
 seed. Run inside the T1 tick. Without this, any abandoned match soft-locks the
 whole bracket — worst realistic failure mode in a live tournament.
 
-**T3 — Game coverage asymmetry (silent).**
+**T3 — ~~Game coverage asymmetry (silent).~~ SHIPPED 2026-07-19** (allow-list in admin-create-tournament: 1v1 = twenty_nine/oh_hell/ludo; 2v2 = twenty_nine/bridge)
+
+**T3 (original text) — Game coverage asymmetry (silent).**
 `buildInitialState` (room setup) supports 6 games: twenty_nine, oh_hell,
 hearts, spades, bridge, ludo. But `computeOutcomes` (match resolution)
 supports only 4: twenty_nine, oh_hell, bridge, ludo. A **hearts or spades
@@ -99,7 +110,9 @@ state). Fix cheaply now: an allow-list (`twenty_nine, oh_hell, bridge, ludo`)
 enforced in `admin-create-tournament` + the player create path, and mirrored
 in the admin form's game dropdown. Extend coverage game-by-game later.
 
-**T4 — The 1v1 assumption.**
+**T4 — ~~The 1v1 assumption.~~ SHIPPED 2026-07-19** (2v2 team tournaments: tournament_teams + team_size, partner-invite or solo-pairing per tournament — bridge teams-only; per-player fees, split prizes; 4p rooms seat partners opposite. FFA groups for hearts/ludo-4p remain open.)
+
+**T4 (original text) — The 1v1 assumption.**
 The whole match model is `player1_id/player2_id`; `startTournamentMatch`
 creates 2-player rooms unconditionally. Twenty-nine and ludo are naturally
 4-player — tournament matches currently run them as 2-player variants.
