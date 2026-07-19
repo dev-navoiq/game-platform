@@ -44,7 +44,9 @@ function buildTwentyNineState(
   // trump is declared, then the engine deals the second 4 per seat.
   const hands = dealHands(deck, playerIds, 4);
   const pendingDeck = deck.slice(playerIds.length * 4, playerIds.length * 4 + 16);
-  const firstBidder = playerIds[(dealerIndex + 1) % 4];
+  // % length, not % 4: tournament matches are 1v1, and %4 made firstBidder
+  // undefined for 2 players whenever dealerIndex+1 exceeded the roster.
+  const firstBidder = playerIds[(dealerIndex + 1) % playerIds.length];
 
   return {
     phase: 'bidding',
@@ -118,7 +120,7 @@ function buildHeartsState(
   const deck = createStandard52Deck();
   shuffleDeck(deck);
   const hands = dealHands(deck, playerIds, 13);
-  const firstPlayer = playerIds[(dealerIndex + 1) % 4];
+  const firstPlayer = playerIds[(dealerIndex + 1) % playerIds.length];
 
   return {
     phase: 'playing',
@@ -145,7 +147,7 @@ function buildSpadesState(
   const deck = createStandard52Deck();
   shuffleDeck(deck);
   const hands = dealHands(deck, playerIds, 13);
-  const firstBidder = playerIds[(dealerIndex + 1) % 4];
+  const firstBidder = playerIds[(dealerIndex + 1) % playerIds.length];
 
   return {
     phase: 'bidding',
