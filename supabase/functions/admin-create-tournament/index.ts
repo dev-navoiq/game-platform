@@ -40,6 +40,7 @@ interface CreateRequest {
   is_official?: boolean;
   team_size?: number;
   allow_solo_pairing?: boolean;
+  check_in_minutes?: number;
 }
 
 serve(async (req) => {
@@ -100,6 +101,10 @@ serve(async (req) => {
 
     // ── Timing sanity ─────────────────────────────────────────────────────────
     if (Number.isNaN(Date.parse(body.start_time))) return errorResponse('start_time must be an ISO timestamp', 400, 'BAD_TIME');
+    const checkInMinutes = body.check_in_minutes ?? 0;
+    if (!Number.isInteger(checkInMinutes) || checkInMinutes < 0 || checkInMinutes > 1440) {
+      return errorResponse('check_in_minutes must be an integer in [0, 1440]', 400, 'BAD_CHECK_IN');
+    }
 
     const insert: Record<string, unknown> = {
       name: body.name,
@@ -122,6 +127,7 @@ serve(async (req) => {
       status: 'registration',
       team_size: teamSize,
       allow_solo_pairing: allowSoloPairing,
+      check_in_minutes: checkInMinutes,
     };
 
     const { data, error } = await admin

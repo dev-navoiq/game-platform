@@ -159,6 +159,7 @@ class Tournament extends Equatable {
   final String roomSocialMode;
   final int teamSize;
   final bool allowSoloPairing;
+  final int checkInMinutes;
   final DateTime createdAt;
 
   const Tournament({
@@ -187,10 +188,19 @@ class Tournament extends Equatable {
     this.roomSocialMode = 'focus',
     this.teamSize = 1,
     this.allowSoloPairing = false,
+    this.checkInMinutes = 0,
     required this.createdAt,
   });
 
   bool get isTeamTournament => teamSize > 1;
+  bool get hasCheckIn => checkInMinutes > 0;
+
+  /// Whether the check-in window is currently open.
+  bool get isCheckInOpen =>
+      hasCheckIn &&
+      status == TournamentStatus.registration &&
+      DateTime.now()
+          .isAfter(startTime.subtract(Duration(minutes: checkInMinutes)));
   bool get isFree => entryFeeCoins == 0 && entryFeeGems == 0;
   bool get isFull => currentParticipants >= maxParticipants;
   bool get isRegistrationOpen =>
@@ -238,6 +248,7 @@ class Tournament extends Equatable {
       roomSocialMode: (json['room_social_mode'] as String?) ?? 'focus',
       teamSize: (json['team_size'] as int?) ?? 1,
       allowSoloPairing: (json['allow_solo_pairing'] as bool?) ?? false,
+      checkInMinutes: (json['check_in_minutes'] as int?) ?? 0,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),

@@ -1,0 +1,43 @@
+name: Server multiplayer tests
+
+# Tier-1 of the multiplayer testing strategy (docs/TESTING-STRATEGY.md):
+# run the supabase/tests/*.sh harnesses against a fresh local stack.
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+
+concurrency:
+  group: server-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harnesses:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local stack (applies migrations)
+        run: supabase start
+
+      - name: Seed harness admin
+        run: |
+          ANON=$(supabase status -o env | grep '^ANON_KEY' | cut -d= -f2- | tr -d '"')
+          SR=$(supabase status -o env | grep '^SERVICE_ROLE_KEY' | cut -d= -f2- | tr -d '"')
+          curl -s -X POST "http://127.0.0.1:54321/auth/v1/admin/users" \
+            -H "Authorization: Bearer $SR" -H "apikey: $SR" -H "Content-Type: application/json" \
+            -d '{"email":"admin@gathr.local","password":"admin1234","email_confirm":true}'
+          docker exec supabase_db_game-platform psql -U postgres -d postgres -c \
+            "insert into admin_users(user_id) select id from auth.users where email='admin@gathr.local' on conflict do nothing;"
+
+      - name: Run harnesses
+        run: bash supabase/tests/run.sh

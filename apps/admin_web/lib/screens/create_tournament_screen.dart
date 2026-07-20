@@ -40,6 +40,7 @@ class _CreateTournamentScreenState
   final _maxP = TextEditingController(text: '8');
   final _feeCoins = TextEditingController(text: '0');
   final _feeGems = TextEditingController(text: '0');
+  final _checkInMinutes = TextEditingController(text: '0');
 
   String _gameType = _games1v1.first;
   String _format = _formats.first;
@@ -55,7 +56,7 @@ class _CreateTournamentScreenState
 
   @override
   void dispose() {
-    for (final c in [_name, _description, _minP, _maxP, _feeCoins, _feeGems]) {
+    for (final c in [_name, _description, _minP, _maxP, _feeCoins, _feeGems, _checkInMinutes]) {
       c.dispose();
     }
     super.dispose();
@@ -110,6 +111,7 @@ class _CreateTournamentScreenState
       'min_subscription_tier': _tier,
       'room_social_mode': _socialMode,
       'team_size': _teamSize,
+      'check_in_minutes': int.tryParse(_checkInMinutes.text) ?? 0,
       if (_teamSize == 2 && _gameType != 'bridge')
         'allow_solo_pairing': _allowSoloPairing,
       if (gemCup.isNotEmpty) 'settings': {'gem_cup': gemCup},
@@ -233,6 +235,10 @@ class _CreateTournamentScreenState
                       Expanded(child: _numField(_feeCoins, 'Entry fee (coins)')),
                       const SizedBox(width: 14),
                       Expanded(child: _numField(_feeGems, 'Entry fee (gems)')),
+                      const SizedBox(width: 14),
+                      Expanded(
+                          child: _numField(
+                              _checkInMinutes, 'Check-in (min, 0=off)')),
                     ],
                   ),
                   const SizedBox(height: 14),

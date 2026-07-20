@@ -104,6 +104,14 @@ class _TournamentDetailScreenState
             child: _buildRegistrationButton(tournament),
           ),
 
+        // Check-in ready gate (§T6): confirm your spot in the window before
+        // start. No-shows are dropped + refunded at start time.
+        if (tournament.isCheckInOpen)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildCheckInBanner(tournament),
+          ),
+
         // Live-match entry: THE way into your tournament game. Without this
         // the room opens server-side but players never find it and the stall
         // sweeper forfeits them (the "tournament never starts" report).
@@ -190,6 +198,59 @@ class _TournamentDetailScreenState
           ),
         ),
       ],
+    );
+  }
+
+  /// Check-in banner: "Check in" button while the window is open, or a
+  /// confirmation once done. Shows the live checked-in count as a mini lobby.
+  Widget _buildCheckInBanner(Tournament tournament) {
+    final my = ref.watch(myParticipationProvider(widget.tournamentId)).valueOrNull;
+    if (my == null) return const SizedBox.shrink(); // not registered
+
+    final participants =
+        ref.watch(tournamentParticipantsProvider(widget.tournamentId)).valueOrNull ?? const [];
+    final checkedIn =
+        participants.where((p) => p.status == ParticipantStatus.checkedIn).length;
+    final total = participants.length;
+
+    if (my.status == ParticipantStatus.checkedIn) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle, color: AppColors.success, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'Checked in · $checkedIn/$total ready',
+              style: const TextStyle(color: AppColors.success, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: GlassButton(
+        key: const Key('tournament-check-in'),
+        label: 'Check in now · $checkedIn/$total ready',
+        icon: const Icon(Icons.how_to_reg, size: 18),
+        onPressed: () async {
+          final ok = await ref
+              .read(tournamentRepositoryProvider)
+              .checkIn(widget.tournamentId);
+          if (!mounted) return;
+          if (ok) {
+            ref.invalidate(myParticipationProvider(widget.tournamentId));
+            ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                backgroundColor: AppColors.danger,
+                content: Text('Check-in failed — try again')));
+          }
+        },
+      ),
     );
   }
 

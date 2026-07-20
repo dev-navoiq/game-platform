@@ -37,7 +37,7 @@ serve(async (req) => {
     // ── Load tournament ────────────────────────────────────────────────────
     const { data: t } = await admin
       .from('tournaments')
-      .select('id, status, max_participants, current_participants, entry_fee_coins, entry_fee_gems, min_subscription_tier, settings, team_size, allow_solo_pairing')
+      .select('id, status, max_participants, current_participants, entry_fee_coins, entry_fee_gems, min_subscription_tier, settings, team_size, allow_solo_pairing, check_in_minutes')
       .eq('id', body.tournament_id)
       .single();
     if (!t) return errorResponse('Tournament not found', 404, 'NOT_FOUND');
@@ -200,8 +200,11 @@ serve(async (req) => {
     // here: a concurrent start loses the status gate and returns BAD_STATUS.
     // Team tournaments: startTournament pairs solos / drops incomplete teams.
     let started = false;
+    // Check-in tournaments are scheduled events: filling the roster must NOT
+    // start them early, or the check-in window would never happen (§T6).
     const autoStart =
-      (t.settings as { auto_start_when_full?: boolean } | null)?.auto_start_when_full !== false;
+      (t.settings as { auto_start_when_full?: boolean } | null)?.auto_start_when_full !== false &&
+      (t.check_in_minutes ?? 0) === 0;
     if (autoStart && t2 && t2.current_participants >= t2.max_participants) {
       try {
         const r = await startTournament(admin, t.id);

@@ -7,6 +7,7 @@ import {
   startTournamentMatch,
   forfeitTournamentMatch,
 } from '../_shared/tournament_report.ts';
+import { sendPush } from '../_shared/push.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // tournament-tick — the tournament lifecycle heartbeat (prompts/25 §T1 + §T2).
@@ -48,6 +49,39 @@ serve(async (req) => {
       repaired: 0,
       forfeited: [] as { match_id: string; forfeited_user: string }[],
     };
+
+    // ── 0. Check-in window announcements (§T6) ─────────────────────────────
+    // Push "check in now" once per tournament when its window opens.
+    // settings.check_in_notified is the once-flag.
+    const { data: windows } = await admin
+      .from('tournaments')
+      .select('id, name, start_time, check_in_minutes, settings')
+      .eq('status', 'registration')
+      .gt('check_in_minutes', 0)
+      .gt('start_time', nowIso)
+      .limit(50);
+    for (const w of windows ?? []) {
+      const settings = (w.settings ?? {}) as Record<string, unknown>;
+      if (settings.check_in_notified) continue;
+      const opensAt = new Date(w.start_time).getTime() - w.check_in_minutes * 60_000;
+      if (Date.now() < opensAt) continue;
+      try {
+        const { data: parts } = await admin
+          .from('tournament_participants')
+          .select('user_id')
+          .eq('tournament_id', w.id);
+        await admin.from('tournaments')
+          .update({ settings: { ...settings, check_in_notified: true } })
+          .eq('id', w.id);
+        await sendPush(admin, (parts ?? []).map((p) => p.user_id as string), 'tournament_updates', {
+          title: w.name ?? 'Tournament',
+          body: 'Check-in is open — confirm your spot before the start!',
+          data: { route: `/tournament/${w.id}` },
+        });
+      } catch (e) {
+        console.error(`tick: check-in announce failed for ${w.id}:`, e);
+      }
+    }
 
     // ── 1. Due starts ──────────────────────────────────────────────────────
     const { data: due } = await admin

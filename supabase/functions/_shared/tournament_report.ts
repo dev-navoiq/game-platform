@@ -42,7 +42,7 @@ export async function startTournament(
 ): Promise<StartResult> {
   const { data: t } = await admin
     .from('tournaments')
-    .select('id, name, status, format, min_participants, current_participants, team_size, allow_solo_pairing')
+    .select('id, name, status, format, min_participants, current_participants, team_size, allow_solo_pairing, check_in_minutes')
     .eq('id', tournamentId)
     .single();
   if (!t) return { status: 'error', code: 'NOT_FOUND', httpStatus: 404 };
@@ -80,8 +80,27 @@ export async function startTournament(
     }
   }
 
+  // ── Check-in gate (§T6): drop + refund no-shows before anything else ─────
+  // Only participants who confirmed within the window play; their entry comes
+  // back automatically. No-op when check_in_minutes = 0.
+  if ((t.check_in_minutes ?? 0) > 0) {
+    const { data: noShows } = await admin
+      .from('tournament_participants')
+      .select('user_id')
+      .eq('tournament_id', t.id)
+      .neq('status', 'checked_in');
+    for (const p of noShows ?? []) {
+      await refundAndDropParticipant(admin, t.id, p.user_id as string);
+    }
+  }
+
   // ── Insufficient participants → cancel + refund all ──────────────────────
-  if (t.current_participants < t.min_participants) {
+  // Re-read: check-in drops may have shrunk the roster below min.
+  const { count: liveCount } = await admin
+    .from('tournament_participants')
+    .select('*', { count: 'exact', head: true })
+    .eq('tournament_id', t.id);
+  if ((liveCount ?? 0) < t.min_participants) {
     await refundAllEntries(admin, t.id);
     await admin.from('tournaments').update({ status: 'cancelled' }).eq('id', t.id);
     return { status: 'cancelled', reason: 'insufficient_participants' };

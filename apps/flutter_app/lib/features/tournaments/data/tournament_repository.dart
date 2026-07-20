@@ -206,6 +206,20 @@ class TournamentRepository {
     }).toList();
   }
 
+  // Check in during the pre-start window (tournaments with check_in_minutes
+  // > 0). Idempotent server-side.
+  Future<bool> checkIn(String tournamentId) async {
+    try {
+      await _supabase.functions.invoke(
+        'tournament-check-in',
+        body: {'tournament_id': tournamentId},
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Unregister + refund is handled server-side by `tournament-unregister`.
   Future<bool> unregister(String tournamentId, String userId) async {
     try {
