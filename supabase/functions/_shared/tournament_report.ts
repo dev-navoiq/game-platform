@@ -54,6 +54,32 @@ export async function startTournament(
     return { status: 'error', code: 'FORMAT_UNSUPPORTED', httpStatus: 400 };
   }
 
+  // ── Atomic start claim ───────────────────────────────────────────────────
+  // Fill-triggered auto-start and the cron tick can race within the same
+  // minute; both used to pass the status read above and start the tournament
+  // twice (duplicate rooms, double-seated players). Exactly one caller wins
+  // this compare-and-swap; a crashed starter (stuck 'starting') can be taken
+  // over after 3 minutes.
+  const { data: claimed } = await admin
+    .from('tournaments')
+    .update({ status: 'starting' })
+    .eq('id', t.id)
+    .eq('status', 'registration')
+    .select('id');
+  if (!claimed || claimed.length === 0) {
+    const takeoverCutoff = new Date(Date.now() - 3 * 60_000).toISOString();
+    const { data: takeover } = await admin
+      .from('tournaments')
+      .update({ status: 'starting' }) // no-op value; bumps updated_at
+      .eq('id', t.id)
+      .eq('status', 'starting')
+      .lt('updated_at', takeoverCutoff)
+      .select('id');
+    if (!takeover || takeover.length === 0) {
+      return { status: 'error', code: 'ALREADY_STARTING', httpStatus: 409 };
+    }
+  }
+
   // ── Insufficient participants → cancel + refund all ──────────────────────
   if (t.current_participants < t.min_participants) {
     await refundAllEntries(admin, t.id);
@@ -291,7 +317,9 @@ export async function startTournamentMatch(
   }
   const socialMode = tournament.room_social_mode ?? 'focus';
 
-  // Create the room (server-owned; skips create-room's private-room limits).
+  // Create the room BARE (server-owned; skips create-room's private-room
+  // limits). current_players starts at 0 — the room_players trigger counts
+  // seats up as we insert them (pre-setting it double-counted to 2×).
   const { data: newRoom, error: roomErr } = await admin
     .from('game_rooms')
     .insert({
@@ -301,13 +329,33 @@ export async function startTournamentMatch(
       social_mode: socialMode,
       created_by: match.player1_id,
       max_players: seatOrder.length,
-      current_players: seatOrder.length,
+      current_players: 0,
       is_private: true,
       config: { tournament_id: match.tournament_id, tournament_match_id: matchId },
     })
     .select('id, code')
     .single();
   if (roomErr || !newRoom) throw new Error(`tournament room create failed: ${roomErr?.message}`);
+
+  // ── Atomic match claim ───────────────────────────────────────────────────
+  // Concurrent starters (fill-start vs cron, double ticks) both used to reach
+  // here and each open a room. Exactly one wins this conditional write; the
+  // loser deletes its unseated room and returns the winner's.
+  const { data: claimed } = await admin
+    .from('tournament_matches')
+    .update({ room_id: newRoom.id, status: 'in_progress', started_at: new Date().toISOString() })
+    .eq('id', matchId)
+    .is('room_id', null)
+    .select('id');
+  if (!claimed || claimed.length === 0) {
+    await admin.from('game_rooms').delete().eq('id', newRoom.id);
+    const { data: winner } = await admin
+      .from('tournament_matches')
+      .select('room_id')
+      .eq('id', matchId)
+      .single();
+    return winner?.room_id ? { room_id: winner.room_id as string } : null;
+  }
 
   // Seat everyone in order (partners land opposite for team matches).
   await admin.from('room_players').insert(
@@ -325,11 +373,6 @@ export async function startTournamentMatch(
     state_data: state,
     round: 1,
   });
-
-  await admin
-    .from('tournament_matches')
-    .update({ room_id: newRoom.id, status: 'in_progress', started_at: new Date().toISOString() })
-    .eq('id', matchId);
 
   // Presence
   for (const pid of seatOrder) {

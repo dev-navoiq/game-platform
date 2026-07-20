@@ -14,6 +14,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   BAD_STATUS: 'Tournament cannot be started',
   FORMAT_UNSUPPORTED: 'Format not yet supported server-side',
   NOT_ENOUGH_PARTICIPANTS: 'Not enough participants',
+  ALREADY_STARTING: 'Tournament is already starting',
 };
 
 serve(async (req) => {

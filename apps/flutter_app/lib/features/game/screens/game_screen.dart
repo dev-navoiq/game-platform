@@ -48,13 +48,35 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void initState() {
     super.initState();
     // Subscribe to realtime game state updates
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Publish the active room id so descendant widgets (GameActions etc.)
       // can read it without prop-drilling.
       ref.read(currentRoomIdProvider.notifier).state = widget.roomId;
 
       final notifier = ref.read(gameStateProvider.notifier);
-      final gameType = ref.read(gameTypeProvider);
+      var gameType = ref.read(gameTypeProvider);
+      // Cold navigation (tournament "Play now", push tap, deep link): the
+      // lobby/room flow seeds gameTypeProvider before pushing, but nothing
+      // does when we arrive straight at /game/:roomId — which left the
+      // dispatch shell typeless and timing out ("Failed to load game").
+      // Self-serve the type from the room row instead.
+      if (gameType == null) {
+        try {
+          final row = await ref
+              .read(supabaseProvider)
+              .from('game_rooms')
+              .select('game_type')
+              .eq('id', widget.roomId)
+              .single();
+          gameType = row['game_type'] as String?;
+          if (gameType != null && mounted) {
+            ref.read(gameTypeProvider.notifier).state = gameType;
+          }
+        } catch (_) {
+          // Leave null — the timeout screen handles it.
+        }
+      }
+      if (!mounted) return;
       if (gameType != null) {
         notifier.setGameType(gameType);
       }
