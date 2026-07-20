@@ -343,6 +343,8 @@ class TournamentMatch extends Equatable {
   final int? player2Score;
   final Map<String, dynamic>? resultDetails;
   final String? roomId;
+  final String? team1Id;
+  final String? team2Id;
   final MatchStatus status;
   final DateTime? scheduledTime;
   final DateTime? startedAt;
@@ -370,6 +372,8 @@ class TournamentMatch extends Equatable {
     this.player2Score,
     this.resultDetails,
     this.roomId,
+    this.team1Id,
+    this.team2Id,
     this.status = MatchStatus.pending,
     this.scheduledTime,
     this.startedAt,
@@ -384,6 +388,15 @@ class TournamentMatch extends Equatable {
   bool get isReady =>
       status == MatchStatus.ready && player1Id != null && player2Id != null;
   bool get isLive => status == MatchStatus.inProgress;
+
+  /// Whether [userId] (optionally with their [teamId]) plays in this match.
+  /// player1/2_id hold captains in team matches, so the team check matters
+  /// for non-captain members.
+  bool involves(String userId, {String? teamId}) {
+    if (player1Id == userId || player2Id == userId) return true;
+    if (teamId != null && (team1Id == teamId || team2Id == teamId)) return true;
+    return false;
+  }
 
   factory TournamentMatch.fromJson(Map<String, dynamic> json) {
     return TournamentMatch(
@@ -405,6 +418,8 @@ class TournamentMatch extends Equatable {
       player2Score: json['player2_score'] as int?,
       resultDetails: json['result_details'] as Map<String, dynamic>?,
       roomId: json['room_id'] as String?,
+      team1Id: json['team1_id'] as String?,
+      team2Id: json['team2_id'] as String?,
       status: MatchStatus.fromDb(json['status'] as String),
       scheduledTime: json['scheduled_time'] != null
           ? DateTime.parse(json['scheduled_time'] as String)

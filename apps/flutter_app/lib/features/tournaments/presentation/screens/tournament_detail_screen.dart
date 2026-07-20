@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/providers.dart';
+import '../../../../core/routing/routes.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/theme/glass_tokens.dart';
 import '../../../../shared/widgets/felt_background.dart';
@@ -102,6 +104,15 @@ class _TournamentDetailScreenState
             child: _buildRegistrationButton(tournament),
           ),
 
+        // Live-match entry: THE way into your tournament game. Without this
+        // the room opens server-side but players never find it and the stall
+        // sweeper forfeits them (the "tournament never starts" report).
+        if (tournament.isLive)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildPlayMatchBanner(),
+          ),
+
         // Invite friends — a registered player recruiting their table is
         // the tournament's own acquisition loop.
         if (tournament.isRegistrationOpen)
@@ -179,6 +190,48 @@ class _TournamentDetailScreenState
           ),
         ),
       ],
+    );
+  }
+
+  /// "Your match is live — Play now" banner. Watches the live bracket and
+  /// surfaces the current user's active (or ready) match room.
+  Widget _buildPlayMatchBanner() {
+    final userId = ref.watch(currentUserProvider)?.id;
+    if (userId == null) return const SizedBox.shrink();
+
+    final bracket =
+        ref.watch(tournamentBracketStreamProvider(widget.tournamentId));
+    final myTeamId = ref
+        .watch(myParticipationProvider(widget.tournamentId))
+        .valueOrNull
+        ?.teamId;
+
+    return bracket.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (matches) {
+        TournamentMatch? mine;
+        for (final m in matches) {
+          if ((m.isLive || m.isReady) &&
+              m.roomId != null &&
+              m.involves(userId, teamId: myTeamId)) {
+            mine = m;
+            break;
+          }
+        }
+        if (mine == null) return const SizedBox.shrink();
+        final roomId = mine.roomId!;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: GlassButton(
+            key: const Key('tournament-play-match'),
+            label: 'Your match is live — Play now',
+            icon: const Icon(Icons.sports_esports, size: 18),
+            onPressed: () => context.push(AppRoutes.gamePath(roomId)),
+          ),
+        );
+      },
     );
   }
 
