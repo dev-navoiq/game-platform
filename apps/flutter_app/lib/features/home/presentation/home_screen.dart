@@ -38,36 +38,40 @@ class ResumeRoomInfo {
   });
 }
 
-/// Looks up the current user's `current_activity` and exposes a
-/// [ResumeRoomInfo] if there's a room worth resuming. autoDispose so the
-/// home screen refetches each time it's pushed back onto.
+/// Streams the current user's `current_activity` and exposes a
+/// [ResumeRoomInfo] if there's a room worth resuming. LIVE, not one-shot:
+/// when a tournament match opens a room while the player idles on the home
+/// screen, the server stamps current_activity and this card must appear
+/// immediately — the old single fetch missed exactly that moment (testers
+/// wandered into bot practice games while their real match sat waiting).
 final resumeRoomProvider =
-    FutureProvider.autoDispose<ResumeRoomInfo?>((ref) async {
+    StreamProvider.autoDispose<ResumeRoomInfo?>((ref) {
   final user = ref.watch(currentUserProvider);
-  if (user == null) return null;
+  if (user == null) return Stream.value(null);
 
-  final supabase = ref.read(supabaseServiceProvider);
-  try {
-    final profile = await supabase.getProfile();
-    final activity = profile['current_activity'] as Map<String, dynamic>?;
-    if (activity == null) return null;
+  final client = ref.read(supabaseProvider);
+  return client
+      .from('profiles')
+      .stream(primaryKey: ['id'])
+      .eq('id', user.id)
+      .map((rows) {
+        if (rows.isEmpty) return null;
+        final activity =
+            rows.first['current_activity'] as Map<String, dynamic>?;
+        if (activity == null) return null;
 
-    final type = activity['type'] as String?;
-    final roomId = activity['room_id'] as String?;
-    if (roomId == null || type == null) return null;
-    if (!['in_game', 'in_lobby', 'spectating'].contains(type)) return null;
+        final type = activity['type'] as String?;
+        final roomId = activity['room_id'] as String?;
+        if (roomId == null || type == null) return null;
+        if (!['in_game', 'in_lobby', 'spectating'].contains(type)) return null;
 
-    return ResumeRoomInfo(
-      roomId: roomId,
-      type: type,
-      roomCode: activity['room_code'] as String?,
-      gameType: activity['game_type'] as String?,
-    );
-  } catch (_) {
-    // Auth/network blip — hide the card rather than showing an error chip.
-    // The user can pull-to-refresh once we add that, or restart the app.
-    return null;
-  }
+        return ResumeRoomInfo(
+          roomId: roomId,
+          type: type,
+          roomCode: activity['room_code'] as String?,
+          gameType: activity['game_type'] as String?,
+        );
+      });
 });
 
 class HomeScreen extends ConsumerWidget {
