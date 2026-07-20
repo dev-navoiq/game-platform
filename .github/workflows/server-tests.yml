@@ -3,6 +3,7 @@ name: Server multiplayer tests
 # Tier-1 of the multiplayer testing strategy (docs/TESTING-STRATEGY.md):
 # run the supabase/tests/*.sh harnesses against a fresh local stack.
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'supabase/**'
@@ -38,6 +39,23 @@ jobs:
             -d '{"email":"admin@gathr.local","password":"admin1234","email_confirm":true}'
           docker exec supabase_db_game-platform psql -U postgres -d postgres -c \
             "insert into admin_users(user_id) select id from auth.users where email='admin@gathr.local' on conflict do nothing;"
+
+      - name: Probe admin gate (debug)
+        run: |
+          # The harnesses hardcode the classic local demo keys; verify they
+          # match this stack, and that the admin gate accepts the seeded admin.
+          ENV_ANON=$(supabase status -o env | grep '^ANON_KEY' | cut -d= -f2- | tr -d '"')
+          DEMO_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+          [ "$ENV_ANON" = "$DEMO_ANON" ] && echo "ANON matches demo key" || echo "ANON DIFFERS from demo key!"
+          JWT=$(curl -s -X POST "http://127.0.0.1:54321/auth/v1/token?grant_type=password" -H "apikey: $ENV_ANON" -H "Content-Type: application/json" \
+            -d '{"email":"admin@gathr.local","password":"admin1234"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))")
+          echo "admin JWT present: $([ -n "$JWT" ] && echo yes || echo NO)"
+          echo "--- admin-create probe response ---"
+          curl -s -X POST "http://127.0.0.1:54321/functions/v1/admin-create-tournament" \
+            -H "Authorization: Bearer $JWT" -H "apikey: $ENV_ANON" -H "Content-Type: application/json" \
+            -d '{"name":"probe","game_type":"twenty_nine","format":"single_elimination","start_time":"2027-01-01T00:00:00Z","min_participants":2,"max_participants":8}'
+          echo; echo "--- admin_users rows ---"
+          docker exec supabase_db_game-platform psql -U postgres -d postgres -c "select * from admin_users;"
 
       - name: Run harnesses
         run: bash supabase/tests/run.sh
