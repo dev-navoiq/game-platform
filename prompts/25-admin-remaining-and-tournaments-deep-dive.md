@@ -129,7 +129,9 @@ supports single-elim / round-robin / swiss only. The admin form correctly
 offers just the 3 supported. Either build double-elim next (schema is ready)
 or leave hidden — no correctness risk today.
 
-**T6 — Check-in flow, designed but dead.**
+**T6 — ~~Check-in flow, designed but dead.~~ SHIPPED 2026-07-20** (check_in_minutes per tournament; window push; no-show drop+refund at start; fill no longer auto-starts check-in tournaments; app banner with N/M-ready count)
+
+**T6 (original text) — Check-in flow, designed but dead.**
 `checked_in` status + `checked_in_at` exist and nothing uses them. A check-in
 window (open T-15min, auto-drop no-shows with refund before seeding) is the
 standard fix for no-show-heavy free tournaments and pairs naturally with the
