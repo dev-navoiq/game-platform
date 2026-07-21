@@ -56,6 +56,11 @@ jobs:
             -d '{"name":"probe","game_type":"twenty_nine","format":"single_elimination","start_time":"2027-01-01T00:00:00Z","min_participants":2,"max_participants":8}'
           echo; echo "--- admin_users rows ---"
           docker exec supabase_db_game-platform psql -U postgres -d postgres -c "select * from admin_users;"
+          echo "--- REST select admin_users with demo SR key ---"
+          DEMO_SR="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+          curl -s "http://127.0.0.1:54321/rest/v1/admin_users?select=user_id" -H "apikey: $DEMO_SR" -H "Authorization: Bearer $DEMO_SR"; echo
+          echo "--- edge runtime env (SR key prefix + URL) ---"
+          docker exec supabase_edge_runtime_game-platform sh -c 'env | grep -E "SUPABASE_URL|SERVICE_ROLE" | sed "s/\(KEY=.\{25\}\).*/\1.../"' || true
 
       - name: Run harnesses
         run: bash supabase/tests/run.sh
