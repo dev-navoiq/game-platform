@@ -23,9 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned to the version used for local dev. `latest` (v2.109) broke the
+      # harnesses two ways: its postgres image denies service_role table access
+      # (42501 on admin_users → admin gate fail-closes to NOT_ADMIN) and its
+      # edge runtime hit BOOT_ERROR. Bump deliberately, with a green run.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.98.2
 
       - name: Start local stack (applies migrations)
         run: supabase start
