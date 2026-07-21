@@ -234,8 +234,12 @@ class _GameArtPanel extends StatelessWidget {
               ),
             ),
           ),
+          // Finite float: an unbounded repeat kept every tile (and its
+          // backdrop blur) repainting at full refresh rate forever, which
+          // overheated phones on an idle home screen. Even count → ends at
+          // baseline.
           art
-              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .animate(onPlay: (c) => c.repeat(reverse: true, count: 4))
               .scale(
                 begin: const Offset(1.0, 1.0),
                 end: const Offset(1.05, 1.05),

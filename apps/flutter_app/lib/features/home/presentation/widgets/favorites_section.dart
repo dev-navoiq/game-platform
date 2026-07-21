@@ -139,7 +139,12 @@ class _FavoriteGameCard extends StatelessWidget {
                           errorBuilder: (_, __, ___) =>
                               _IconBadge(visual: visual),
                         )
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
+                          // Finite float (see GameTileCard): unbounded repeat
+                          // overheated phones. Even count → ends at baseline.
+                          .animate(
+                            onPlay: (c) =>
+                                c.repeat(reverse: true, count: 4),
+                          )
                           .scale(
                             begin: const Offset(1, 1),
                             end: const Offset(1.05, 1.05),
