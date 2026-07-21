@@ -16,6 +16,10 @@ ADMIN_JWT=$(curl -s -X POST "$API/auth/v1/token?grant_type=password" -H "apikey:
   -d '{"email":"admin@gathr.local","password":"admin1234"}' | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
 [[ -z "$ADMIN_JWT" ]] && { echo "FATAL: admin login failed"; exit 1; }
 
+# Pin the rake so payout math is deterministic regardless of environment
+# (a fresh DB defaults to 10%; a used local one may differ).
+fn admin-update-economy-config "$ADMIN_JWT" '{"rake_percent_default":12.5}' >/dev/null
+
 STAMP=$(date +%s%N)
 for i in 1 2 3 4 5; do
   E="tm${i}_${STAMP}@t.local"
