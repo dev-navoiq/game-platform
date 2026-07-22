@@ -110,7 +110,10 @@ class _UpcomingTab extends ConsumerWidget {
         child: Text('Error: $e',
             style: const TextStyle(color: AppColors.textFeltMuted)),
       ),
-      data: (list) => _buildList(context, list, 'No upcoming tournaments'),
+      data: (list) => RefreshIndicator(
+        onRefresh: () async => ref.invalidate(upcomingTournamentsProvider),
+        child: _buildList(context, list, 'No upcoming tournaments'),
+      ),
     );
   }
 }
@@ -130,7 +133,10 @@ class _LiveTab extends ConsumerWidget {
         child: Text('Error: $e',
             style: const TextStyle(color: AppColors.textFeltMuted)),
       ),
-      data: (list) => _buildList(context, list, 'No live tournaments'),
+      data: (list) => RefreshIndicator(
+        onRefresh: () async => ref.invalidate(liveTournamentsProvider),
+        child: _buildList(context, list, 'No live tournaments'),
+      ),
     );
   }
 }
@@ -151,7 +157,10 @@ class _MyTournamentsTab extends ConsumerWidget {
             style: const TextStyle(color: AppColors.textFeltMuted)),
       ),
       data: (list) =>
-          _buildList(context, list, 'You haven\'t joined any tournaments'),
+          RefreshIndicator(
+        onRefresh: () async => ref.invalidate(myTournamentsProvider),
+        child: _buildList(context, list, 'You haven\'t joined any tournaments'),
+      ),
     );
   }
 }
@@ -162,10 +171,14 @@ Widget _buildList(
   String emptyMessage,
 ) {
   if (tournaments.isEmpty) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    // Scrollable even when empty so pull-to-refresh still works.
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
           Icon(Icons.emoji_events_outlined,
               size: 48, color: AppColors.textFeltMuted),
           const SizedBox(height: 12),
@@ -176,12 +189,14 @@ Widget _buildList(
               fontSize: 15,
             ),
           ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 
   return ListView.separated(
+    physics: const AlwaysScrollableScrollPhysics(),
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     itemCount: tournaments.length,
     separatorBuilder: (_, __) => const SizedBox(height: 12),

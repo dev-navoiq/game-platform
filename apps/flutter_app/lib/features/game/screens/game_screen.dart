@@ -12,6 +12,7 @@ import 'package:game_spades/game_spades.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
 import '../../../core/di/providers.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../presentation/screens/bridge_game_screen.dart';
@@ -56,21 +57,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       final notifier = ref.read(gameStateProvider.notifier);
       var gameType = ref.read(gameTypeProvider);
       // Cold navigation (tournament "Play now", push tap, deep link): the
-      // lobby/room flow seeds gameTypeProvider before pushing, but nothing
-      // does when we arrive straight at /game/:roomId — which left the
-      // dispatch shell typeless and timing out ("Failed to load game").
-      // Self-serve the type from the room row instead.
+      // lobby/room flow seeds gameTypeProvider AND roomMembersProvider before
+      // pushing, but nothing does when we arrive straight at /game/:roomId —
+      // which left the dispatch shell typeless ("Failed to load game") and,
+      // worse, left the seat-identity map empty so a real human opponent in a
+      // tournament match rendered — and was reasoned about — as "Bot 1".
+      // Self-serve both from the room snapshot instead.
       if (gameType == null) {
         try {
-          final row = await ref
-              .read(supabaseProvider)
-              .from('game_rooms')
-              .select('game_type')
-              .eq('id', widget.roomId)
-              .single();
-          gameType = row['game_type'] as String?;
-          if (gameType != null && mounted) {
+          final snap = await ref
+              .read(supabaseServiceProvider)
+              .fetchRoomSnapshot(roomId: widget.roomId);
+          gameType = snap.gameType;
+          if (mounted) {
             ref.read(gameTypeProvider.notifier).state = gameType;
+            ref.read(roomMembersProvider.notifier).state = {
+              for (final m in snap.members) m.id: m,
+            };
           }
         } catch (_) {
           // Leave null — the timeout screen handles it.

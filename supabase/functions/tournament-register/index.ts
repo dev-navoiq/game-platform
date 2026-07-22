@@ -100,7 +100,21 @@ serve(async (req) => {
       return errorResponse('Too many active tournaments', 429, 'TOO_MANY_ACTIVE_TOURNAMENTS');
     }
 
-    // ── Debit entry fee (coins then gems), with compensating rollback ──────
+    // ── Claim the seat FIRST — idempotency guard before any money moves ────
+    // The unique (tournament_id, user_id) constraint turns a double-submitted
+    // register (double-tap / client retry) into a clean ALREADY_REGISTERED
+    // exit with zero debits, instead of debiting twice and compensating later.
+    const { error: partErr } = await admin
+      .from('tournament_participants')
+      .insert({ tournament_id: t.id, user_id: user.id });
+    if (partErr) {
+      if (partErr.code === '23505') return errorResponse('Already registered', 409, 'ALREADY_REGISTERED');
+      throw partErr;
+    }
+    const releaseSeat = () =>
+      admin.from('tournament_participants').delete().eq('tournament_id', t.id).eq('user_id', user.id);
+
+    // ── Debit entry fee (coins then gems); release the seat on failure ─────
     let coinsAfter: number | null = null;
     let gemsAfter: number | null = null;
     if (t.entry_fee_coins > 0) {
@@ -108,6 +122,7 @@ serve(async (req) => {
         const r = await debitCurrency(admin, user.id, 'coins', t.entry_fee_coins, 'tournament_entry', t.id);
         coinsAfter = r.balance_after;
       } catch {
+        await releaseSeat();
         return errorResponse('Insufficient coins', 402, 'INSUFFICIENT_FUNDS');
       }
     }
@@ -120,6 +135,7 @@ serve(async (req) => {
         if (t.entry_fee_coins > 0) {
           await creditCurrency(admin, user.id, 'coins', t.entry_fee_coins, 'tournament_refund', t.id);
         }
+        await releaseSeat();
         return errorResponse('Insufficient gems', 402, 'INSUFFICIENT_FUNDS');
       }
     }
@@ -132,22 +148,26 @@ serve(async (req) => {
       if (t.entry_fee_gems > 0) await creditCurrency(admin, user.id, 'gems', t.entry_fee_gems, 'tournament_refund', t.id);
     };
 
-    // ── Insert participant + ledger (unique guards prevent double entry) ───
-    const { error: partErr } = await admin
-      .from('tournament_participants')
-      .insert({ tournament_id: t.id, user_id: user.id });
-    if (partErr) {
-      // Refund on duplicate / failure.
+    // ── Ledger: UPSERT, and check the result ───────────────────────────────
+    // A row left behind by a previous withdraw/cancel (refunded=true) must be
+    // reactivated with the new payment. The old blind insert silently hit the
+    // unique constraint, left the stale refunded=true row in place, and the
+    // next withdrawal then paid nothing — the fee was lost permanently.
+    const { error: ledgerErr } = await admin.from('tournament_entry_ledger').upsert(
+      {
+        tournament_id: t.id, user_id: user.id,
+        coins_paid: t.entry_fee_coins, gems_paid: t.entry_fee_gems,
+        refunded: false, paid_out: false,
+      },
+      { onConflict: 'tournament_id,user_id' },
+    );
+    if (ledgerErr) {
+      // Without a live ledger row no refund can ever be paid — undo everything.
       if (t.entry_fee_coins > 0) await creditCurrency(admin, user.id, 'coins', t.entry_fee_coins, 'tournament_refund', t.id);
       if (t.entry_fee_gems > 0) await creditCurrency(admin, user.id, 'gems', t.entry_fee_gems, 'tournament_refund', t.id);
-      if (partErr.code === '23505') return errorResponse('Already registered', 409, 'ALREADY_REGISTERED');
-      throw partErr;
+      await releaseSeat();
+      throw ledgerErr;
     }
-
-    await admin.from('tournament_entry_ledger').insert({
-      tournament_id: t.id, user_id: user.id,
-      coins_paid: t.entry_fee_coins, gems_paid: t.entry_fee_gems,
-    });
 
     // ── Team linkage ───────────────────────────────────────────────────────
     let teamId: string | null = null;

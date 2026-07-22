@@ -236,6 +236,7 @@ class NotificationService {
   // users to arbitrary in-app screens. See SECURITY-AUDIT L11 / GUIDELINES C5.
   static const _allowedRoutePrefixes = <String>[
     '/room/',
+    '/game/', // live match rooms — tournament-start pushes point here
     '/messages', // DM inbox + /messages/:userId threads
     '/tournaments',
     '/tournament/', // detail: /tournament/:id

@@ -7,11 +7,39 @@ import '../core/routing/app_router.dart';
 import '../core/theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
 
-class GamePlatformApp extends ConsumerWidget {
+class GamePlatformApp extends ConsumerStatefulWidget {
   const GamePlatformApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GamePlatformApp> createState() => _GamePlatformAppState();
+}
+
+class _GamePlatformAppState extends ConsumerState<GamePlatformApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Server-side data (balances, tournament lists) can change while the app
+    // is backgrounded — refetch on resume so the UI never shows stale money
+    // or misses newly created tournaments.
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(userProfileProvider);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
