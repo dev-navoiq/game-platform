@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,15 +36,27 @@ class _TournamentDetailScreenState
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isRegistering = false;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // Other players register/withdraw and the tournament can go live while
+    // this screen is open — poll so the participant list and status stay
+    // current for everyone, not just the acting user.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || _isRegistering) return;
+      ref.invalidate(tournamentDetailProvider(widget.tournamentId));
+      ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
+      ref.invalidate(tournamentTeamsProvider(widget.tournamentId));
+      ref.invalidate(myParticipationProvider(widget.tournamentId));
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -350,9 +364,23 @@ class _TournamentDetailScreenState
       joinTeamId: joinTeamId,
     );
 
+    if (!mounted) return;
     setState(() => _isRegistering = false);
 
-    if (!mounted) return;
+    // Refresh BEFORE the snackbar so balances/lists update even if the user
+    // navigates away mid-snackbar. Money may also have moved on
+    // alreadyRegistered (server-side duplicate compensation).
+    if (result == TournamentRegistrationResult.success) {
+      ref.invalidate(tournamentDetailProvider(widget.tournamentId));
+      ref.invalidate(myParticipationProvider(widget.tournamentId));
+      ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
+      ref.invalidate(tournamentTeamsProvider(widget.tournamentId));
+      ref.invalidate(myTournamentsProvider);
+      ref.invalidate(userProfileProvider); // entry fee changed the balance
+    } else if (result == TournamentRegistrationResult.alreadyRegistered) {
+      ref.invalidate(myParticipationProvider(widget.tournamentId));
+      ref.invalidate(userProfileProvider);
+    }
 
     final message = switch (result) {
       TournamentRegistrationResult.success => createTeam
@@ -381,16 +409,6 @@ class _TournamentDetailScreenState
             : AppColors.danger,
       ),
     );
-
-    if (result == TournamentRegistrationResult.success) {
-      // Refresh data
-      ref.invalidate(tournamentDetailProvider(widget.tournamentId));
-      ref.invalidate(myParticipationProvider(widget.tournamentId));
-      ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
-      ref.invalidate(tournamentTeamsProvider(widget.tournamentId));
-      ref.invalidate(myTournamentsProvider);
-      ref.invalidate(userProfileProvider); // entry fee changed the balance
-    }
   }
 
   /// Bottom sheet: how to enter a 2v2 tournament. Returns null if dismissed.
@@ -503,16 +521,8 @@ class _TournamentDetailScreenState
     final repo = ref.read(tournamentRepositoryProvider);
     final success = await repo.unregister(widget.tournamentId, userId);
 
-    setState(() => _isRegistering = false);
-
     if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(success ? 'Withdrawn successfully' : 'Could not withdraw'),
-        backgroundColor: success ? AppColors.success : AppColors.danger,
-      ),
-    );
+    setState(() => _isRegistering = false);
 
     if (success) {
       ref.invalidate(tournamentDetailProvider(widget.tournamentId));
@@ -521,6 +531,13 @@ class _TournamentDetailScreenState
       ref.invalidate(myTournamentsProvider);
       ref.invalidate(userProfileProvider); // refund changed the balance
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success ? 'Withdrawn successfully' : 'Could not withdraw'),
+        backgroundColor: success ? AppColors.success : AppColors.danger,
+      ),
+    );
   }
 
   String _formatEntryFee(Tournament tournament) {

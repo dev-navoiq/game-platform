@@ -695,7 +695,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                             child: GlassButton(
                               label: 'Start Game',
                               isLoading: _isStarting,
-                              onPressed: _members.length >= _minPlayersForGame
+                              // The selected room size is a promise about the
+                              // table: a 5-player room must not start 4-handed
+                              // (different deal math). Bots can always fill
+                              // the remaining seats. See issue #140.
+                              onPressed: _members.length >= _maxPlayers &&
+                                      _members.length >= _minPlayersForGame
                                   ? _startGame
                                   : null,
                               size: GlassButtonSize.large,
