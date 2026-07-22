@@ -159,12 +159,16 @@ class _GlassButtonState extends State<GlassButton>
             widget.icon!,
             const SizedBox(width: 8),
           ],
-          Text(
-            widget.label,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: _fontSize,
-              color: textColor,
+          Flexible(
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: _fontSize,
+                color: textColor,
+              ),
             ),
           ),
         ],

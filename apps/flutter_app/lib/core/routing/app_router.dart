@@ -61,7 +61,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (isLoggedIn && isAuthRoute) {
-        return AppRoutes.home;
+        // Guests ARE logged in but must still reach /register — it doubles as
+        // the guest→registered "Save Your Progress" upgrade flow.
+        final isGuestUpgrade = state.matchedLocation == AppRoutes.register &&
+            (ref.read(currentUserProvider)?.isAnonymous ?? false);
+        if (!isGuestUpgrade) return AppRoutes.home;
       }
 
       return null;

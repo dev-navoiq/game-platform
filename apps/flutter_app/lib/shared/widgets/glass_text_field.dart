@@ -12,6 +12,7 @@ class GlassTextField extends StatefulWidget {
   final String? errorText;
   final IconData? prefixIcon;
   final Widget? suffix;
+  final Widget? suffixIcon;
   final bool obscureText;
   final TextInputType keyboardType;
   final ValueChanged<String>? onChanged;
@@ -20,6 +21,8 @@ class GlassTextField extends StatefulWidget {
   final bool enabled;
   final List<TextInputFormatter>? inputFormatters;
   final TextCapitalization textCapitalization;
+  final List<String>? autofillHints;
+  final TextInputAction? textInputAction;
 
   const GlassTextField({
     super.key,
@@ -29,6 +32,7 @@ class GlassTextField extends StatefulWidget {
     this.errorText,
     this.prefixIcon,
     this.suffix,
+    this.suffixIcon,
     this.obscureText = false,
     this.keyboardType = TextInputType.text,
     this.onChanged,
@@ -37,6 +41,8 @@ class GlassTextField extends StatefulWidget {
     this.enabled = true,
     this.inputFormatters,
     this.textCapitalization = TextCapitalization.none,
+    this.autofillHints,
+    this.textInputAction,
   });
 
   @override
@@ -45,6 +51,7 @@ class GlassTextField extends StatefulWidget {
 
 class _GlassTextFieldState extends State<GlassTextField> {
   bool _isFocused = false;
+  bool _obscured = true;
   late FocusNode _focusNode;
 
   @override
@@ -60,6 +67,22 @@ class _GlassTextFieldState extends State<GlassTextField> {
   void dispose() {
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Obscured fields get a show/hide-password eye unless the caller supplied
+  /// an explicit suffixIcon.
+  Widget? _buildSuffixIcon() {
+    if (widget.suffixIcon != null) return widget.suffixIcon;
+    if (!widget.obscureText) return null;
+    return IconButton(
+      onPressed: () => setState(() => _obscured = !_obscured),
+      tooltip: _obscured ? 'Show password' : 'Hide password',
+      icon: Icon(
+        _obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+        color: _isFocused ? GlassTokens.accentPrimary : AppColors.textMuted,
+        size: 20,
+      ),
+    );
   }
 
   @override
@@ -117,7 +140,7 @@ class _GlassTextFieldState extends State<GlassTextField> {
               child: TextField(
                 controller: widget.controller,
                 focusNode: _focusNode,
-                obscureText: widget.obscureText,
+                obscureText: widget.obscureText && _obscured,
                 keyboardType: widget.keyboardType,
                 onChanged: widget.onChanged,
                 onSubmitted: widget.onSubmitted,
@@ -125,6 +148,8 @@ class _GlassTextFieldState extends State<GlassTextField> {
                 enabled: widget.enabled,
                 inputFormatters: widget.inputFormatters,
                 textCapitalization: widget.textCapitalization,
+                autofillHints: widget.autofillHints,
+                textInputAction: widget.textInputAction,
                 cursorColor: GlassTokens.accentPrimary,
                 style: const TextStyle(
                   fontSize: 16,
@@ -152,6 +177,7 @@ class _GlassTextFieldState extends State<GlassTextField> {
                         )
                       : null,
                   suffix: widget.suffix,
+                  suffixIcon: _buildSuffixIcon(),
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,

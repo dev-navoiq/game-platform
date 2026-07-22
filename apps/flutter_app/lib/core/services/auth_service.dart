@@ -13,6 +13,23 @@ class AuthService {
 
   AuthService(this._supabaseService);
 
+  /// OAuth + password-recovery links come back into the app on the `gathr://`
+  /// scheme, which is registered in Info.plist and AndroidManifest. (The old
+  /// `io.supabase.gameplatform://` scheme never was, so the browser could not
+  /// return to the app.) DeepLinkService ignores this host, and supabase_flutter
+  /// consumes the auth params itself.
+  static const oauthRedirectUri = 'gathr://login-callback/';
+
+  /// SharedPreferences key for the last email used to sign in — prefilled on
+  /// the login screen so returning players don't retype it.
+  static const lastLoginEmailKey = 'last_login_email';
+
+  /// Set when a guest kicks off an OAuth linkIdentity upgrade; the account
+  /// conversion finishes out-of-band (browser → deep link), so the screens call
+  /// [finalizeOAuthUpgradeIfPending] from their auth listener to grant the
+  /// welcome gems once the identity is attached.
+  bool _oauthUpgradePending = false;
+
   SupabaseClient get _client => _supabaseService.client;
 
   User? get currentUser => _client.auth.currentUser;
@@ -79,18 +96,31 @@ class AuthService {
 
   bool get isGuest => _client.auth.currentUser?.isAnonymous ?? false;
 
-  Future<void> signInWithGoogle() async {
-    await _client.auth.signInWithOAuth(
-      OAuthProvider.google,
-      redirectTo: 'io.supabase.gameplatform://login-callback/',
-    );
+  /// Launches the browser-based OAuth flow for [provider] (Google/Apple).
+  ///
+  /// For a signed-in guest this LINKS the identity to the existing anonymous
+  /// account (same user id — coins/XP/level carry over) instead of creating a
+  /// fresh user. Returns once the browser is launched; completion arrives via
+  /// the `gathr://login-callback/` deep link and surfaces on
+  /// [authStateChanges] (signedIn / userUpdated).
+  Future<void> signInWithProvider(OAuthProvider provider) async {
+    if (isGuest) {
+      _oauthUpgradePending = true;
+      await _client.auth.linkIdentity(provider, redirectTo: oauthRedirectUri);
+    } else {
+      await _client.auth.signInWithOAuth(provider, redirectTo: oauthRedirectUri);
+    }
   }
 
-  Future<void> signInWithApple() async {
-    await _client.auth.signInWithOAuth(
-      OAuthProvider.apple,
-      redirectTo: 'io.supabase.gameplatform://login-callback/',
-    );
+  /// Completes a guest→OAuth upgrade started by [signInWithProvider]: flips
+  /// account_type to 'registered' and grants welcome gems. The edge function
+  /// is idempotent. Returns true if an upgrade was finalized.
+  Future<bool> finalizeOAuthUpgradeIfPending() async {
+    if (!_oauthUpgradePending) return false;
+    if (isGuest) return false; // link didn't complete (yet)
+    _oauthUpgradePending = false;
+    await _client.functions.invoke('account-upgrade');
+    return true;
   }
 
   Future<void> signOut() async {
@@ -100,7 +130,14 @@ class AuthService {
     await _client.auth.signOut();
   }
 
+  /// Emails a password-reset link that deep-links back into the app; the
+  /// login screen listens for the passwordRecovery event and prompts for a
+  /// new password.
   Future<void> resetPassword(String email) async {
-    await _client.auth.resetPasswordForEmail(email);
+    await _client.auth.resetPasswordForEmail(email, redirectTo: oauthRedirectUri);
+  }
+
+  Future<void> updatePassword(String newPassword) async {
+    await _client.auth.updateUser(UserAttributes(password: newPassword));
   }
 }
