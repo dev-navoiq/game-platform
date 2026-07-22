@@ -327,4 +327,74 @@ void main() {
       expect(result.newState.tricksWon['p3'], 1);
     });
   });
+
+  // ── Game-length options ───────────────────────────────────────────────────
+
+  group('Game-length options', () {
+    test('classic sequence: down-and-up, 2m-1 rounds', () {
+      expect(OhHellConfig.roundSequence(4).length, 25);
+      expect(OhHellConfig.roundSequence(5).length, 19);
+      expect(OhHellConfig.roundSequence(6).length, 15);
+      expect(OhHellConfig.roundSequence(4).first, 13);
+      expect(OhHellConfig.roundSequence(4).last, 13);
+    });
+
+    test('maxCards caps the opening deal', () {
+      final seq = OhHellConfig.roundSequence(4, maxCards: 5);
+      expect(seq, [5, 4, 3, 2, 1, 2, 3, 4, 5]);
+    });
+
+    test('maxCards above deck limit is ignored', () {
+      expect(OhHellConfig.roundSequence(4, maxCards: 99).length, 25);
+    });
+
+    test('downOnly stops at the 1-card round', () {
+      final seq = OhHellConfig.roundSequence(4, maxCards: 5, downOnly: true);
+      expect(seq, [5, 4, 3, 2, 1]);
+    });
+
+    test('createInitialState reads oh_hell options from serverConfig', () {
+      final state = rules.createInitialState(
+        playerIds: playerIds,
+        dealerIndex: 0,
+        serverConfig: {
+          'oh_hell': {'max_cards': 5},
+        },
+      );
+      expect(state.cardsThisRound, 5);
+      expect(state.totalRounds, 9);
+      expect(state.roundSequence, [5, 4, 3, 2, 1, 2, 3, 4, 5]);
+    });
+
+    test('applyNewRound follows the stored sequence, not the default', () {
+      final initial = rules.createInitialState(
+        playerIds: playerIds,
+        dealerIndex: 0,
+        serverConfig: {
+          'oh_hell': {'max_cards': 5},
+        },
+      );
+      // Simulate the first round having ended.
+      final roundEnd = initial.copyWith(
+        phase: GamePhase.roundEnd,
+        roundSequenceIndex: 1,
+      );
+      final next = rules.applyNewRound(roundEnd);
+      expect(next.cardsThisRound, 4); // 5-card opener → 4 next, not 12
+      expect(next.roundSequence, initial.roundSequence);
+    });
+
+    test('roundSequence survives JSON round-trip', () {
+      final state = rules.createInitialState(
+        playerIds: playerIds,
+        dealerIndex: 0,
+        serverConfig: {
+          'oh_hell': {'down_only': true},
+        },
+      );
+      final revived = OhHellState.fromJson(state.toJson());
+      expect(revived.roundSequence, state.roundSequence);
+      expect(revived.totalRounds, 13); // 13 → 1, down only
+    });
+  });
 }

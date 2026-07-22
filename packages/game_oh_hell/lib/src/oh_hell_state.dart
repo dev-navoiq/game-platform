@@ -38,8 +38,15 @@ class OhHellState extends GameState {
   /// Index into the round sequence (0-based).
   final int roundSequenceIndex;
 
-  /// Total rounds in the sequence (derived from player count).
+  /// Total rounds in the sequence (derived from player count and any
+  /// host-chosen length options).
   final int totalRounds;
+
+  /// The full deal schedule for this session (e.g. [5,4,3,2,1,2,3,4,5]).
+  /// Set at game creation so host-chosen length options survive into every
+  /// new round. Null for states serialized before length options existed —
+  /// consumers fall back to the classic full sequence.
+  final List<int>? roundSequence;
 
   /// Bids placed this round (playerId → bid). Absent key = not yet bid.
   final Map<String, int> bids;
@@ -68,6 +75,7 @@ class OhHellState extends GameState {
     required this.cardsThisRound,
     this.roundSequenceIndex = 0,
     required this.totalRounds,
+    this.roundSequence,
     this.bids = const {},
     this.tricksWon = const {},
     this.scores = const {},
@@ -116,6 +124,7 @@ class OhHellState extends GameState {
     int? cardsThisRound,
     int? roundSequenceIndex,
     int? totalRounds,
+    List<int>? roundSequence,
     Map<String, int>? bids,
     Map<String, int>? tricksWon,
     Map<String, int>? scores,
@@ -134,6 +143,7 @@ class OhHellState extends GameState {
       cardsThisRound: cardsThisRound ?? this.cardsThisRound,
       roundSequenceIndex: roundSequenceIndex ?? this.roundSequenceIndex,
       totalRounds: totalRounds ?? this.totalRounds,
+      roundSequence: roundSequence ?? this.roundSequence,
       bids: bids ?? this.bids,
       tricksWon: tricksWon ?? this.tricksWon,
       scores: scores ?? this.scores,
@@ -156,6 +166,7 @@ class OhHellState extends GameState {
         'cardsThisRound': cardsThisRound,
         'roundSequenceIndex': roundSequenceIndex,
         'totalRounds': totalRounds,
+        if (roundSequence != null) 'roundSequence': roundSequence,
         'bids': bids,
         'tricksWon': tricksWon,
         'scores': scores,
@@ -181,6 +192,9 @@ class OhHellState extends GameState {
       cardsThisRound: json['cardsThisRound'] as int,
       roundSequenceIndex: (json['roundSequenceIndex'] as int?) ?? 0,
       totalRounds: json['totalRounds'] as int,
+      roundSequence: (json['roundSequence'] as List?)
+          ?.map((e) => (e as num).toInt())
+          .toList(),
       bids: (json['bids'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, v as int)) ??
           const {},

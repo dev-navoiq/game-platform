@@ -160,6 +160,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         gameType: req.gameType,
         socialMode: req.socialMode,
         maxPlayers: req.maxPlayers,
+        config: req.config,
       );
       final realId = result['room_id'] as String;
       if (!mounted) {
@@ -625,6 +626,51 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   },
                 ),
               ),
+
+              // Invite nudge — as long as seats are open, keep the "get
+              // people in here" path one tap away instead of buried in the
+              // small header icons.
+              if (!_creating && _members.length < _maxPlayers)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.person_add_alt,
+                          size: 16, color: AppColors.textFeltMuted),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_maxPlayers - _members.length} '
+                        '${_maxPlayers - _members.length == 1 ? 'seat' : 'seats'} open',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textFeltMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        key: const Key('room-invite-nudge'),
+                        onTap: _roomCode == null ? null : _inviteFriends,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Text(
+                            'Invite friends',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Action buttons: Ready + Start Game (host) / waiting hint
               // (joiner). The Add Bot button has moved into each empty

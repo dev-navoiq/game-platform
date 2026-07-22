@@ -23,6 +23,8 @@ import '../widgets/emoji_bar.dart';
 import '../widgets/game_actions.dart';
 import '../widgets/game_hud.dart';
 import '../widgets/oh_hell_round_end_overlay.dart';
+import '../widgets/ranked_game_over_dialog.dart';
+import '../../../../shared/widgets/rewarded_ad_modal.dart';
 import '../widgets/game_table.dart';
 import '../widgets/player_node.dart';
 import '../widgets/round_end_celebration_layer.dart';
@@ -122,6 +124,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   int _secondsElapsed = 0;
   static const int _countdownLimit = 30;
 
+  /// The podium dialog is held back briefly at game end so the table-level
+  /// yay/smoke celebrations get a moment on screen before the modal covers
+  /// them.
+  bool _gameOverDialogVisible = false;
+  Timer? _gameOverDialogTimer;
+  static const Duration _gameOverDialogDelay = Duration(milliseconds: 2600);
+
   @override
   void dispose() {
     _dealTimer?.cancel();
@@ -129,7 +138,44 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     _celebrationStartTimer?.cancel();
     _celebrationClearTimer?.cancel();
     _readyTicker?.cancel();
+    _gameOverDialogTimer?.cancel();
     super.dispose();
+  }
+
+  void _syncGameOverDialog(OhHellState state) {
+    if (state.isGameOver) {
+      if (_gameOverDialogVisible || _gameOverDialogTimer != null) return;
+      _gameOverDialogTimer = Timer(_gameOverDialogDelay, () {
+        if (!mounted) return;
+        setState(() => _gameOverDialogVisible = true);
+      });
+    } else if (_gameOverDialogVisible || _gameOverDialogTimer != null) {
+      // Play Again restarted the session — clear for the fresh game.
+      _gameOverDialogTimer?.cancel();
+      _gameOverDialogTimer = null;
+      _gameOverDialogVisible = false;
+    }
+  }
+
+  /// Final standings for the podium dialog, one entry per seat.
+  List<RankedPlayerResult> _gameResults(
+      OhHellState state, Map<String, RoomMember> members) {
+    final emojis = PlayerAvatar.emojiMap(state.playerOrder);
+    return [
+      for (final pid in state.playerOrder)
+        RankedPlayerResult(
+          playerId: pid,
+          name: PlayerAvatar.nameFor(
+            playerId: pid,
+            localPlayerId: widget.localPlayerId,
+            seatIndex: state.playerOrder.indexOf(pid),
+            displayName: members[pid]?.displayName,
+          ),
+          emoji: emojis[pid] ?? '🎮',
+          score: state.scores[pid] ?? 0,
+          isLocal: pid == widget.localPlayerId,
+        ),
+    ];
   }
 
   /// Build the `({String id, bool isBot})` records the guard expects.
@@ -547,7 +593,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     final showPulse = state.phase == GamePhase.bidding &&
         state.currentPlayerId == localPlayerId;
 
-    _syncAutoAdvance(isRoundEnd, members);
+    // Auto-advance only between rounds. At game end there is no next round
+    // to advance to — the podium dialog takes over (its old 30s newRound
+    // auto-fire bounced off the server's finished-room gate forever, which
+    // is why games looked "stuck").
+    _syncAutoAdvance(state.phase == GamePhase.roundEnd, members);
+    _syncGameOverDialog(state);
 
     final playerRecords = _playerRecords(members);
     final isPaused = isRoundEnd && !RoundAdvanceGuard.hasAnyHumans(playerRecords);
@@ -825,7 +876,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
         // Compact ready icon above the hand — tap to ready up; flips to a
         // green check once the broadcast lands. Bot-only rooms (isPaused)
         // skip this because no human can ready.
-        if (isRoundEnd && !isPaused && !isSpectator)
+        if (state.phase == GamePhase.roundEnd && !isPaused && !isSpectator)
           Positioned(
             right: 16,
             bottom: 168,
@@ -843,6 +894,22 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
         // Local-player avatar is now rendered inline in the Column above
         // the CardHand (see _buildLocalPlayerNode).
+
+        // Podium dialog — crown for the topper, medals for 2nd/3rd,
+        // sulking rows for the rest. Delayed ~2.6s so the seat-level
+        // celebrations play first.
+        if (state.isGameOver && _gameOverDialogVisible)
+          RankedGameOverDialog(
+            results: _gameResults(state, members),
+            coinsEarned:
+                winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
+            xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
+            onDoubleCoins: () {
+              RewardedAdModal.show(context: context);
+            },
+            onPlayAgain: () => _startNextRound(ref),
+            onLeave: () => Navigator.of(context).pop(),
+          ),
       ],
     );
   }

@@ -8,13 +8,28 @@ class OhHellConfig {
   /// Maximum cards per player for a given [playerCount] using a 52-card deck.
   static int maxCardsPerPlayer(int playerCount) => 52 ~/ playerCount;
 
-  /// Full round sequence: descend from max to 1, then ascend back to max.
-  /// e.g. 4 players → [13, 12, 11, ..., 1, 2, ..., 13] (25 rounds total).
-  static List<int> roundSequence(int playerCount) {
-    final max = maxCardsPerPlayer(playerCount);
+  /// Round sequence: descend from the opening deal to 1, then (unless
+  /// [downOnly]) ascend back up. e.g. 4 players → [13, 12, ..., 1, 2, ...,
+  /// 13] (25 rounds total).
+  ///
+  /// [maxCards] caps the opening deal below the deck limit for shorter
+  /// games (e.g. 5 → 9 rounds); [downOnly] stops at the 1-card round.
+  /// Mirrors `buildOhHellRoundSequence` in
+  /// `supabase/functions/_shared/game_setup.ts` — keep the two in sync.
+  static List<int> roundSequence(
+    int playerCount, {
+    int? maxCards,
+    bool downOnly = false,
+  }) {
+    final deckMax = maxCardsPerPlayer(playerCount);
+    final max = (maxCards != null && maxCards >= 1 && maxCards < deckMax)
+        ? maxCards
+        : deckMax;
     final result = <int>[];
     for (var i = max; i >= 1; i--) result.add(i);
-    for (var i = 2; i <= max; i++) result.add(i);
+    if (!downOnly) {
+      for (var i = 2; i <= max; i++) result.add(i);
+    }
     return result;
   }
 

@@ -69,6 +69,18 @@
   "createRoom": "Create Room",
   "howManyPlayers": "How many players?",
   "ohHellPlayerCountHint": "Oh Hell needs 4 to 6 players. You can add bots in the room.",
+  "playerCountHint": "Empty seats can be filled with bots in the room.",
+  "gameLength": "Game length",
+  "gameLengthQuick": "Quick",
+  "gameLengthOneWay": "One way",
+  "gameLengthClassic": "Classic",
+  "roundsCount": "{count} rounds",
+  "@roundsCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "startWhenFull": "Start automatically when full",
   "players": "players",
   "roomJoinComingSoon": "Room {code} — join via code coming soon",
   "@roomJoinComingSoon": {

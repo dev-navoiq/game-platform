@@ -31,6 +31,14 @@ interface OhHellState {
    */
   roundHistory?: Array<Record<string, number>>;
   socialMode?: string;
+  /**
+   * The full deal schedule for this session (e.g. [5,4,3,2,1,2,3,4,5]).
+   * Stored at game setup so host-chosen length options (max_cards /
+   * down_only in game_rooms.config.oh_hell) survive into every newRound.
+   * Absent in states created before length options existed — fall back to
+   * the classic full sequence for the player count.
+   */
+  roundSequence?: number[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -343,7 +351,8 @@ function applyNewRound(state: OhHellState): OhHellState {
   // a fresh game from the beginning of the round sequence.
   const restartingSession = state.phase === 'gameEnd';
 
-  const sequence = buildRoundSequence(state.playerOrder.length);
+  const sequence =
+    state.roundSequence ?? buildRoundSequence(state.playerOrder.length);
   const nextIndex = restartingSession ? 0 : state.roundSequenceIndex;
   const cardsThisRound = sequence[nextIndex];
 

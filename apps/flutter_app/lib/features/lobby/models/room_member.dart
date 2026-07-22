@@ -39,10 +39,15 @@ class RoomCreateRequest {
   final String socialMode;
   final int maxPlayers;
 
+  /// Room-config JSON forwarded verbatim to the create-room edge function:
+  /// Oh Hell length options under `oh_hell`, `auto_start_when_full`, etc.
+  final Map<String, dynamic>? config;
+
   const RoomCreateRequest({
     required this.gameType,
     required this.socialMode,
     required this.maxPlayers,
+    this.config,
   });
 }
 

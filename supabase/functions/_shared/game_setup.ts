@@ -9,12 +9,18 @@ export function buildInitialState(
   playerIds: string[],
   dealerIndex: number,
   socialMode: string,
+  roomConfig?: Record<string, unknown>,
 ): Record<string, unknown> {
   switch (gameType) {
     case 'twenty_nine':
       return buildTwentyNineState(playerIds, dealerIndex, socialMode);
     case 'oh_hell':
-      return buildOhHellState(playerIds, dealerIndex, socialMode);
+      return buildOhHellState(
+        playerIds,
+        dealerIndex,
+        socialMode,
+        roomConfig?.oh_hell as OhHellLengthOptions | undefined,
+      );
     case 'hearts':
       return buildHeartsState(playerIds, dealerIndex, socialMode);
     case 'spades':
@@ -75,16 +81,44 @@ function buildTwentyNineState(
   };
 }
 
+/**
+ * Host-chosen Oh Hell length options, stored under `oh_hell` in
+ * game_rooms.config by the create sheet. Mirrors
+ * OhHellConfig.roundSequence options in packages/game_oh_hell.
+ */
+interface OhHellLengthOptions {
+  /** Cap the opening deal below the deck max (e.g. 5 → 5,4,...,1,...,5). */
+  max_cards?: number;
+  /** Descend only (max → 1) and stop — half-length game. */
+  down_only?: boolean;
+}
+
+function buildOhHellRoundSequence(
+  playerCount: number,
+  options?: OhHellLengthOptions,
+): number[] {
+  const deckMax = Math.floor(52 / playerCount);
+  const rawCap = options?.max_cards;
+  const maxCards =
+    typeof rawCap === 'number' && rawCap >= 1
+      ? Math.min(Math.floor(rawCap), deckMax)
+      : deckMax;
+  const sequence: number[] = [];
+  for (let i = maxCards; i >= 1; i--) sequence.push(i);
+  if (!options?.down_only) {
+    for (let i = 2; i <= maxCards; i++) sequence.push(i);
+  }
+  return sequence;
+}
+
 function buildOhHellState(
   playerIds: string[],
   dealerIndex: number,
   socialMode: string,
+  options?: OhHellLengthOptions,
 ): Record<string, unknown> {
   const n = playerIds.length;
-  const maxCards = Math.floor(52 / n);
-  const sequence: number[] = [];
-  for (let i = maxCards; i >= 1; i--) sequence.push(i);
-  for (let i = 2; i <= maxCards; i++) sequence.push(i);
+  const sequence = buildOhHellRoundSequence(n, options);
 
   const cardsThisRound = sequence[0];
   const deck = createStandard52Deck();
@@ -101,6 +135,7 @@ function buildOhHellState(
     currentTrick: [],
     cardsThisRound,
     roundSequenceIndex: 0,
+    roundSequence: sequence,
     totalRounds: sequence.length,
     bids: {},
     tricksWon: Object.fromEntries(playerIds.map((pid) => [pid, 0])),

@@ -332,6 +332,48 @@ abstract class AppLocalizations {
   /// **'Oh Hell needs 4 to 6 players. You can add bots in the room.'**
   String get ohHellPlayerCountHint;
 
+  /// No description provided for @playerCountHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty seats can be filled with bots in the room.'**
+  String get playerCountHint;
+
+  /// No description provided for @gameLength.
+  ///
+  /// In en, this message translates to:
+  /// **'Game length'**
+  String get gameLength;
+
+  /// No description provided for @gameLengthQuick.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick'**
+  String get gameLengthQuick;
+
+  /// No description provided for @gameLengthOneWay.
+  ///
+  /// In en, this message translates to:
+  /// **'One way'**
+  String get gameLengthOneWay;
+
+  /// No description provided for @gameLengthClassic.
+  ///
+  /// In en, this message translates to:
+  /// **'Classic'**
+  String get gameLengthClassic;
+
+  /// No description provided for @roundsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} rounds'**
+  String roundsCount(int count);
+
+  /// No description provided for @startWhenFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Start automatically when full'**
+  String get startWhenFull;
+
   /// No description provided for @players.
   ///
   /// In en, this message translates to:

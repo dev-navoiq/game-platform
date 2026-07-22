@@ -43,6 +43,13 @@
   "createRoom": "रूम बनाएँ",
   "howManyPlayers": "कितने खिलाड़ी?",
   "ohHellPlayerCountHint": "ओह हेल के लिए 4 से 6 खिलाड़ी चाहिए। आप रूम में बॉट जोड़ सकते हैं।",
+  "playerCountHint": "खाली सीटें रूम में बॉट्स से भरी जा सकती हैं।",
+  "gameLength": "गेम की लंबाई",
+  "gameLengthQuick": "क्विक",
+  "gameLengthOneWay": "एक तरफ़ा",
+  "gameLengthClassic": "क्लासिक",
+  "roundsCount": "{count} राउंड",
+  "startWhenFull": "पूरा भरते ही अपने आप शुरू करें",
   "players": "खिलाड़ी",
   "roomJoinComingSoon": "रूम {code} — कोड से जुड़ना जल्द आ रहा है",
 

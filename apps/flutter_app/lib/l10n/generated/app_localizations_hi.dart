@@ -138,6 +138,29 @@ class AppLocalizationsHi extends AppLocalizations {
       'ओह हेल के लिए 4 से 6 खिलाड़ी चाहिए। आप रूम में बॉट जोड़ सकते हैं।';
 
   @override
+  String get playerCountHint => 'खाली सीटें रूम में बॉट्स से भरी जा सकती हैं।';
+
+  @override
+  String get gameLength => 'गेम की लंबाई';
+
+  @override
+  String get gameLengthQuick => 'क्विक';
+
+  @override
+  String get gameLengthOneWay => 'एक तरफ़ा';
+
+  @override
+  String get gameLengthClassic => 'क्लासिक';
+
+  @override
+  String roundsCount(int count) {
+    return '$count राउंड';
+  }
+
+  @override
+  String get startWhenFull => 'पूरा भरते ही अपने आप शुरू करें';
+
+  @override
   String get players => 'खिलाड़ी';
 
   @override

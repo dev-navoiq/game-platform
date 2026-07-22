@@ -40,7 +40,14 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
     Map<String, dynamic>? serverConfig,
   }) {
     if (serverConfig != null) applyServerConfig(serverConfig);
-    final sequence = OhHellConfig.roundSequence(playerIds.length);
+    // Host-chosen length options live under `oh_hell` in the room config,
+    // same shape the server reads in game_setup.ts.
+    final options = _serverConfig['oh_hell'];
+    final sequence = OhHellConfig.roundSequence(
+      playerIds.length,
+      maxCards: options is Map ? (options['max_cards'] as num?)?.toInt() : null,
+      downOnly: options is Map && options['down_only'] == true,
+    );
     return _startRound(
       playerIds: playerIds,
       dealerIndex: dealerIndex,
@@ -82,6 +89,7 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
       cardsThisRound: cardsThisRound,
       roundSequenceIndex: roundSequenceIndex,
       totalRounds: totalRounds,
+      roundSequence: roundSequence,
       bids: {},
       tricksWon: {for (final pid in playerIds) pid: 0},
       scores: scores,
@@ -181,7 +189,8 @@ class OhHellRules extends GameRules<OhHellState, OhHellMove> {
       return state;
     }
     final restarting = state.phase == GamePhase.gameEnd;
-    final sequence = OhHellConfig.roundSequence(state.playerOrder.length);
+    final sequence = state.roundSequence ??
+        OhHellConfig.roundSequence(state.playerOrder.length);
     final nextIndex = restarting ? 0 : state.roundSequenceIndex;
     final nextDealer = restarting
         ? state.dealerIndex

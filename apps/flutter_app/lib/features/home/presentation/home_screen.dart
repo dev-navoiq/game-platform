@@ -419,7 +419,7 @@ class _GameGrid extends StatelessWidget {
       (
         'oh_hell',
         l10n.gameNameOhHell,
-        l10n.playerCountRange('3-7'),
+        l10n.playerCountRange('4-6'),
       ),
       (
         'hearts',
@@ -436,9 +436,13 @@ class _GameGrid extends StatelessWidget {
         l10n.gameNameBridge,
         l10n.playerCountRange('4'),
       ),
-      // Chess hidden until M4 (create-room form) ships — the beta's
-      // hardcoded max_players=4 would leave a 2-player game in a
-      // 4-seat room stuck in 'waiting'. See memory/multiplayer-room-flow-debt.
+      // Chess un-hidden: the create sheet now sizes rooms from
+      // GamePlayerLimits, so a chess room opens with exactly 2 seats.
+      (
+        'chess',
+        l10n.gameNameChess,
+        l10n.playerCountRange('2'),
+      ),
       (
         'ludo',
         l10n.gameNameLudo,
@@ -447,7 +451,7 @@ class _GameGrid extends StatelessWidget {
       (
         'sequence',
         l10n.gameNameSequence,
-        l10n.playerCountRange('2-4'),
+        l10n.playerCountRange('2-3'),
       ),
     ];
 

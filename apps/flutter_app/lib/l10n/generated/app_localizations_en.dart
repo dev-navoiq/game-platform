@@ -137,6 +137,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Oh Hell needs 4 to 6 players. You can add bots in the room.';
 
   @override
+  String get playerCountHint =>
+      'Empty seats can be filled with bots in the room.';
+
+  @override
+  String get gameLength => 'Game length';
+
+  @override
+  String get gameLengthQuick => 'Quick';
+
+  @override
+  String get gameLengthOneWay => 'One way';
+
+  @override
+  String get gameLengthClassic => 'Classic';
+
+  @override
+  String roundsCount(int count) {
+    return '$count rounds';
+  }
+
+  @override
+  String get startWhenFull => 'Start automatically when full';
+
+  @override
   String get players => 'players';
 
   @override

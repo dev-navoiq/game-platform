@@ -57,8 +57,25 @@ serve(async (req) => {
     }
 
     if (!room) return errorResponse('Room not found', 404);
-    if (room.status !== 'playing') {
+    // "Play Again": a newRound on a finished room restarts the session
+    // (the engines reset scores/rounds when newRound arrives at gameEnd).
+    // Tournament matches are one-shot — their result is already reported
+    // to the bracket, so they stay locked.
+    const isRestartAttempt =
+      room.status === 'finished' && body.move.type === 'newRound';
+    if (room.status !== 'playing' && !isRestartAttempt) {
       return errorResponse('Game is not in progress', 400, 'NOT_PLAYING');
+    }
+    if (isRestartAttempt) {
+      const { data: tMatch } = await admin
+        .from('tournament_matches')
+        .select('id')
+        .eq('room_id', body.room_id)
+        .maybeSingle();
+      if (tMatch) {
+        return errorResponse(
+          'Tournament matches cannot be replayed', 400, 'TOURNAMENT_MATCH');
+      }
     }
 
     // ── Verify it's the player's turn ─────────────────────────────────────
@@ -125,6 +142,42 @@ serve(async (req) => {
       round: gameState.round,
       sequence_no: nextSeqNo,
     });
+
+    // ── Handle session restart (Play Again from gameEnd) ──────────────────
+    if (isRestartAttempt && newPhase !== 'gameEnd' && newPhase !== 'complete') {
+      await admin
+        .from('game_rooms')
+        .update({ status: 'playing' })
+        .eq('id', body.room_id);
+
+      // Re-arm the exactly-once reward guard so the fresh session grants
+      // rewards again when it finishes.
+      await admin
+        .from('game_reward_grants')
+        .delete()
+        .eq('room_id', body.room_id);
+
+      // Players are back in a live game — restore their activity so
+      // friends see them as in-game again.
+      const { data: activePlayers } = await admin
+        .from('room_players')
+        .select('user_id')
+        .eq('room_id', body.room_id);
+      for (const p of activePlayers ?? []) {
+        await admin
+          .from('profiles')
+          .update({
+            current_activity: {
+              type: 'in_game',
+              game_type: room.game_type,
+              room_id: body.room_id,
+              spectatable: true,
+              joinable: false,
+            },
+          })
+          .eq('id', p.user_id);
+      }
+    }
 
     // ── Handle game end ───────────────────────────────────────────────────
     if (newPhase === 'gameEnd' || newPhase === 'complete') {

@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { getSupabaseClient, getSupabaseAdmin } from '../_shared/supabase.ts';
 import { requireAuth, jsonResponse, errorResponse } from '../_shared/validation.ts';
+import { startRoomSession } from '../_shared/room_start.ts';
 
 interface JoinRoomRequest {
   room_id?: string;
@@ -219,10 +220,34 @@ serve(async (req) => {
       })
       .eq('id', user.id);
 
+    // ── Auto-start when full (host opt-in via config) ─────────────────────
+    // current_players is trigger-maintained and includes bots; the value we
+    // fetched predates this insert, hence the +1. Never fail the join over
+    // a start hiccup — the host button still works as a fallback.
+    let autoStarted = false;
+    if (
+      !asSpectator &&
+      room.config?.auto_start_when_full === true &&
+      room.current_players + 1 >= room.max_players
+    ) {
+      try {
+        const result = await startRoomSession(admin, room);
+        autoStarted = !('error' in result);
+        if (!autoStarted) {
+          console.warn(
+            `auto-start skipped for room=${room.id}: ${('error' in result) ? result.error : ''}`,
+          );
+        }
+      } catch (e) {
+        console.error('auto-start failed', e);
+      }
+    }
+
     return jsonResponse({
       room_id: room.id,
       seat_index: asSpectator ? -1 : seatIndex,
       is_spectator: asSpectator,
+      auto_started: autoStarted,
     });
   } catch (error) {
     console.error('Join room error:', error);
