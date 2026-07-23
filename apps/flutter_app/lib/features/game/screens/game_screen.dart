@@ -56,28 +56,27 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
       final notifier = ref.read(gameStateProvider.notifier);
       var gameType = ref.read(gameTypeProvider);
-      // Cold navigation (tournament "Play now", push tap, deep link): the
-      // lobby/room flow seeds gameTypeProvider AND roomMembersProvider before
-      // pushing, but nothing does when we arrive straight at /game/:roomId —
-      // which left the dispatch shell typeless ("Failed to load game") and,
-      // worse, left the seat-identity map empty so a real human opponent in a
-      // tournament match rendered — and was reasoned about — as "Bot 1".
-      // Self-serve both from the room snapshot instead.
-      if (gameType == null) {
-        try {
-          final snap = await ref
-              .read(supabaseServiceProvider)
-              .fetchRoomSnapshot(roomId: widget.roomId);
-          gameType = snap.gameType;
-          if (mounted) {
-            ref.read(gameTypeProvider.notifier).state = gameType;
-            ref.read(roomMembersProvider.notifier).state = {
-              for (final m in snap.members) m.id: m,
-            };
-          }
-        } catch (_) {
-          // Leave null — the timeout screen handles it.
+      // Always self-serve the room snapshot on /game/ entry. It carries both
+      // the game type (needed on cold navigation — tournament "Play now",
+      // push tap, deep link) and the seat identities. The member seed must
+      // NOT be conditional on gameType: a stale non-null type (semifinal →
+      // final re-entry, stacked push routes) used to skip it, leaving the
+      // real human opponent rendered as "Bot 1" (#169).
+      try {
+        final snap = await ref
+            .read(supabaseServiceProvider)
+            .fetchRoomSnapshot(roomId: widget.roomId);
+        gameType ??= snap.gameType;
+        if (mounted) {
+          ref.read(gameTypeProvider.notifier).state = gameType;
+          ref.read(roomMembersProvider.notifier).state = {
+            for (final m in snap.members) m.id: m,
+          };
         }
+      } catch (_) {
+        // Snapshot fetch failed. If gameType was already known (lobby flow
+        // seeded it, and the room screen seeded members) we can still play;
+        // on a true cold nav it stays null and the timeout screen handles it.
       }
       if (!mounted) return;
       if (gameType != null) {
@@ -116,6 +115,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       ref.invalidate(gameStateProvider);
       ref.invalidate(gameTypeProvider);
       ref.read(roomBotsProvider.notifier).state = const [];
+      // Clear seat identities too — a skipped/failed seed on the next mount
+      // must not inherit the previous match's roster (#169).
+      ref.read(roomMembersProvider.notifier).state = const {};
       ref.read(currentRoomIdProvider.notifier).state = null;
     } catch (_) {
       // Test teardown — providers were already torn down. Nothing to do.
