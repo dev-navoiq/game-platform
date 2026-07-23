@@ -45,7 +45,7 @@ void main() {
       when(() => mockSupabase.subscribeToGameState(
             roomId: any(named: 'roomId'),
             onUpdate: any(named: 'onUpdate'),
-          )).thenReturn(null);
+          )).thenReturn(GameStateSubscription.inert());
 
       final container = buildContainer();
       addTearDown(container.dispose);
@@ -155,7 +155,7 @@ void main() {
             onUpdate: any(named: 'onUpdate'),
           )).thenAnswer((inv) {
         onUpdate = inv.namedArguments[#onUpdate] as Function;
-        return null;
+        return GameStateSubscription.inert();
       });
 
       final container = buildContainer();

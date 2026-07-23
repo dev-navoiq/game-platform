@@ -40,6 +40,11 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// realtime subscription is opened — zero server round-trips.
   LocalGameSession? _localSession;
 
+  /// Self-healing realtime subscription for the active room (reconnect +
+  /// catch-up + watchdog live in SupabaseService). Cancelled on re-subscribe
+  /// and dispose.
+  GameStateSubscription? _gameStateSub;
+
   /// Attach a local practice session. Any previous session is disposed so a
   /// stale coordinator can't keep publishing into this notifier.
   void attachLocalSession(LocalGameSession session) {
@@ -61,7 +66,10 @@ class GameNotifier extends StateNotifier<GameState?> {
       return;
     }
     print('[GameNotifier] subscribeToGame roomId=$roomId gameType=$_gameType');
-    _supabase.subscribeToGameState(
+    // Replace any previous room's subscription — its reconnect timers and
+    // watchdog must not keep feeding a screen we've left.
+    _gameStateSub?.cancel();
+    _gameStateSub = _supabase.subscribeToGameState(
       roomId: roomId,
       onUpdate: (data) {
         print('[GameNotifier] onUpdate received: gameType=$_gameType, dataKeys=${(data as Map).keys.toList()}');
@@ -228,6 +236,8 @@ class GameNotifier extends StateNotifier<GameState?> {
     // GameScreen.dispose invalidates gameStateProvider, which lands here —
     // tear the practice session down with the notifier so no bot timer keeps
     // firing into a disposed StateNotifier.
+    _gameStateSub?.cancel();
+    _gameStateSub = null;
     _localSession?.dispose();
     _localSession = null;
     super.dispose();
