@@ -995,5 +995,29 @@ export async function forfeitTournamentMatch(
   if (match.next_match_id && match.next_match_slot) {
     await advanceInto(admin, match.next_match_id, match.next_match_slot, winnerId, winnerTeamId);
   }
+
+  // End the live game state too. Clients render from the game_states realtime
+  // stream — without this transition they never learn the match is over and
+  // sit on a frozen table forever (#178). Patching state_data.phase to
+  // gameEnd pushes the result screen to every subscribed device.
+  if (match.room_id) {
+    const { data: gs } = await admin
+      .from('game_states')
+      .select('id, state_data')
+      .eq('room_id', match.room_id)
+      .maybeSingle();
+    const sd = (gs?.state_data ?? null) as Record<string, unknown> | null;
+    if (gs && sd && sd.phase !== 'gameEnd') {
+      await admin.from('game_states').update({
+        phase: 'complete',
+        state_data: {
+          ...sd,
+          phase: 'gameEnd',
+          forfeit: { forfeited_by: forfeitingUserId, winner_id: winnerId },
+        },
+      }).eq('id', gs.id);
+    }
+  }
+
   await checkTournamentProgress(admin, match.tournament_id, t?.format ?? '');
 }
