@@ -77,9 +77,14 @@ class GameHud extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    totalRounds != null
-                        ? 'Round $roundNumber/$totalRounds'
-                        : 'Round $roundNumber',
+                    // The engine advances roundNumber when a round COMPLETES,
+                    // so at round end / game end it reads one past the total
+                    // ("Round 8/7"). Clamp for display — there is no round 8.
+                    switch (totalRounds) {
+                      final int total =>
+                        'Round ${roundNumber > total ? total : roundNumber}/$total',
+                      null => 'Round $roundNumber',
+                    },
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
