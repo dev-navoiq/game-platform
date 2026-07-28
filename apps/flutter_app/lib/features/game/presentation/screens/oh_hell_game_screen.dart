@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 
+import '../../../../core/routing/routes.dart';
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
 import '../../../../shared/animations/celebrations/winner_jump_animation.dart';
@@ -342,6 +344,11 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
               scores: state.scores,
               roundHistory: state.roundHistory,
               isGameOver: state.phase == GamePhase.gameEnd,
+              playerNames: {
+                for (final e in ref.read(roomMembersProvider).entries)
+                  if (e.value.displayName.trim().isNotEmpty)
+                    e.key: e.value.displayName,
+              },
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -899,17 +906,31 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
         // sulking rows for the rest. Delayed ~2.6s so the seat-level
         // celebrations play first.
         if (state.isGameOver && _gameOverDialogVisible)
-          RankedGameOverDialog(
-            results: _gameResults(state, members),
-            coinsEarned:
-                winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
-            xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
-            onDoubleCoins: () {
-              RewardedAdModal.show(context: context);
-            },
-            onPlayAgain: () => _startNextRound(ref),
-            onLeave: () => Navigator.of(context).pop(),
-          ),
+          Builder(builder: (context) {
+            // Tournament matches: replaying a bracket game is not a thing —
+            // the primary action becomes "View Bracket", and Home actually
+            // goes home instead of popping back to wherever we came from
+            // (#176).
+            final tournamentId = ref.read(activeTournamentIdProvider);
+            return RankedGameOverDialog(
+              results: _gameResults(state, members),
+              coinsEarned:
+                  winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
+              xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
+              onDoubleCoins: () {
+                RewardedAdModal.show(context: context);
+              },
+              playAgainLabel:
+                  tournamentId == null ? 'Play Again' : 'View Bracket',
+              onPlayAgain: tournamentId == null
+                  ? () => _startNextRound(ref)
+                  : () => context
+                      .go(AppRoutes.tournamentPath(tournamentId)),
+              onLeave: tournamentId == null
+                  ? () => Navigator.of(context).pop()
+                  : () => context.go(AppRoutes.home),
+            );
+          }),
       ],
     );
   }

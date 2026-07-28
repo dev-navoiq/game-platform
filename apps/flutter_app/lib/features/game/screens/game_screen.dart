@@ -72,6 +72,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ref.read(roomMembersProvider.notifier).state = {
             for (final m in snap.members) m.id: m,
           };
+          ref.read(activeTournamentIdProvider.notifier).state =
+              snap.tournamentId;
         }
       } catch (_) {
         // Snapshot fetch failed. If gameType was already known (lobby flow
@@ -118,6 +120,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       // Clear seat identities too — a skipped/failed seed on the next mount
       // must not inherit the previous match's roster (#169).
       ref.read(roomMembersProvider.notifier).state = const {};
+      ref.read(activeTournamentIdProvider.notifier).state = null;
       ref.read(currentRoomIdProvider.notifier).state = null;
     } catch (_) {
       // Test teardown — providers were already torn down. Nothing to do.

@@ -268,6 +268,7 @@ class SupabaseService {
       gameType: room['game_type'] as String,
       maxPlayers: (room['max_players'] as int?) ?? 4,
       members: members,
+      tournamentId: config?['tournament_id'] as String?,
     );
   }
 

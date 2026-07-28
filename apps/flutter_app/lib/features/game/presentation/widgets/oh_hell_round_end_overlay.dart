@@ -29,6 +29,9 @@ class OhHellRoundEndOverlay extends StatefulWidget {
   final int autoStartSeconds;
   final VoidCallback onContinue;
 
+  /// playerId → display name, forwarded to the score table (#183).
+  final Map<String, String> playerNames;
+
   const OhHellRoundEndOverlay({
     super.key,
     required this.roundNumber,
@@ -43,6 +46,7 @@ class OhHellRoundEndOverlay extends StatefulWidget {
     required this.onContinue,
     this.isGameOver = false,
     this.autoStartSeconds = 30,
+    this.playerNames = const {},
   });
 
   @override
@@ -124,6 +128,7 @@ class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
                     tricksWon: widget.tricksWon,
                     roundPoints: widget.roundPoints,
                     scores: widget.scores,
+                    playerNames: widget.playerNames,
                     roundHistory: widget.roundHistory,
                     isGameOver: widget.isGameOver,
                   ),
@@ -194,6 +199,10 @@ class OhHellScoreTable extends StatelessWidget {
   final List<Map<String, int>> roundHistory;
   final bool isGameOver;
 
+  /// playerId → display name. Without it every non-local player rendered as
+  /// "Bot N" even when the seats showed real names (#183).
+  final Map<String, String> playerNames;
+
   const OhHellScoreTable({
     super.key,
     required this.roundNumber,
@@ -206,6 +215,7 @@ class OhHellScoreTable extends StatelessWidget {
     required this.scores,
     required this.roundHistory,
     this.isGameOver = false,
+    this.playerNames = const {},
   });
 
   @override
@@ -317,6 +327,7 @@ class OhHellScoreTable extends StatelessWidget {
       playerId: pid,
       localPlayerId: localPlayerId,
       seatIndex: playerOrder.indexOf(pid),
+      displayName: playerNames[pid],
     );
     final ptsColor = madeBid ? AppColors.success : AppColors.danger;
 
@@ -406,6 +417,7 @@ class OhHellScoreTable extends StatelessWidget {
                             playerId: pid,
                             localPlayerId: localPlayerId,
                             seatIndex: playerOrder.indexOf(pid),
+                            displayName: playerNames[pid],
                           ))
                               .split(' ')
                               .first,

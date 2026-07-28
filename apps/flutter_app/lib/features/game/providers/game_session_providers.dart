@@ -15,6 +15,11 @@ final gameTypeProvider = StateProvider<String?>((ref) => null);
 final roomMembersProvider =
     StateProvider<Map<String, RoomMember>>((ref) => const {});
 
+/// Tournament id of the active room, when it is a tournament match room.
+/// Seeded by GameScreen from the room snapshot; null for normal games.
+/// Lets end-of-game UI offer "View Bracket" instead of "Play Again" (#176).
+final activeTournamentIdProvider = StateProvider<String?>((ref) => null);
+
 /// Currently selected card in hand (card games).
 final selectedCardProvider = StateProvider<PlayingCard?>((ref) => null);
 
