@@ -154,7 +154,10 @@ class Tournament extends Equatable {
   final Map<String, dynamic> settings;
   final TournamentStatus status;
   final String? winnerId;
-  final Map<String, dynamic>? finalStandings;
+  /// Ordered standings written by the server at completion:
+  /// [{place, user_id, wins, losses, points, ...}]. A LIST — casting this to
+  /// a Map crashed every completed-tournament screen (minified:E<dynamic>).
+  final List<dynamic>? finalStandings;
   final String minSubscriptionTier;
   final String roomSocialMode;
   final int teamSize;
@@ -242,7 +245,7 @@ class Tournament extends Equatable {
       settings: (json['settings'] as Map<String, dynamic>?) ?? {},
       status: TournamentStatus.fromDb(json['status'] as String),
       winnerId: json['winner_id'] as String?,
-      finalStandings: json['final_standings'] as Map<String, dynamic>?,
+      finalStandings: json['final_standings'] as List<dynamic>?,
       minSubscriptionTier:
           (json['min_subscription_tier'] as String?) ?? 'free',
       roomSocialMode: (json['room_social_mode'] as String?) ?? 'focus',

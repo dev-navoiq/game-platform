@@ -62,6 +62,10 @@ class RoomSnapshot {
   final int maxPlayers;
   final List<RoomMember> members;
 
+  /// Non-null when this room is a tournament match (game_rooms.config
+  /// carries tournament_id). Drives tournament-aware post-game UI (#176).
+  final String? tournamentId;
+
   const RoomSnapshot({
     required this.roomCode,
     required this.socialMode,
@@ -69,5 +73,6 @@ class RoomSnapshot {
     required this.gameType,
     required this.maxPlayers,
     required this.members,
+    this.tournamentId,
   });
 }
