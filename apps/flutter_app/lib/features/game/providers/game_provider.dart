@@ -8,9 +8,18 @@ import 'package:game_twenty_nine/game_twenty_nine.dart';
 import '../../../core/services/supabase_service.dart';
 import '../local/local_game_session.dart';
 
+/// Health of the active game's realtime stream. False while the subscription
+/// is reconnecting/catching up — the HUD shows a "Reconnecting…" chip so a
+/// stale table is never mistaken for a live one (#186).
+final gameStreamHealthyProvider = StateProvider<bool>((ref) => true);
+
 final gameStateProvider =
     StateNotifierProvider<GameNotifier, GameState?>((ref) {
-  return GameNotifier(ref.watch(supabaseServiceProvider));
+  return GameNotifier(
+    ref.watch(supabaseServiceProvider),
+    onStreamHealth: (healthy) =>
+        ref.read(gameStreamHealthyProvider.notifier).state = healthy,
+  );
 });
 
 /// Active room id while the GameScreen is mounted. Set in
@@ -33,7 +42,10 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// locally, before the server confirms it (optimistic UI).
   final _twentyNineRules = TwentyNineRules();
 
-  GameNotifier(this._supabase) : super(null);
+  GameNotifier(this._supabase, {this.onStreamHealth}) : super(null);
+
+  /// Invoked by the self-healing subscription as the stream drops/recovers.
+  final void Function(bool healthy)? onStreamHealth;
 
   /// On-device practice session ("Practice vs Bots"). While attached, moves
   /// whose roomId matches the session are applied by the local engine and no
@@ -69,7 +81,9 @@ class GameNotifier extends StateNotifier<GameState?> {
     // Replace any previous room's subscription — its reconnect timers and
     // watchdog must not keep feeding a screen we've left.
     _gameStateSub?.cancel();
+    onStreamHealth?.call(true);
     _gameStateSub = _supabase.subscribeToGameState(
+      onHealth: onStreamHealth,
       roomId: roomId,
       onUpdate: (data) {
         print('[GameNotifier] onUpdate received: gameType=$_gameType, dataKeys=${(data as Map).keys.toList()}');

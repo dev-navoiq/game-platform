@@ -71,6 +71,11 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   /// Without this cache, _ohHellWinners() reads empty bids and everyone loses.
   Map<String, bool> _playerMadeBid = {};
 
+  /// Completed-round index (0-based) → MY bid. The engine's round history
+  /// keeps only points, so the score sheet's 'You bid' row is fed from this
+  /// on-device capture (rounds before a mid-game rejoin render '—').
+  final Map<int, int> _myBidHistory = {};
+
   /// One GlobalKey per seat — fed into PlayerNode and TrickZone so opponent
   /// card flights know where each player sits.
   final Map<String, GlobalKey> _seatKeys = {};
@@ -270,10 +275,18 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
           _playerMadeBid[pid] = (bid == won);
         }
       }
+      // While round N is live, history holds N-1 entries — so the current
+      // round's future history index is exactly roundHistory.length.
+      final myBid = state.bids[widget.localPlayerId];
+      if (myBid != null) {
+        _myBidHistory[state.roundHistory.length] = myBid;
+      }
     }
     // Clear the cache when a new round's bidding starts (bids empty).
     if (state.phase == GamePhase.bidding && state.bids.isEmpty) {
       _playerMadeBid.clear();
+      // Fresh game (no history yet) → previous session's bids are stale.
+      if (state.roundHistory.isEmpty) _myBidHistory.clear();
     }
   }
 
@@ -344,6 +357,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
               scores: state.scores,
               roundHistory: state.roundHistory,
               isGameOver: state.phase == GamePhase.gameEnd,
+              myBidHistory: _myBidHistory,
               playerNames: {
                 for (final e in ref.read(roomMembersProvider).entries)
                   if (e.value.displayName.trim().isNotEmpty)
@@ -712,10 +726,15 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                           // happened, so the regret is unmistakable. No
                           // mid-game YAY pill (a single trick win isn't
                           // worth the shout).
+                          // A ready player's verdict pill dies with the game
+                          // it describes — once they confirm ready for the
+                          // next game, the badge replaces YAY/OH HELL (#20).
                           reactionEmote: isRoundEnd
-                              ? (winnerPlayerIds.contains(playerId)
-                                  ? 'YAY!'
-                                  : 'OH HELL')
+                              ? (readySet.contains(playerId)
+                                  ? null
+                                  : winnerPlayerIds.contains(playerId)
+                                      ? 'YAY!'
+                                      : 'OH HELL')
                               : (_celebrationWinnerId == playerId &&
                                       (state.tricksWon[playerId] ?? 0) >
                                           (state.bids[playerId] ?? 0)
@@ -979,10 +998,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
           _celebrationWinnerId == localPlayerId &&
           (state.tricksWon[localPlayerId] ?? 0) >
               (state.bids[localPlayerId] ?? 0),
+      // Same as opponent seats: ready replaces the verdict pill (#20).
       reactionEmote: isRoundEnd
-          ? (winnerPlayerIds.contains(localPlayerId)
-              ? 'YAY!'
-              : 'OH HELL')
+          ? (readySet.contains(localPlayerId)
+              ? null
+              : winnerPlayerIds.contains(localPlayerId)
+                  ? 'YAY!'
+                  : 'OH HELL')
           : (_celebrationWinnerId == localPlayerId &&
                   (state.tricksWon[localPlayerId] ?? 0) >
                       (state.bids[localPlayerId] ?? 0)

@@ -203,6 +203,11 @@ class OhHellScoreTable extends StatelessWidget {
   /// "Bot N" even when the seats showed real names (#183).
   final Map<String, String> playerNames;
 
+  /// Completed-round index (0-based) → MY bid that round. Tracked on-device
+  /// by the game screen (bids are not kept in round history server-side).
+  /// Rounds observed before a mid-game rejoin show '—'.
+  final Map<int, int> myBidHistory;
+
   const OhHellScoreTable({
     super.key,
     required this.roundNumber,
@@ -216,6 +221,7 @@ class OhHellScoreTable extends StatelessWidget {
     required this.roundHistory,
     this.isGameOver = false,
     this.playerNames = const {},
+    this.myBidHistory = const {},
   });
 
   @override
@@ -375,6 +381,12 @@ class OhHellScoreTable extends StatelessWidget {
     );
   }
 
+  /// Local player first so the 'You bid' row sits directly above 'You'.
+  List<String> _historyRowOrder() => [
+        if (playerOrder.contains(localPlayerId)) localPlayerId,
+        ...playerOrder.where((p) => p != localPlayerId),
+      ];
+
   Widget _buildHistoryStrip() {
     final cellStyle = GoogleFonts.inter(
       fontSize: 10.5,
@@ -405,11 +417,18 @@ class OhHellScoreTable extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                // Rows: 'You bid' (my bid per round), then 'You' (my
+                // points) directly beneath, then the other players — the
+                // local player's story reads top-to-bottom in one glance.
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('R', style: headerStyle),
-                    for (final pid in playerOrder)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('You bid', style: headerStyle),
+                    ),
+                    for (final pid in _historyRowOrder())
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -432,7 +451,20 @@ class OhHellScoreTable extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text('${i + 1}', style: headerStyle),
-                      for (final pid in playerOrder)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: SizedBox(
+                          width: 24,
+                          child: Text(
+                            myBidHistory.containsKey(i)
+                                ? '${myBidHistory[i]}'
+                                : '—',
+                            style: headerStyle,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                      for (final pid in _historyRowOrder())
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: SizedBox(

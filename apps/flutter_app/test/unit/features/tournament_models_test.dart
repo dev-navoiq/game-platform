@@ -292,11 +292,16 @@ void main() {
 
   group('TournamentRegistrationResult', () {
     test('has all expected values', () {
-      expect(TournamentRegistrationResult.values.length, 8);
+      // 12 = the original 8 + team results (teamRequired/teamFull/
+      // teamNotFound, 2v2 feature) + registeredRequired (#188). This test
+      // had been stale at 8 since the team feature landed.
+      expect(TournamentRegistrationResult.values.length, 12);
       expect(TournamentRegistrationResult.values,
           contains(TournamentRegistrationResult.success));
       expect(TournamentRegistrationResult.values,
           contains(TournamentRegistrationResult.insufficientFunds));
+      expect(TournamentRegistrationResult.values,
+          contains(TournamentRegistrationResult.registeredRequired));
     });
   });
 }

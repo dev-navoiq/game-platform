@@ -45,6 +45,7 @@ void main() {
       when(() => mockSupabase.subscribeToGameState(
             roomId: any(named: 'roomId'),
             onUpdate: any(named: 'onUpdate'),
+            onHealth: any(named: 'onHealth'),
           )).thenReturn(GameStateSubscription.inert());
 
       final container = buildContainer();
@@ -56,6 +57,7 @@ void main() {
       verify(() => mockSupabase.subscribeToGameState(
             roomId: 'room-123',
             onUpdate: any(named: 'onUpdate'),
+            onHealth: any(named: 'onHealth'),
           )).called(1);
     });
 
@@ -153,6 +155,7 @@ void main() {
       when(() => mockSupabase.subscribeToGameState(
             roomId: any(named: 'roomId'),
             onUpdate: any(named: 'onUpdate'),
+            onHealth: any(named: 'onHealth'),
           )).thenAnswer((inv) {
         onUpdate = inv.namedArguments[#onUpdate] as Function;
         return GameStateSubscription.inert();
