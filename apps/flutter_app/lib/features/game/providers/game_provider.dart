@@ -189,7 +189,13 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// behaviour), which is correct because they never apply state ahead of the
   /// server.
   void _applyAuthoritative(GameState newState) {
-    if (_gameType == 'twenty_nine' && _versionOf(newState) < _appliedVersion) {
+    // Stale-drop for ALL games, not just twenty_nine: the staleness
+    // watchdog's catch-up fetch can race a just-played move and would
+    // otherwise clobber the fresh trick with the pre-move row — played
+    // cards visibly vanished mid-trick (#192). turnNumber is monotonic in
+    // every engine; equal versions still apply so twenty_nine's optimistic
+    // reconciliation keeps working.
+    if (_versionOf(newState) < _appliedVersion) {
       return; // stale — ignore
     }
     _appliedVersion = _versionOf(newState);
