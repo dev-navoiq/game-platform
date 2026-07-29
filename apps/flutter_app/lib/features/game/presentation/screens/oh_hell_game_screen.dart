@@ -641,7 +641,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                 // HUD
                 GameHud(
                   gameName: 'Oh Hell',
-                  roundNumber: state.roundNumber,
+                  // The engine bumps roundNumber at round COMPLETION, so
+                  // during the ready screen the raw value already names the
+                  // NEXT round. Show the round just played until the next
+                  // one actually deals (mirrors the score sheet).
+                  roundNumber: state.phase == GamePhase.roundEnd
+                      ? (state.roundNumber > 1 ? state.roundNumber - 1 : 1)
+                      : state.roundNumber,
                   totalRounds: state.totalRounds,
                   trumpInfo: '♥',
                   cardsDealt: state.cardsThisRound,
