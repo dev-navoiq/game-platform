@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/animations/celebrations/confetti_animation.dart';
-import '../../../../shared/animations/celebrations/trophy_animation.dart';
 
 class RoundEndCelebrationLayer extends StatelessWidget {
   final Set<String> winnerPlayerIds;
@@ -67,15 +66,8 @@ class RoundEndCelebrationLayer extends StatelessWidget {
           ),
         ),
       ),
-      Positioned(
-        left: rect.center.dx - 100,
-        top: rect.top - 200,
-        width: 200,
-        height: 200,
-        child: const IgnorePointer(
-          child: TrophyAnimation(isPlaying: true),
-        ),
-      ),
+      // Trophy cup removed by request — one celebration per seat is enough;
+      // the confetti carries the moment without the clutter.
       // TODO(item-4-wiring): wrap the actual PlayerNode for `playerId` with
       // WinnerJumpAnimation (and LoserSadAnimation for non-winners). That
       // requires screen-level integration since seat widgets are owned by

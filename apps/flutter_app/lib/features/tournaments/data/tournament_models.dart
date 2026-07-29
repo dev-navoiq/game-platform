@@ -154,6 +154,27 @@ class Tournament extends Equatable {
   final Map<String, dynamic> settings;
   final TournamentStatus status;
   final String? winnerId;
+  /// My final placement in a completed tournament, from final_standings
+  /// ([{place, user_id, ...}]). Null while not completed or if I wasn't
+  /// ranked (e.g. dropped solo). Used for the My Tournaments outcome line
+  /// (#187).
+  int? placeFor(String userId) {
+    final fs = finalStandings;
+    if (fs == null) return null;
+    for (final e in fs) {
+      if (e is Map && e['user_id'] == userId) return e['place'] as int?;
+    }
+    return null;
+  }
+
+  /// Prize configured for [place], if any.
+  TournamentPrize? prizeForPlace(int place) {
+    for (final p in prizes) {
+      if (p.place == place) return p;
+    }
+    return null;
+  }
+
   /// Ordered standings written by the server at completion:
   /// [{place, user_id, wins, losses, points, ...}]. A LIST — casting this to
   /// a Map crashed every completed-tournament screen (minified:E<dynamic>).
@@ -500,6 +521,7 @@ enum TournamentRegistrationResult {
   tournamentFull,
   insufficientFunds,
   tierRequired,
+  registeredRequired,
   teamRequired,
   teamFull,
   teamNotFound,

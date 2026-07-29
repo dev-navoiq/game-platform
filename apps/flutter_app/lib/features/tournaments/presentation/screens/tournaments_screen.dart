@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/di/providers.dart';
 import '../../../../core/routing/routes.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/felt_background.dart';
@@ -156,13 +157,81 @@ class _MyTournamentsTab extends ConsumerWidget {
         child: Text('Error: $e',
             style: const TextStyle(color: AppColors.textFeltMuted)),
       ),
-      data: (list) =>
-          RefreshIndicator(
+      data: (list) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(myTournamentsProvider),
-        child: _buildList(context, list, 'You haven\'t joined any tournaments'),
+        child: _buildMyList(
+          context,
+          list,
+          ref.watch(currentUserProvider)?.id,
+        ),
       ),
     );
   }
+}
+
+/// History list: same cards as the other tabs, plus MY outcome per
+/// completed/cancelled tournament — placement and net coins/gems (#187).
+/// Computed entirely from data the card already has (final_standings,
+/// prize_pool, entry fees, status); game rewards are deliberately excluded.
+Widget _buildMyList(
+  BuildContext context,
+  List<Tournament> tournaments,
+  String? userId,
+) {
+  if (tournaments.isEmpty) {
+    return _buildList(context, tournaments, "You haven't joined any tournaments");
+  }
+  return ListView.separated(
+    physics: const AlwaysScrollableScrollPhysics(),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    itemCount: tournaments.length,
+    separatorBuilder: (_, __) => const SizedBox(height: 12),
+    itemBuilder: (context, index) {
+      final tournament = tournaments[index];
+      final (text, color) = _myOutcome(tournament, userId);
+      return TournamentCard(
+        tournament: tournament,
+        outcomeText: text,
+        outcomeColor: color,
+        onTap: () => context.push(AppRoutes.tournamentPath(tournament.id)),
+      );
+    },
+  );
+}
+
+(String?, Color?) _myOutcome(Tournament t, String? userId) {
+  if (userId == null) return (null, null);
+  if (t.status == TournamentStatus.cancelled) {
+    final paid = t.entryFeeCoins > 0 || t.entryFeeGems > 0;
+    return (paid ? 'Cancelled — fee refunded' : 'Cancelled', AppColors.textMuted);
+  }
+  if (t.status != TournamentStatus.completed) return (null, null);
+  final place = t.placeFor(userId);
+  if (place == null) return ('Played', AppColors.textMuted);
+  final prize = t.prizeForPlace(place);
+  final netCoins = (prize?.coins ?? 0) - t.entryFeeCoins;
+  final netGems = (prize?.gems ?? 0) - t.entryFeeGems;
+  final placeLabel = switch (place) {
+    1 => '🏆 1st',
+    2 => '🥈 2nd',
+    3 => '🥉 3rd',
+    _ => '${place}th',
+  };
+  final parts = <String>[];
+  if (netCoins != 0 || netGems == 0) {
+    parts.add('${netCoins > 0 ? '+' : ''}$netCoins coins');
+  }
+  if (netGems != 0) parts.add('${netGems > 0 ? '+' : ''}$netGems gems');
+  final positive = netCoins > 0 || netGems > 0;
+  final negative = !positive && (netCoins < 0 || netGems < 0);
+  return (
+    '$placeLabel · ${parts.join(' ')}',
+    positive
+        ? AppColors.success
+        : negative
+            ? AppColors.danger
+            : AppColors.textMuted,
+  );
 }
 
 Widget _buildList(

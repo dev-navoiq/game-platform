@@ -394,6 +394,8 @@ class _TournamentDetailScreenState
         'Registration is closed',
       TournamentRegistrationResult.tierRequired =>
         'Subscription required',
+      TournamentRegistrationResult.registeredRequired =>
+        'Create an account to enter gem tournaments',
       TournamentRegistrationResult.teamRequired =>
         'This tournament needs a team — create or join one',
       TournamentRegistrationResult.teamFull => 'That team is already full',

@@ -315,6 +315,7 @@ class SupabaseService {
   GameStateSubscription subscribeToGameState({
     required String roomId,
     required Function onUpdate,
+    void Function(bool healthy)? onHealth,
   }) {
     final handle = GameStateSubscription._();
     var attempt = 0;
@@ -329,7 +330,10 @@ class SupabaseService {
             .select()
             .eq('room_id', roomId)
             .limit(1);
-        if (!handle._disposed && rows.isNotEmpty) onUpdate(rows.first);
+        if (!handle._disposed && rows.isNotEmpty) {
+          onHealth?.call(true);
+          onUpdate(rows.first);
+        }
       } catch (_) {
         // Transient REST failure — the watchdog will try again.
       }
@@ -338,6 +342,9 @@ class SupabaseService {
     late void Function() connect;
     void scheduleReconnect() {
       if (handle._disposed || handle._reconnectTimer != null) return;
+      // Tell the UI the table may be stale — players deserve to know they
+      // are looking at a reconnecting view, not a live one (#186).
+      onHealth?.call(false);
       attempt++;
       final delay = Duration(seconds: attempt < 5 ? 1 << attempt : 30);
       handle._reconnectTimer = Timer(delay, () {
@@ -357,6 +364,7 @@ class SupabaseService {
           .listen(
             (data) {
               attempt = 0;
+              onHealth?.call(true);
               if (data.isNotEmpty) onUpdate(data.first);
             },
             // A dead channel used to end the stream silently and the table
@@ -372,7 +380,9 @@ class SupabaseService {
     // Watchdog: some socket deaths emit neither error nor done — the stream
     // just goes quiet. A slow poll guarantees the table can never stay stale
     // for more than ~25s no matter how the channel died.
-    handle._watchdog = Timer.periodic(const Duration(seconds: 25), (_) {
+    // 10s (was 25s): in a live card game a stale view for 25 seconds meant
+    // missing a whole trick or more (#186).
+    handle._watchdog = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!handle._disposed) fetchCurrent();
     });
     return handle;
