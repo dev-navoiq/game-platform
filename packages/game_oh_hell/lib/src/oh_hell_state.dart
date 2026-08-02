@@ -209,9 +209,7 @@ class OhHellState extends GameState {
                   .map((k, v) => MapEntry(k, v as int)))
               .toList() ??
           const [],
-      socialMode: json['socialMode'] != null
-          ? RoomSocialMode.values.byName(json['socialMode'] as String)
-          : RoomSocialMode.full,
+      socialMode: RoomSocialModeWire.parse(json['socialMode'] as String?),
     );
   }
 

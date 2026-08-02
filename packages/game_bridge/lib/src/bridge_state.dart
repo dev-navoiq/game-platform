@@ -380,9 +380,7 @@ class BridgeState extends GameState {
       currentPlayerId: json['currentPlayerId'] as String?,
       turnNumber: (json['turnNumber'] as int?) ?? 0,
       roundNumber: (json['roundNumber'] as int?) ?? 1,
-      socialMode: json['socialMode'] != null
-          ? RoomSocialMode.values.byName(json['socialMode'] as String)
-          : RoomSocialMode.full,
+      socialMode: RoomSocialModeWire.parse(json['socialMode'] as String?),
       playerOrder: List<String>.from(json['playerOrder'] as List),
       dealerIndex: json['dealerIndex'] as int,
       hands: (json['hands'] as Map<String, dynamic>).map(
