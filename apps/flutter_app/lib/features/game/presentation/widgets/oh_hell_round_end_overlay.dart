@@ -304,9 +304,11 @@ class OhHellScoreTable extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          for (final pid in playerOrder) ...[
+          // Local player first — the row you look for is always on top,
+          // matching the history strip's ordering (#214).
+          for (final pid in _historyRowOrder()) ...[
             _buildPlayerRow(pid, emojis, cellStyle),
-            if (pid != playerOrder.last)
+            if (pid != _historyRowOrder().last)
               Divider(
                 height: 8,
                 thickness: 0.5,

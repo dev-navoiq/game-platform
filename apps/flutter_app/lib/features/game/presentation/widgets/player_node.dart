@@ -94,6 +94,7 @@ class PlayerNode extends ConsumerWidget {
     // Determine bubble content: prefer provider-driven, fall back to prop
     String? bubbleText = chatMessage;
     bool isEmote = false;
+    String? bubbleKey;
 
     if (roomId != null &&
         playerId != null &&
@@ -108,8 +109,10 @@ class PlayerNode extends ConsumerWidget {
       if (reaction != null) {
         bubbleText = reaction.reaction;
         isEmote = true;
+        bubbleKey = reaction.id;
       } else if (chat != null) {
         bubbleText = chat.content;
+        bubbleKey = chat.id;
       }
     }
 
@@ -133,6 +136,12 @@ class PlayerNode extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: FloatingChatBubble(
+              // Keyed per message: a new reaction arriving after the
+              // previous bubble's animation completed must REMOUNT the
+              // widget so the show/hide animation replays — unkeyed, the
+              // element was reused with a finished controller and later
+              // taps displayed nothing (#9).
+              key: ValueKey(bubbleKey ?? bubbleText),
               message: bubbleText,
               isEmoteOnly: isEmote,
             ),
