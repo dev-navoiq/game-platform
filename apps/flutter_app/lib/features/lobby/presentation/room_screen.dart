@@ -389,11 +389,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         // still status='playing'. With slot-substitution-on-forfeit now in
         // place this is rare, but keep the handler as a fail-loud guard.
         final errorCode = result['code'] as String?;
+        if (errorCode == 'ALREADY_STARTED') {
+          // The game is LIVE — this is the host's own room, so re-tapping
+          // Start must take them INTO it, not dead-end on an error (#212).
+          // (Common after back-to-back games when the first tap started the
+          // game but navigation went sideways.)
+          setState(() => _isStarting = false);
+          context.push(AppRoutes.gamePath(_roomId));
+          return;
+        }
         if (errorCode != null) {
           _navigatedToGame = false;
           final message = switch (errorCode) {
-            'ALREADY_STARTED' =>
-              'This room already has a game in progress. Try rejoining from the home screen.',
             'NOT_ENOUGH_PLAYERS' =>
               'Need at least 2 players (humans + bots) to start.',
             'NOT_HOST' => 'Only the host can start the game.',
