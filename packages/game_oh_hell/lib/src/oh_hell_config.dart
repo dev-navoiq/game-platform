@@ -33,6 +33,8 @@ class OhHellConfig {
     return result;
   }
 
-  /// Score for a player who made their exact bid.
-  static int exactBidScore(int bid) => 10 + bid;
+  /// Score for a player who made their exact bid: 10 + 11×bid.
+  /// (0→10, 1→21, 2→32, 3→43 … — ambitious exact bids are rewarded far
+  /// more than safe zeros; changed from 10 + bid on 2026-08-02.)
+  static int exactBidScore(int bid) => 10 + 11 * bid;
 }
