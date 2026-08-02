@@ -9,7 +9,7 @@ import 'oh_hell_state.dart';
 ///
 /// Players bid the exact number of tricks they expect to win each round.
 /// The dealer cannot bid a number that makes the total equal to cards dealt.
-/// Hearts are always trump. Exact bids score 10 + bid; misses score 0.
+/// Hearts are always trump. Exact bids score 10 + 11×bid; misses score 0.
 class OhHellRules extends GameRules<OhHellState, OhHellMove> {
   final OhHellScorer _scorer;
   Map<String, dynamic> _serverConfig = {};

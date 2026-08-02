@@ -48,6 +48,7 @@ serve(async (req) => {
       start_errors: [] as { id: string; code?: string }[],
       repaired: 0,
       forfeited: [] as { match_id: string; forfeited_user: string }[],
+      rooms_expired: 0,
     };
 
     // ── 0. Check-in window announcements (§T6) ─────────────────────────────
@@ -177,6 +178,20 @@ serve(async (req) => {
         }
       }
     }
+
+    // ── 4. Waiting-room sweeper ────────────────────────────────────────────
+    // Rooms abandoned in 'waiting' lived forever — 31 ghosts up to 54 days
+    // old were polluting matchmaking candidates and room lists (#217). A
+    // lobby idle for an hour is dead; sweep it. (Tournament match rooms are
+    // born 'playing' and never pass through here.)
+    const staleRoomCutoff = new Date(Date.now() - 60 * 60_000).toISOString();
+    const { data: expiredRooms } = await admin
+      .from('game_rooms')
+      .update({ status: 'abandoned' })
+      .eq('status', 'waiting')
+      .lt('created_at', staleRoomCutoff)
+      .select('id');
+    summary.rooms_expired = (expiredRooms ?? []).length;
 
     return jsonResponse({ ok: true, ...summary });
   } catch (error) {

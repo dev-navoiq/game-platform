@@ -2,7 +2,7 @@ import 'oh_hell_config.dart';
 
 /// Result of scoring one Oh Hell round.
 class OhHellRoundResult {
-  /// Points earned this round per player (0 if missed, 10 + bid if exact).
+  /// Points earned this round per player (0 if missed, 10 + 11×bid if exact).
   final Map<String, int> roundPoints;
 
   /// Updated cumulative scores after this round.
@@ -20,7 +20,7 @@ class OhHellScorer {
 
   /// Score a completed round.
   ///
-  /// Each player who won exactly their bid earns `10 + bid` points.
+  /// Each player who won exactly their bid earns `10 + 11×bid` points.
   /// Others earn 0.
   OhHellRoundResult scoreRound({
     required List<String> playerOrder,

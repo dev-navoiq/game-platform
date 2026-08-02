@@ -993,6 +993,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       socialMode: state.socialMode,
       showBidPill: true,
       hasBid: state.bids.containsKey(localPlayerId),
+      // roomId + playerId power the floating reaction/chat bubbles. The
+      // local node never received them, so a player's OWN emoji taps were
+      // invisible on their own seat — with the missing realtime publication
+      // (#9) this made reactions look completely dead in solo games.
+      roomId: widget.roomId,
+      playerId: localPlayerId,
       // Internal pulse/jump/sad ONLY mid-trick — fires on
       // _celebrationWinnerId (3150ms after trick complete, i.e. after
       // the cards have swooped to the winner).
@@ -1046,14 +1052,24 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 
   void _playCard(WidgetRef ref, PlayingCard card) {
-    ref.read(gameStateProvider.notifier).sendMove(
+    // Optimistic: the played card leaves the hand and lands in the trick
+    // immediately; the server response/realtime reconciles. Without this,
+    // the card flashed back into the hand during the round-trip (#211).
+    ref.read(gameStateProvider.notifier).sendMoveOptimistic(
       roomId: widget.roomId,
-      move: {
+      localMove: OhHellPlayCardMove(
+        playerId: widget.localPlayerId,
+        card: card,
+      ),
+      wireMove: {
         'type': 'playCard',
         'player_id': widget.localPlayerId,
         'card': card.toJson(),
       },
-    );
+      // On rejection the notifier already rolled the card back into the
+      // hand; nothing else to do (client-side legality checks make this
+      // path near-impossible anyway).
+    ).catchError((_) {});
   }
 
   void _placeBid(WidgetRef ref, int bid) {

@@ -38,9 +38,10 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// state. See [_versionOf]. Starts at -1 so the very first state always wins.
   int _appliedVersion = -1;
 
-  /// Pure rules engine used to predict the result of a deterministic move
+  /// Pure rules engines used to predict the result of a deterministic move
   /// locally, before the server confirms it (optimistic UI).
   final _twentyNineRules = TwentyNineRules();
+  final _ohHellRules = OhHellRules();
 
   GameNotifier(this._supabase, {this.onStreamHealth}) : super(null);
 
@@ -214,6 +215,15 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// non-deterministic (shuffles / deals hidden cards) or unsupported here.
   GameState? _predictOptimisticState(
       String gameType, GameState before, GameMove move) {
+    // Oh Hell: card plays and bids are fully deterministic — predicting
+    // them locally removes the latency window where a played card flashed
+    // back into the hand before the server state landed (#211). newRound
+    // deals hidden cards and is never predicted.
+    if (gameType == 'oh_hell') {
+      if (before is! OhHellState || move is! OhHellMove) return null;
+      final result = _ohHellRules.applyMove(before, move);
+      return result.isValid ? result.newState : null;
+    }
     if (gameType != 'twenty_nine') return null;
     if (before is! TwentyNineState || move is! TwentyNineMove) return null;
 

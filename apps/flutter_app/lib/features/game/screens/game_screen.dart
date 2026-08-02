@@ -50,6 +50,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.initState();
     // Subscribe to realtime game state updates
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Entering a DIFFERENT room while the previous game screen never
+      // disposed (back-to-back games, sideways navigation) left the old
+      // game's state in gameStateProvider — the new screen rendered the
+      // previous game's podium and the whole flow dead-ended (#212).
+      // If a stale room id is still published, drop the stale state first.
+      final prevRoom = ref.read(currentRoomIdProvider);
+      if (prevRoom != null && prevRoom != widget.roomId) {
+        ref.invalidate(gameStateProvider);
+      }
       // Publish the active room id so descendant widgets (GameActions etc.)
       // can read it without prop-drilling.
       ref.read(currentRoomIdProvider.notifier).state = widget.roomId;

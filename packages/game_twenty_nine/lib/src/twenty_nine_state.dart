@@ -291,9 +291,7 @@ class TwentyNineState extends GameState {
       tricksWon: (json['tricksWon'] as Map<String, dynamic>)
           .map((k, v) => MapEntry(int.parse(k), v as int)),
       passCount: (json['passCount'] as int?) ?? 0,
-      socialMode: json['socialMode'] != null
-          ? RoomSocialMode.values.byName(json['socialMode'] as String)
-          : RoomSocialMode.full,
+      socialMode: RoomSocialModeWire.parse(json['socialMode'] as String?),
       doublingMultiplier: (json['doublingMultiplier'] as int?) ?? 1,
       doubledBy: json['doubledBy'] as String?,
       redoubledBy: json['redoubledBy'] as String?,

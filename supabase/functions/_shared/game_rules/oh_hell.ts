@@ -26,7 +26,7 @@ interface OhHellState {
   roundNumber: number;
   /**
    * One entry per completed round. Each entry maps playerId → points scored
-   * that round (0 for a missed bid; 10 + bid for an exact bid). Used by the
+   * that round (0 for a missed bid; 10 + 11*bid for an exact bid). Used by the
    * client scoreboard; persisted across the whole session.
    */
   roundHistory?: Array<Record<string, number>>;
@@ -279,7 +279,7 @@ function completeRound(
   hands: Record<string, Card[]>,
   tricksWon: Record<string, number>,
 ): OhHellState {
-  // Score: exact bid = 10 + bid, else 0. Capture this round's points map
+  // Score: exact bid = 10 + 11*bid, else 0. Capture this round's points map
   // separately so the client scoreboard can show per-round columns.
   const newScores = { ...state.scores };
   const roundPoints: Record<string, number> = {};
@@ -287,7 +287,7 @@ function completeRound(
     const bid = state.bids[pid] ?? 0;
     const won = tricksWon[pid] ?? 0;
     if (won === bid) {
-      const pts = 10 + bid;
+      const pts = 10 + 11 * bid;
       newScores[pid] = (newScores[pid] ?? 0) + pts;
       roundPoints[pid] = pts;
     } else {

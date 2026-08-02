@@ -58,7 +58,7 @@ class OhHellState extends GameState {
   final Map<String, int> scores;
 
   /// One entry per completed round. Each entry maps playerId → points
-  /// scored that round (0 = missed, otherwise 10 + bid). Used by the
+  /// scored that round (0 = missed, otherwise 10 + 11×bid). Used by the
   /// round-end scoreboard; empty until the first round completes.
   final List<Map<String, int>> roundHistory;
 
@@ -209,9 +209,7 @@ class OhHellState extends GameState {
                   .map((k, v) => MapEntry(k, v as int)))
               .toList() ??
           const [],
-      socialMode: json['socialMode'] != null
-          ? RoomSocialMode.values.byName(json['socialMode'] as String)
-          : RoomSocialMode.full,
+      socialMode: RoomSocialModeWire.parse(json['socialMode'] as String?),
     );
   }
 
