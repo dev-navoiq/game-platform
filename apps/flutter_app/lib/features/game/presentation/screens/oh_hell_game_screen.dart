@@ -993,6 +993,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       socialMode: state.socialMode,
       showBidPill: true,
       hasBid: state.bids.containsKey(localPlayerId),
+      // roomId + playerId power the floating reaction/chat bubbles. The
+      // local node never received them, so a player's OWN emoji taps were
+      // invisible on their own seat — with the missing realtime publication
+      // (#9) this made reactions look completely dead in solo games.
+      roomId: widget.roomId,
+      playerId: localPlayerId,
       // Internal pulse/jump/sad ONLY mid-trick — fires on
       // _celebrationWinnerId (3150ms after trick complete, i.e. after
       // the cards have swooped to the winner).
