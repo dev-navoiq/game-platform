@@ -1052,14 +1052,24 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 
   void _playCard(WidgetRef ref, PlayingCard card) {
-    ref.read(gameStateProvider.notifier).sendMove(
+    // Optimistic: the played card leaves the hand and lands in the trick
+    // immediately; the server response/realtime reconciles. Without this,
+    // the card flashed back into the hand during the round-trip (#211).
+    ref.read(gameStateProvider.notifier).sendMoveOptimistic(
       roomId: widget.roomId,
-      move: {
+      localMove: OhHellPlayCardMove(
+        playerId: widget.localPlayerId,
+        card: card,
+      ),
+      wireMove: {
         'type': 'playCard',
         'player_id': widget.localPlayerId,
         'card': card.toJson(),
       },
-    );
+      // On rejection the notifier already rolled the card back into the
+      // hand; nothing else to do (client-side legality checks make this
+      // path near-impossible anyway).
+    ).catchError((_) {});
   }
 
   void _placeBid(WidgetRef ref, int bid) {
