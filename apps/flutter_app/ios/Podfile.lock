@@ -108,7 +108,7 @@ PODS:
   - rive_common (0.0.1):
     - Flutter
   - Sentry/HybridSDK (8.58.4)
-  - sentry_flutter (9.25.0):
+  - sentry_flutter (9.26.0):
     - Flutter
     - FlutterMacOS
     - Sentry/HybridSDK (= 8.58.4)
@@ -250,7 +250,7 @@ SPEC CHECKSUMS:
   RevenueCat: 7e1d0768fb287c9983173c9b28e39ccbeeb828a9
   rive_common: dd421daaf9ae69f0125aa761dd96abd278399952
   Sentry: 5321d74bdd28d6f6f8beaa1ca06f1fdc746bff49
-  sentry_flutter: d6279f3b5156b6535e2159e03437b571a24cc648
+  sentry_flutter: 01a996130a18996b59600c51e68b0e6364cde8b3
   share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
   shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
