@@ -128,8 +128,11 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   int? _flashShownRound;
   int? _activeFlashDelta;
   Timer? _flashTimer;
-  static const Color _overbidColor = Color(0xFFD52F47);
-  static const Color _underbidColor = Color(0xFF1F7A8C);
+  // Muted verdict tints — desaturated terracotta / slate so the chip and
+  // banner read as information, not alarm (loud saturated first pass was
+  // flagged in staging review).
+  static const Color _overbidColor = Color(0xFF9E5B4E);
+  static const Color _underbidColor = Color(0xFF54767F);
 
   /// Explainer toast for the Over/Under HUD chip (story #226).
   String? _statusToastMessage;
@@ -190,14 +193,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   String _claimSummary(OhHellState state) {
     final total = state.cardsThisRound;
     if (state.bids.isEmpty) {
-      return 'You bid first · $total trick${total == 1 ? '' : 's'} up for grabs';
+      return 'You bid first · $total trick${total == 1 ? '' : 's'}';
     }
     final claimed = _totalBids(state);
     final after = state.playerOrder.length - state.bids.length - 1;
-    final tail = after > 0
-        ? '$after player${after == 1 ? ' bids' : 's bid'} after you'
-        : 'you bid last';
-    return '$claimed of $total tricks claimed · $tail';
+    final tail = after > 0 ? '$after to bid' : "you're last";
+    return '$claimed/$total claimed · $tail';
   }
 
   /// Fires the one-time OVERBID/UNDERBID banner on the bidding → playing
@@ -892,12 +893,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                               forbiddenBid: state.isDealerBidding
                                   ? state.forbiddenBidForDealer
                                   : null,
-                              trumpInfo: '♥ Hearts',
+                              trumpInfo: '♥',
                               opponentActions:
                                   _bidActionsSoFar(state, members),
                               claimSummary: _claimSummary(state),
                               forbiddenBidReason:
-                                  "totals can't equal ${state.cardsThisRound}",
+                                  'total ≠ ${state.cardsThisRound}',
                               minimizedDetail:
                                   '$totalBids/${state.cardsThisRound} claimed',
                               onBidSelected: (bid) => _placeBid(ref, bid),
@@ -1223,19 +1224,18 @@ class _BidVerdictBannerState extends State<_BidVerdictBanner>
         ),
         child: Container(
           padding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.85),
-              width: 2,
-            ),
+            // Glass treatment (matches the modal shell) instead of a solid
+            // saturated fill — the verdict should inform, not shout.
+            color: Colors.white.withOpacity(0.88),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: color.withOpacity(0.45), width: 1.5),
             boxShadow: [
               BoxShadow(
-                color: color.withOpacity(0.45),
-                blurRadius: 24,
-                spreadRadius: 3,
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -1243,11 +1243,11 @@ class _BidVerdictBannerState extends State<_BidVerdictBanner>
             isOver
                 ? 'OVERBID — $n too many!'
                 : 'UNDERBID — $n short!',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: 1.0,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.8,
             ),
           ),
         ),
