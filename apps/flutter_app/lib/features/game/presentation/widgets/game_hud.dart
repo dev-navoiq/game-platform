@@ -19,6 +19,14 @@ class GameHud extends StatelessWidget {
   final int? cardsDealt;
   final RoomSocialMode socialMode;
   final bool isSpectator;
+  /// Optional phase-dependent status segment appended to the round pill
+  /// (e.g. a live "3/5 claimed" counter during bidding, or "Over +2" once
+  /// bids close). Game-agnostic — the screen decides text and tint.
+  final String? roundStatusText;
+  final Color? roundStatusColor;
+  /// When non-null the status segment is tappable (e.g. to explain what
+  /// Over/Under means).
+  final VoidCallback? onRoundStatusTap;
   final VoidCallback? onMenuTap;
   /// When non-null, render a scoreboard icon button in the HUD that opens
   /// the score sheet. Replaces the larger "Show scoreboard" button that
@@ -38,6 +46,9 @@ class GameHud extends StatelessWidget {
     this.cardsDealt,
     this.socialMode = RoomSocialMode.full,
     this.isSpectator = false,
+    this.roundStatusText,
+    this.roundStatusColor,
+    this.onRoundStatusTap,
     this.onMenuTap,
     this.onScoreboardTap,
     this.onForfeitTap,
@@ -147,6 +158,30 @@ class GameHud extends StatelessWidget {
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                  if (roundStatusText != null) ...[
+                    const SizedBox(width: 5),
+                    GestureDetector(
+                      onTap: onRoundStatusTap,
+                      child: Container(
+                        key: const Key('hud-round-status'),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (roundStatusColor ?? AppColors.textMuted)
+                              .withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          roundStatusText!,
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: roundStatusColor ?? AppColors.textMuted,
+                          ),
+                        ),
                       ),
                     ),
                   ],

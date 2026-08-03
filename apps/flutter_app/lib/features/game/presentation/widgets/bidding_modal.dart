@@ -30,6 +30,20 @@ class BiddingModal extends StatefulWidget {
   /// minimizing the modal.
   final List<({String label, BidActionChip chip})>? opponentActions;
 
+  /// Optional one-line summary of the bidding state (e.g. "2 of 5 tricks
+  /// claimed · 1 player bids after you"). Rendered inside the "So far" box
+  /// when [opponentActions] is present, otherwise as its own line — so the
+  /// first bidder still sees "You bid first · 5 tricks up for grabs".
+  final String? claimSummary;
+
+  /// Optional explanation appended to the forbidden-bid warning (e.g.
+  /// "totals can't equal 5"). Falls back to "(dealer constraint)".
+  final String? forbiddenBidReason;
+
+  /// Optional detail line for the minimized chip. Falls back to the
+  /// generic "Min N" / "Action required" text.
+  final String? minimizedDetail;
+
   /// If true, surfaces a separate "Bid 29" button — the "capture all 28
   /// card points" special bid that's always legal in 29 regardless of the
   /// current high bid. Falls outside the grid so it never gets crowded out
@@ -52,6 +66,9 @@ class BiddingModal extends StatefulWidget {
     this.bidGridEnabled = true,
     this.trumpInfo,
     this.opponentActions,
+    this.claimSummary,
+    this.forbiddenBidReason,
+    this.minimizedDetail,
     this.showBid29Button = false,
     required this.onBidSelected,
     this.onPass,
@@ -97,9 +114,8 @@ class _BiddingModalState extends State<BiddingModal> {
     return MinimizableModalShell(
       title: 'Place Your Bid',
       minimizedLabel: 'Place Your Bid',
-      minimizedDetail: widget.bidGridEnabled
-          ? 'Min ${widget.minBid}'
-          : 'Action required',
+      minimizedDetail: widget.minimizedDetail ??
+          (widget.bidGridEnabled ? 'Min ${widget.minBid}' : 'Action required'),
       minimizedIcon: Icons.gavel_rounded,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -152,6 +168,18 @@ class _BiddingModalState extends State<BiddingModal> {
                         ),
                       ),
                       const SizedBox(height: 4),
+                      if (widget.claimSummary != null) ...[
+                        Text(
+                          widget.claimSummary!,
+                          key: const Key('bid-claim-summary'),
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                      ],
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
@@ -179,6 +207,18 @@ class _BiddingModalState extends State<BiddingModal> {
                   ),
                 ),
                 const SizedBox(height: 8),
+              ] else if (widget.claimSummary != null) ...[
+                // No opponent bids yet (first bidder) — summary stands alone.
+                Text(
+                  widget.claimSummary!,
+                  key: const Key('bid-claim-summary'),
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 8),
               ],
 
               // Forbidden bid warning
@@ -193,7 +233,9 @@ class _BiddingModalState extends State<BiddingModal> {
                         color: AppColors.accent.withOpacity(0.15)),
                   ),
                   child: Text(
-                    'Cannot bid ${widget.forbiddenBid} (dealer constraint)',
+                    widget.forbiddenBidReason != null
+                        ? 'Cannot bid ${widget.forbiddenBid} — ${widget.forbiddenBidReason}'
+                        : 'Cannot bid ${widget.forbiddenBid} (dealer constraint)',
                     style: GoogleFonts.inter(
                       fontSize: 10.5,
                       color: AppColors.textMuted,

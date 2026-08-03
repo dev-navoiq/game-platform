@@ -18,8 +18,10 @@ import '../../providers/game_provider.dart';
 import '../../providers/game_session_providers.dart';
 import '../../services/ready_broadcast_controller.dart';
 import '../../services/round_advance_guard.dart';
+import '../widgets/bid_action_chip.dart';
 import '../widgets/bid_pill.dart';
 import '../widgets/bidding_modal.dart';
+import '../widgets/game_toast.dart';
 import '../widgets/card_hand.dart';
 import '../widgets/emoji_bar.dart';
 import '../widgets/game_actions.dart';
@@ -126,6 +128,22 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     });
   }
 
+  /// Over/Under verdict flash (story #225): shown once per round the moment
+  /// the last bid lands (bidding → playing edge). [_flashShownRound] guards
+  /// re-fire on rebuilds; [_activeFlashDelta] drives the banner.
+  GamePhase? _prevPhaseForFlash;
+  int? _flashShownRound;
+  int? _activeFlashDelta;
+  Timer? _flashTimer;
+  // Muted verdict tints — desaturated terracotta / slate so the chip and
+  // banner read as information, not alarm (loud saturated first pass was
+  // flagged in staging review).
+  static const Color _overbidColor = Color(0xFF9E5B4E);
+  static const Color _underbidColor = Color(0xFF54767F);
+
+  /// Explainer toast for the Over/Under HUD chip (story #226).
+  String? _statusToastMessage;
+
   bool _wasRoundEnd = false;
   Timer? _readyTicker;
   int _secondsElapsed = 0;
@@ -146,7 +164,67 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     _celebrationClearTimer?.cancel();
     _readyTicker?.cancel();
     _gameOverDialogTimer?.cancel();
+    _flashTimer?.cancel();
     super.dispose();
+  }
+
+  int _totalBids(OhHellState state) =>
+      state.bids.values.fold<int>(0, (a, b) => a + b);
+
+  /// Opponents' bids so far, in actual bidding order (starting left of the
+  /// dealer), for the bid panel's "So far" row. The local player never
+  /// appears — the panel is only visible before they've bid.
+  List<({String label, BidActionChip chip})> _bidActionsSoFar(
+      OhHellState state, Map<String, RoomMember> members) {
+    final n = state.playerOrder.length;
+    final actions = <({String label, BidActionChip chip})>[];
+    for (var i = 1; i <= n; i++) {
+      final seatIndex = (state.dealerIndex + i) % n;
+      final pid = state.playerOrder[seatIndex];
+      final bid = state.bids[pid];
+      if (bid == null || pid == widget.localPlayerId) continue;
+      actions.add((
+        label: PlayerAvatar.nameFor(
+          playerId: pid,
+          localPlayerId: widget.localPlayerId,
+          seatIndex: seatIndex,
+          displayName: members[pid]?.displayName,
+        ),
+        chip: BidActionChip(action: BidAction.bid, value: bid),
+      ));
+    }
+    return actions;
+  }
+
+  /// One-line bidding summary for the bid panel + its minimized chip.
+  String _claimSummary(OhHellState state) {
+    final total = state.cardsThisRound;
+    if (state.bids.isEmpty) {
+      return 'You bid first · $total trick${total == 1 ? '' : 's'}';
+    }
+    final claimed = _totalBids(state);
+    return '$claimed/$total bid claimed';
+  }
+
+  /// Fires the one-time OVERBID/UNDERBID banner on the bidding → playing
+  /// edge. Joining mid-round (prev phase null) never flashes.
+  void _checkForBidVerdictFlash(OhHellState state) {
+    final prev = _prevPhaseForFlash;
+    _prevPhaseForFlash = state.phase;
+    if (prev != GamePhase.bidding || state.phase != GamePhase.playing) return;
+    if (_flashShownRound == state.roundNumber) return;
+    final delta = _totalBids(state) - state.cardsThisRound;
+    if (delta == 0) return;
+    _flashShownRound = state.roundNumber;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _activeFlashDelta = delta);
+      _flashTimer?.cancel();
+      _flashTimer = Timer(const Duration(milliseconds: 3400), () {
+        if (!mounted) return;
+        setState(() => _activeFlashDelta = null);
+      });
+    });
   }
 
   void _syncGameOverDialog(OhHellState state) {
@@ -585,6 +663,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     _cacheBidResults(state);
     _checkForBust(state);
     _checkForTrickEnd(state, members);
+    _checkForBidVerdictFlash(state);
     _scheduleDealReveal(state.roundNumber, state.cardsThisRound);
     final bidModalReady = _dealAnimatedRound == state.roundNumber;
 
@@ -628,6 +707,26 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     final isLocalReady = readySet.contains(localPlayerId);
     // chipsRow removed — per-player ready chips now live inside each PlayerNode.
 
+    // Round-status HUD segment: live claim counter while bidding, then the
+    // round's Over/Under verdict during play, hidden between rounds.
+    final totalBids = _totalBids(state);
+    final bidDelta = totalBids - state.cardsThisRound;
+    String? roundStatusText;
+    Color? roundStatusColor;
+    String? statusExplainer;
+    if (state.phase == GamePhase.bidding) {
+      roundStatusText = '$totalBids/${state.cardsThisRound} bid claimed';
+    } else if (state.phase == GamePhase.playing && bidDelta != 0) {
+      roundStatusText = bidDelta > 0
+          ? '$totalBids/${state.cardsThisRound} Overbid'
+          : '$totalBids/${state.cardsThisRound} Underbid';
+      roundStatusColor = bidDelta > 0 ? _overbidColor : _underbidColor;
+      statusExplainer = bidDelta > 0
+          ? '$totalBids tricks bid, only ${state.cardsThisRound} exist — someone has to bust 🔥'
+          : 'Only $totalBids of ${state.cardsThisRound} tricks bid — ${-bidDelta} trick${bidDelta == -1 ? '' : 's'} nobody wants must go to someone';
+    }
+    final explainer = statusExplainer;
+
     return Stack(
       children: [
         // Game table background
@@ -653,6 +752,11 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                   cardsDealt: state.cardsThisRound,
                   socialMode: state.socialMode,
                   isSpectator: isSpectator,
+                  roundStatusText: roundStatusText,
+                  roundStatusColor: roundStatusColor,
+                  onRoundStatusTap: explainer == null
+                      ? null
+                      : () => setState(() => _statusToastMessage = explainer),
                   onScoreboardTap: () =>
                       _openOhHellScoreboard(context, state, ref),
                   onForfeitTap: () => confirmAndForfeitGame(
@@ -820,8 +924,45 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                               forbiddenBid: state.isDealerBidding
                                   ? state.forbiddenBidForDealer
                                   : null,
+                              trumpInfo: '♥',
+                              opponentActions:
+                                  _bidActionsSoFar(state, members),
+                              claimSummary: _claimSummary(state),
+                              minimizedDetail:
+                                  '$totalBids/${state.cardsThisRound} bid claimed',
                               onBidSelected: (bid) => _placeBid(ref, bid),
                             ),
+                          ),
+                        ),
+
+                      // One-time OVERBID/UNDERBID verdict banner — sweeps in
+                      // the moment the last bid lands, then settles into the
+                      // quiet HUD chip. Dead-centre: the trick zone is empty
+                      // while it shows (bots wait it out), and higher
+                      // placements overlapped the top seats' bid pills.
+                      if (_activeFlashDelta != null)
+                        Align(
+                          alignment: Alignment.center,
+                          child: _BidVerdictBanner(
+                            key: ValueKey(
+                                'bid-verdict-${state.roundNumber}'),
+                            delta: _activeFlashDelta!,
+                          ),
+                        ),
+
+                      // Explainer toast for the Over/Under chip.
+                      if (_statusToastMessage != null)
+                        Align(
+                          alignment: const Alignment(0, -0.55),
+                          child: GameToast(
+                            key: ValueKey(_statusToastMessage),
+                            message: _statusToastMessage!,
+                            displayDuration:
+                                const Duration(milliseconds: 2500),
+                            onDismissed: () {
+                              if (!mounted) return;
+                              setState(() => _statusToastMessage = null);
+                            },
                           ),
                         ),
 
@@ -1080,6 +1221,100 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
         'player_id': widget.localPlayerId,
         'bid_value': bid,
       },
+    );
+  }
+}
+
+/// One-time round verdict banner (story #225): "Overbid — 2" /
+/// "Underbid — 1". Scales+fades in, holds ~2.5s so it's actually
+/// readable (staging feedback), fades out; ~3.2s total, parent removes at
+/// 3.4s.
+class _BidVerdictBanner extends StatefulWidget {
+  final int delta;
+
+  const _BidVerdictBanner({super.key, required this.delta});
+
+  @override
+  State<_BidVerdictBanner> createState() => _BidVerdictBannerState();
+}
+
+class _BidVerdictBannerState extends State<_BidVerdictBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3200),
+    );
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 11),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 77),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 12),
+    ]).animate(_controller);
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.7, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 11,
+      ),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 89),
+    ]).animate(_controller);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOver = widget.delta > 0;
+    final n = widget.delta.abs();
+    final color = isOver
+        ? _OhHellGameScreenState._overbidColor
+        : _OhHellGameScreenState._underbidColor;
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Opacity(
+          opacity: _opacity.value,
+          child: Transform.scale(scale: _scale.value, child: child),
+        ),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(
+            // Glass treatment (matches the modal shell) instead of a solid
+            // saturated fill — the verdict should inform, not shout.
+            color: Colors.white.withOpacity(0.88),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: color.withOpacity(0.45), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Text(
+            isOver ? 'Overbid — $n' : 'Underbid — $n',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

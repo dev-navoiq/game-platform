@@ -71,6 +71,13 @@ class BotMoveController {
   int _prevTrickSize = 0;
   bool _justCompletedTrick = false;
 
+  // Oh Hell bidding-completion detector: on the bidding → playing edge the
+  // UI shows the Overbid/Underbid verdict banner (~3.4s). Stretch the first
+  // bot play of the round so cards don't land under the banner — the user
+  // asked for banner-then-play to be sequential.
+  GamePhase? _prevOhHellPhase;
+  bool _ohHellBiddingJustCompleted = false;
+
   // Rules engine for generating valid moves.
   final TwentyNineRules _twentyNineRules = TwentyNineRules();
   final BridgeRules _bridgeRules = BridgeRules();
@@ -249,6 +256,16 @@ class BotMoveController {
     }
     _prevTrickSize = currentTrickSize;
 
+    // Bidding-completion detector (Oh Hell only — it's the only game with
+    // the verdict banner). Consumed when the next bot move is scheduled.
+    if (state is OhHellState) {
+      if (_prevOhHellPhase == GamePhase.bidding &&
+          state.phase == GamePhase.playing) {
+        _ohHellBiddingJustCompleted = true;
+      }
+      _prevOhHellPhase = state.phase;
+    }
+
     print(
       '[BotMoveController] state changed: phase=${(state as dynamic).phase} '
       'current=${state.currentPlayerId} '
@@ -311,7 +328,13 @@ class BotMoveController {
     // here — subsequent state changes inside the same trick use the short
     // delay again.
     final Duration thinkDelay;
-    if (_justCompletedTrick) {
+    if (_ohHellBiddingJustCompleted) {
+      // Wait out the Overbid/Underbid banner (removed at ~3.4s) before the
+      // first card of the round appears.
+      thinkDelay = const Duration(milliseconds: 3600);
+      _ohHellBiddingJustCompleted = false;
+      _justCompletedTrick = false;
+    } else if (_justCompletedTrick) {
       thinkDelay = const Duration(milliseconds: 3000);
       _justCompletedTrick = false;
     } else {
