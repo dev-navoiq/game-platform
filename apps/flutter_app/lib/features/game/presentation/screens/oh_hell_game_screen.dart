@@ -4,10 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-import '../../../../core/theme/colors.dart';
-import '../../../../shared/widgets/glass_container.dart';
 
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
@@ -200,29 +196,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       return 'You bid first · $total trick${total == 1 ? '' : 's'}';
     }
     final claimed = _totalBids(state);
-    final after = state.playerOrder.length - state.bids.length - 1;
-    final tail = after > 0 ? '$after to bid' : "you're last";
-    return '$claimed/$total claimed · $tail';
-  }
-
-  /// Entries for the bidding-phase progress strip, in bidding order.
-  /// `bid == null` renders as "pending".
-  List<({String name, int? bid})> _biddingStripEntries(
-      OhHellState state, Map<String, RoomMember> members) {
-    final n = state.playerOrder.length;
-    return [
-      for (var i = 1; i <= n; i++)
-        (
-          name: PlayerAvatar.nameFor(
-            playerId: state.playerOrder[(state.dealerIndex + i) % n],
-            localPlayerId: widget.localPlayerId,
-            seatIndex: (state.dealerIndex + i) % n,
-            displayName: members[state.playerOrder[(state.dealerIndex + i) % n]]
-                ?.displayName,
-          ),
-          bid: state.bids[state.playerOrder[(state.dealerIndex + i) % n]],
-        ),
-    ];
+    return '$claimed/$total claimed';
   }
 
   /// Fires the one-time OVERBID/UNDERBID banner on the bidding → playing
@@ -773,15 +747,6 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                 ),
                 const SizedBox(height: 4),
 
-                // Live per-player bid progress, bidding phase only —
-                // who has bid what, who is still pending, in bidding order.
-                if (state.phase == GamePhase.bidding) ...[
-                  _BiddingProgressStrip(
-                    entries: _biddingStripEntries(state, members),
-                  ),
-                  const SizedBox(height: 4),
-                ],
-
                 // Main game area with players and trick
                 Expanded(
                   child: LayoutBuilder(builder: (context, constraints) {
@@ -1195,64 +1160,8 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 }
 
-/// Slim glass strip under the score row, bidding phase only: every player
-/// in bidding order with their bid (gold) or "pending" (muted italic).
-class _BiddingProgressStrip extends StatelessWidget {
-  final List<({String name, int? bid})> entries;
-
-  const _BiddingProgressStrip({required this.entries});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 2,
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (final e in entries)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  e.name.length > 8 ? '${e.name.substring(0, 8)}…' : e.name,
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
-                  ),
-                ),
-                const SizedBox(width: 3),
-                if (e.bid != null)
-                  Text(
-                    '${e.bid}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.accent,
-                    ),
-                  )
-                else
-                  Text(
-                    'pending',
-                    style: GoogleFonts.inter(
-                      fontSize: 9.5,
-                      fontStyle: FontStyle.italic,
-                      color: AppColors.textMuted.withOpacity(0.65),
-                    ),
-                  ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One-time round verdict banner (story #225): "OVERBID — 2 too many!" /
-/// "UNDERBID — 2 short!". Scales+fades in, holds ~2.5s so it's actually
+/// One-time round verdict banner (story #225): "Overbid — 2" /
+/// "Underbid — 1". Scales+fades in, holds ~2.5s so it's actually
 /// readable (staging feedback), fades out; ~3.2s total, parent removes at
 /// 3.4s.
 class _BidVerdictBanner extends StatefulWidget {
@@ -1331,9 +1240,7 @@ class _BidVerdictBannerState extends State<_BidVerdictBanner>
             ],
           ),
           child: Text(
-            isOver
-                ? 'OVERBID — $n too many!'
-                : 'UNDERBID — $n short!',
+            isOver ? 'Overbid — $n' : 'Underbid — $n',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
