@@ -905,10 +905,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
                       // One-time OVERBID/UNDERBID verdict banner — sweeps in
                       // the moment the last bid lands, then settles into the
-                      // quiet HUD chip.
+                      // quiet HUD chip. Dead-centre: the trick zone is empty
+                      // while it shows (bots wait it out), and higher
+                      // placements overlapped the top seats' bid pills.
                       if (_activeFlashDelta != null)
                         Align(
-                          alignment: const Alignment(0, -0.4),
+                          alignment: Alignment.center,
                           child: _BidVerdictBanner(
                             key: ValueKey(
                                 'bid-verdict-${state.roundNumber}'),
