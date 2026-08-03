@@ -168,6 +168,18 @@ class _BiddingModalState extends State<BiddingModal> {
                         ),
                       ),
                       const SizedBox(height: 4),
+                      if (widget.claimSummary != null) ...[
+                        Text(
+                          widget.claimSummary!,
+                          key: const Key('bid-claim-summary'),
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                      ],
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
@@ -191,18 +203,6 @@ class _BiddingModalState extends State<BiddingModal> {
                             ),
                         ],
                       ),
-                      if (widget.claimSummary != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          widget.claimSummary!,
-                          key: const Key('bid-claim-summary'),
-                          style: GoogleFonts.inter(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),

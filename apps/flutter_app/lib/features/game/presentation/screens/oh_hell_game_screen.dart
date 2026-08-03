@@ -196,7 +196,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       return 'You bid first · $total trick${total == 1 ? '' : 's'}';
     }
     final claimed = _totalBids(state);
-    return '$claimed/$total claimed';
+    return '$claimed/$total bid claimed';
   }
 
   /// Fires the one-time OVERBID/UNDERBID banner on the bidding → playing
