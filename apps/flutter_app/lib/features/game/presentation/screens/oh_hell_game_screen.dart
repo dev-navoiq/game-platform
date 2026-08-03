@@ -694,7 +694,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     Color? roundStatusColor;
     String? statusExplainer;
     if (state.phase == GamePhase.bidding) {
-      roundStatusText = '$totalBids/${state.cardsThisRound} bid';
+      roundStatusText = '$totalBids/${state.cardsThisRound} bid claimed';
     } else if (state.phase == GamePhase.playing && bidDelta != 0) {
       roundStatusText = bidDelta > 0
           ? '$totalBids/${state.cardsThisRound} Overbid'
@@ -896,10 +896,8 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                               opponentActions:
                                   _bidActionsSoFar(state, members),
                               claimSummary: _claimSummary(state),
-                              forbiddenBidReason:
-                                  'total ≠ ${state.cardsThisRound}',
                               minimizedDetail:
-                                  '$totalBids/${state.cardsThisRound} bid',
+                                  '$totalBids/${state.cardsThisRound} bid claimed',
                               onBidSelected: (bid) => _placeBid(ref, bid),
                             ),
                           ),

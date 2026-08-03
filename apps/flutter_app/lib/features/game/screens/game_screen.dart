@@ -12,6 +12,7 @@ import 'package:game_spades/game_spades.dart';
 import 'package:game_twenty_nine/game_twenty_nine.dart';
 
 import '../../../core/di/providers.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../presentation/screens/bridge_game_screen.dart';
@@ -55,25 +56,29 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
       final notifier = ref.read(gameStateProvider.notifier);
       var gameType = ref.read(gameTypeProvider);
-      // Cold navigation (tournament "Play now", push tap, deep link): the
-      // lobby/room flow seeds gameTypeProvider before pushing, but nothing
-      // does when we arrive straight at /game/:roomId — which left the
-      // dispatch shell typeless and timing out ("Failed to load game").
-      // Self-serve the type from the room row instead.
-      if (gameType == null) {
+      // Cold navigation (tournament "Play now", resume card, push tap, deep
+      // link): the lobby/room flow seeds gameTypeProvider AND
+      // roomMembersProvider before pushing, but nothing does when we arrive
+      // straight at /game/:roomId. Self-serve both from the room snapshot.
+      // The roster matters as much as the type: without it every opponent
+      // seat falls back to "Bot N" (PlayerAvatar.nameFor), so a tournament
+      // match against a human who hasn't moved yet reads as "a bot that
+      // doesn't respond". Local practice rooms skip this — the launcher
+      // seeds the roster itself and the room doesn't exist server-side.
+      if (!widget.roomId.startsWith('local-')) {
         try {
-          final row = await ref
-              .read(supabaseProvider)
-              .from('game_rooms')
-              .select('game_type')
-              .eq('id', widget.roomId)
-              .single();
-          gameType = row['game_type'] as String?;
-          if (gameType != null && mounted) {
-            ref.read(gameTypeProvider.notifier).state = gameType;
-          }
+          final snap = await ref
+              .read(supabaseServiceProvider)
+              .fetchRoomSnapshot(roomId: widget.roomId);
+          if (!mounted) return;
+          gameType ??= snap.gameType;
+          ref.read(gameTypeProvider.notifier).state = gameType;
+          ref.read(roomMembersProvider.notifier).state = {
+            for (final m in snap.members) m.id: m,
+          };
         } catch (_) {
-          // Leave null — the timeout screen handles it.
+          // Leave whatever the pushing screen seeded — the timeout screen
+          // handles a genuinely dead room.
         }
       }
       if (!mounted) return;
