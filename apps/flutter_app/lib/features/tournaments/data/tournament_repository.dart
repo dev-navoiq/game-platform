@@ -165,6 +165,8 @@ class TournamentRepository {
         return TournamentRegistrationResult.tournamentNotFound;
       case 'TIER_REQUIRED':
         return TournamentRegistrationResult.tierRequired;
+      case 'REGISTERED_REQUIRED':
+        return TournamentRegistrationResult.registeredRequired;
       case 'TEAM_REQUIRED':
         return TournamentRegistrationResult.teamRequired;
       case 'TEAM_FULL':
@@ -172,7 +174,7 @@ class TournamentRepository {
       case 'TEAM_NOT_FOUND':
         return TournamentRegistrationResult.teamNotFound;
       default:
-        // REGISTERED_REQUIRED / TOO_MANY_ACTIVE_TOURNAMENTS
+        // TOO_MANY_ACTIVE_TOURNAMENTS etc.
         return TournamentRegistrationResult.error;
     }
   }

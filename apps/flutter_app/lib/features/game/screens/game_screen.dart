@@ -50,36 +50,44 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.initState();
     // Subscribe to realtime game state updates
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Entering a DIFFERENT room while the previous game screen never
+      // disposed (back-to-back games, sideways navigation) left the old
+      // game's state in gameStateProvider — the new screen rendered the
+      // previous game's podium and the whole flow dead-ended (#212).
+      // If a stale room id is still published, drop the stale state first.
+      final prevRoom = ref.read(currentRoomIdProvider);
+      if (prevRoom != null && prevRoom != widget.roomId) {
+        ref.invalidate(gameStateProvider);
+      }
       // Publish the active room id so descendant widgets (GameActions etc.)
       // can read it without prop-drilling.
       ref.read(currentRoomIdProvider.notifier).state = widget.roomId;
 
       final notifier = ref.read(gameStateProvider.notifier);
       var gameType = ref.read(gameTypeProvider);
-      // Cold navigation (tournament "Play now", resume card, push tap, deep
-      // link): the lobby/room flow seeds gameTypeProvider AND
-      // roomMembersProvider before pushing, but nothing does when we arrive
-      // straight at /game/:roomId. Self-serve both from the room snapshot.
-      // The roster matters as much as the type: without it every opponent
-      // seat falls back to "Bot N" (PlayerAvatar.nameFor), so a tournament
-      // match against a human who hasn't moved yet reads as "a bot that
-      // doesn't respond". Local practice rooms skip this — the launcher
-      // seeds the roster itself and the room doesn't exist server-side.
-      if (!widget.roomId.startsWith('local-')) {
-        try {
-          final snap = await ref
-              .read(supabaseServiceProvider)
-              .fetchRoomSnapshot(roomId: widget.roomId);
-          if (!mounted) return;
-          gameType ??= snap.gameType;
+      // Always self-serve the room snapshot on /game/ entry. It carries both
+      // the game type (needed on cold navigation — tournament "Play now",
+      // push tap, deep link) and the seat identities. The member seed must
+      // NOT be conditional on gameType: a stale non-null type (semifinal →
+      // final re-entry, stacked push routes) used to skip it, leaving the
+      // real human opponent rendered as "Bot 1" (#169).
+      try {
+        final snap = await ref
+            .read(supabaseServiceProvider)
+            .fetchRoomSnapshot(roomId: widget.roomId);
+        gameType ??= snap.gameType;
+        if (mounted) {
           ref.read(gameTypeProvider.notifier).state = gameType;
           ref.read(roomMembersProvider.notifier).state = {
             for (final m in snap.members) m.id: m,
           };
-        } catch (_) {
-          // Leave whatever the pushing screen seeded — the timeout screen
-          // handles a genuinely dead room.
+          ref.read(activeTournamentIdProvider.notifier).state =
+              snap.tournamentId;
         }
+      } catch (_) {
+        // Snapshot fetch failed. If gameType was already known (lobby flow
+        // seeded it, and the room screen seeded members) we can still play;
+        // on a true cold nav it stays null and the timeout screen handles it.
       }
       if (!mounted) return;
       if (gameType != null) {
@@ -118,6 +126,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       ref.invalidate(gameStateProvider);
       ref.invalidate(gameTypeProvider);
       ref.read(roomBotsProvider.notifier).state = const [];
+      // Clear seat identities too — a skipped/failed seed on the next mount
+      // must not inherit the previous match's roster (#169).
+      ref.read(roomMembersProvider.notifier).state = const {};
+      ref.read(activeTournamentIdProvider.notifier).state = null;
       ref.read(currentRoomIdProvider.notifier).state = null;
     } catch (_) {
       // Test teardown — providers were already torn down. Nothing to do.

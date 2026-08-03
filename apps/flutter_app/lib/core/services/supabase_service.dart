@@ -9,6 +9,27 @@ final supabaseServiceProvider = Provider<SupabaseService>((ref) {
   return SupabaseService(Supabase.instance.client);
 });
 
+/// Handle for a self-healing game-state subscription (see
+/// [SupabaseService.subscribeToGameState]). Cancel to stop the stream,
+/// reconnect attempts, and the staleness watchdog together.
+class GameStateSubscription {
+  GameStateSubscription._();
+
+  /// Inert handle for tests/mocks — carries no stream, timers, or watchdog.
+  GameStateSubscription.inert() : _disposed = true;
+  bool _disposed = false;
+  StreamSubscription<dynamic>? _sub;
+  Timer? _reconnectTimer;
+  Timer? _watchdog;
+
+  void cancel() {
+    _disposed = true;
+    _sub?.cancel();
+    _reconnectTimer?.cancel();
+    _watchdog?.cancel();
+  }
+}
+
 /// Server-side rejection of a move (validate-move 4xx). Carries the
 /// structured `code` (e.g. NOT_YOUR_TURN, WRONG_PHASE, VERSION_CONFLICT,
 /// FORBIDDEN_BID) so the bot move controller can decide whether to retry
@@ -247,6 +268,7 @@ class SupabaseService {
       gameType: room['game_type'] as String,
       maxPlayers: (room['max_players'] as int?) ?? 4,
       members: members,
+      tournamentId: config?['tournament_id'] as String?,
     );
   }
 
@@ -290,19 +312,80 @@ class SupabaseService {
     return response.data as Map<String, dynamic>;
   }
 
-  void subscribeToGameState({
+  GameStateSubscription subscribeToGameState({
     required String roomId,
     required Function onUpdate,
+    void Function(bool healthy)? onHealth,
   }) {
-    _client
-        .from('game_states')
-        .stream(primaryKey: ['id'])
-        .eq('room_id', roomId)
-        .listen((data) {
-          if (data.isNotEmpty) {
-            onUpdate(data.first);
-          }
-        });
+    final handle = GameStateSubscription._();
+    var attempt = 0;
+
+    // One-shot catch-up read. Run on every (re)connect and by the watchdog:
+    // realtime rows missed while the socket was down are unrecoverable from
+    // the stream itself, so the current row is the source of truth.
+    Future<void> fetchCurrent() async {
+      try {
+        final rows = await _client
+            .from('game_states')
+            .select()
+            .eq('room_id', roomId)
+            .limit(1);
+        if (!handle._disposed && rows.isNotEmpty) {
+          onHealth?.call(true);
+          onUpdate(rows.first);
+        }
+      } catch (_) {
+        // Transient REST failure — the watchdog will try again.
+      }
+    }
+
+    late void Function() connect;
+    void scheduleReconnect() {
+      if (handle._disposed || handle._reconnectTimer != null) return;
+      // Tell the UI the table may be stale — players deserve to know they
+      // are looking at a reconnecting view, not a live one (#186).
+      onHealth?.call(false);
+      attempt++;
+      final delay = Duration(seconds: attempt < 5 ? 1 << attempt : 30);
+      handle._reconnectTimer = Timer(delay, () {
+        handle._reconnectTimer = null;
+        connect();
+        fetchCurrent();
+      });
+    }
+
+    connect = () {
+      if (handle._disposed) return;
+      handle._sub?.cancel();
+      handle._sub = _client
+          .from('game_states')
+          .stream(primaryKey: ['id'])
+          .eq('room_id', roomId)
+          .listen(
+            (data) {
+              attempt = 0;
+              onHealth?.call(true);
+              if (data.isNotEmpty) onUpdate(data.first);
+            },
+            // A dead channel used to end the stream silently and the table
+            // froze until re-login (#180). Any error/close now reconnects
+            // with backoff and catches up via REST.
+            onError: (_) => scheduleReconnect(),
+            onDone: scheduleReconnect,
+            cancelOnError: false,
+          );
+    };
+
+    connect();
+    // Watchdog: some socket deaths emit neither error nor done — the stream
+    // just goes quiet. A slow poll guarantees the table can never stay stale
+    // for more than ~25s no matter how the channel died.
+    // 10s (was 25s): in a live card game a stale view for 25 seconds meant
+    // missing a whole trick or more (#186).
+    handle._watchdog = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!handle._disposed) fetchCurrent();
+    });
+    return handle;
   }
 
   Future<Map<String, dynamic>> sendMove({

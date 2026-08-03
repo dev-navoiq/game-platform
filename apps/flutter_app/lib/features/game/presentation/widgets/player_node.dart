@@ -81,11 +81,20 @@ class PlayerNode extends ConsumerWidget {
 
   double get _avatarSize => isSmall ? 42.0 : 48.0;
 
+  /// Seat-label compaction: strip a trailing parenthetical ("Tester 05 (L8)"
+  /// → "Tester 05"), keep everything up to 16 chars, ellipsize beyond.
+  static String _compactName(String raw) {
+    final base = raw.replaceAll(RegExp(r'\s*\([^)]*\)\s*$'), '').trim();
+    if (base.isEmpty) return raw;
+    return base.length > 16 ? '${base.substring(0, 15)}…' : base;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Determine bubble content: prefer provider-driven, fall back to prop
     String? bubbleText = chatMessage;
     bool isEmote = false;
+    String? bubbleKey;
 
     if (roomId != null &&
         playerId != null &&
@@ -100,8 +109,10 @@ class PlayerNode extends ConsumerWidget {
       if (reaction != null) {
         bubbleText = reaction.reaction;
         isEmote = true;
+        bubbleKey = reaction.id;
       } else if (chat != null) {
         bubbleText = chat.content;
+        bubbleKey = chat.id;
       }
     }
 
@@ -125,6 +136,12 @@ class PlayerNode extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: FloatingChatBubble(
+              // Keyed per message: a new reaction arriving after the
+              // previous bubble's animation completed must REMOUNT the
+              // widget so the show/hide animation replays — unkeyed, the
+              // element was reused with a finished controller and later
+              // taps displayed nothing (#9).
+              key: ValueKey(bubbleKey ?? bubbleText),
               message: bubbleText,
               isEmoteOnly: isEmote,
             ),
@@ -155,17 +172,25 @@ class PlayerNode extends ConsumerWidget {
 
         // Name — tinted slightly accent for humans so they read as players
         // rather than generic seats. Bots keep the muted treatment.
+        // Compact instead of chopping the tail: the old 8-char cut turned
+        // "Tester 05" into "Tester 0…", erasing exactly the part that tells
+        // players apart (#181). Drop parenthetical suffixes ("(L8)"), then
+        // scale the rest down to the seat width; only truly long names get
+        // an ellipsis.
         SizedBox(
           width: 60,
-          child: Text(
-            name.length > 9 ? '${name.substring(0, 8)}…' : name,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: isSmall ? 8.5 : 9.0,
-              fontWeight: FontWeight.w700,
-              color: isBot
-                  ? Colors.white.withOpacity(0.52)
-                  : Colors.white.withOpacity(0.92),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              _compactName(name),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: isSmall ? 8.5 : 9.0,
+                fontWeight: FontWeight.w700,
+                color: isBot
+                    ? Colors.white.withOpacity(0.52)
+                    : Colors.white.withOpacity(0.92),
+              ),
             ),
           ),
         ),

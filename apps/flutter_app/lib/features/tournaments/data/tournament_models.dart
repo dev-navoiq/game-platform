@@ -154,7 +154,31 @@ class Tournament extends Equatable {
   final Map<String, dynamic> settings;
   final TournamentStatus status;
   final String? winnerId;
-  final Map<String, dynamic>? finalStandings;
+  /// My final placement in a completed tournament, from final_standings
+  /// ([{place, user_id, ...}]). Null while not completed or if I wasn't
+  /// ranked (e.g. dropped solo). Used for the My Tournaments outcome line
+  /// (#187).
+  int? placeFor(String userId) {
+    final fs = finalStandings;
+    if (fs == null) return null;
+    for (final e in fs) {
+      if (e is Map && e['user_id'] == userId) return e['place'] as int?;
+    }
+    return null;
+  }
+
+  /// Prize configured for [place], if any.
+  TournamentPrize? prizeForPlace(int place) {
+    for (final p in prizes) {
+      if (p.place == place) return p;
+    }
+    return null;
+  }
+
+  /// Ordered standings written by the server at completion:
+  /// [{place, user_id, wins, losses, points, ...}]. A LIST — casting this to
+  /// a Map crashed every completed-tournament screen (minified:E<dynamic>).
+  final List<dynamic>? finalStandings;
   final String minSubscriptionTier;
   final String roomSocialMode;
   final int teamSize;
@@ -242,7 +266,7 @@ class Tournament extends Equatable {
       settings: (json['settings'] as Map<String, dynamic>?) ?? {},
       status: TournamentStatus.fromDb(json['status'] as String),
       winnerId: json['winner_id'] as String?,
-      finalStandings: json['final_standings'] as Map<String, dynamic>?,
+      finalStandings: json['final_standings'] as List<dynamic>?,
       minSubscriptionTier:
           (json['min_subscription_tier'] as String?) ?? 'free',
       roomSocialMode: (json['room_social_mode'] as String?) ?? 'focus',
@@ -497,6 +521,7 @@ enum TournamentRegistrationResult {
   tournamentFull,
   insufficientFunds,
   tierRequired,
+  registeredRequired,
   teamRequired,
   teamFull,
   teamNotFound,

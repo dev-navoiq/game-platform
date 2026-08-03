@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 
+import '../../../../core/routing/routes.dart';
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
 import '../../../../shared/animations/celebrations/winner_jump_animation.dart';
@@ -70,6 +72,11 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   /// Maps playerId → true if they made their bid exactly, false otherwise.
   /// Without this cache, _ohHellWinners() reads empty bids and everyone loses.
   Map<String, bool> _playerMadeBid = {};
+
+  /// Completed-round index (0-based) → MY bid. The engine's round history
+  /// keeps only points, so the score sheet's 'You bid' row is fed from this
+  /// on-device capture (rounds before a mid-game rejoin render '—').
+  final Map<int, int> _myBidHistory = {};
 
   /// One GlobalKey per seat — fed into PlayerNode and TrickZone so opponent
   /// card flights know where each player sits.
@@ -346,10 +353,18 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
           _playerMadeBid[pid] = (bid == won);
         }
       }
+      // While round N is live, history holds N-1 entries — so the current
+      // round's future history index is exactly roundHistory.length.
+      final myBid = state.bids[widget.localPlayerId];
+      if (myBid != null) {
+        _myBidHistory[state.roundHistory.length] = myBid;
+      }
     }
     // Clear the cache when a new round's bidding starts (bids empty).
     if (state.phase == GamePhase.bidding && state.bids.isEmpty) {
       _playerMadeBid.clear();
+      // Fresh game (no history yet) → previous session's bids are stale.
+      if (state.roundHistory.isEmpty) _myBidHistory.clear();
     }
   }
 
@@ -420,6 +435,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
               scores: state.scores,
               roundHistory: state.roundHistory,
               isGameOver: state.phase == GamePhase.gameEnd,
+              myBidHistory: _myBidHistory,
+              playerNames: {
+                for (final e in ref.read(roomMembersProvider).entries)
+                  if (e.value.displayName.trim().isNotEmpty)
+                    e.key: e.value.displayName,
+              },
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -719,7 +740,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                 // HUD
                 GameHud(
                   gameName: 'Oh Hell',
-                  roundNumber: state.roundNumber,
+                  // The engine bumps roundNumber at round COMPLETION, so
+                  // during the ready screen the raw value already names the
+                  // NEXT round. Show the round just played until the next
+                  // one actually deals (mirrors the score sheet).
+                  roundNumber: state.phase == GamePhase.roundEnd
+                      ? (state.roundNumber > 1 ? state.roundNumber - 1 : 1)
+                      : state.roundNumber,
                   totalRounds: state.totalRounds,
                   trumpInfo: '♥',
                   cardsDealt: state.cardsThisRound,
@@ -809,10 +836,15 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                           // happened, so the regret is unmistakable. No
                           // mid-game YAY pill (a single trick win isn't
                           // worth the shout).
+                          // A ready player's verdict pill dies with the game
+                          // it describes — once they confirm ready for the
+                          // next game, the badge replaces YAY/OH HELL (#20).
                           reactionEmote: isRoundEnd
-                              ? (winnerPlayerIds.contains(playerId)
-                                  ? 'YAY!'
-                                  : 'OH HELL')
+                              ? (readySet.contains(playerId)
+                                  ? null
+                                  : winnerPlayerIds.contains(playerId)
+                                      ? 'YAY!'
+                                      : 'OH HELL')
                               : (_celebrationWinnerId == playerId &&
                                       (state.tricksWon[playerId] ?? 0) >
                                           (state.bids[playerId] ?? 0)
@@ -1040,17 +1072,31 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
         // sulking rows for the rest. Delayed ~2.6s so the seat-level
         // celebrations play first.
         if (state.isGameOver && _gameOverDialogVisible)
-          RankedGameOverDialog(
-            results: _gameResults(state, members),
-            coinsEarned:
-                winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
-            xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
-            onDoubleCoins: () {
-              RewardedAdModal.show(context: context);
-            },
-            onPlayAgain: () => _startNextRound(ref),
-            onLeave: () => Navigator.of(context).pop(),
-          ),
+          Builder(builder: (context) {
+            // Tournament matches: replaying a bracket game is not a thing —
+            // the primary action becomes "View Bracket", and Home actually
+            // goes home instead of popping back to wherever we came from
+            // (#176).
+            final tournamentId = ref.read(activeTournamentIdProvider);
+            return RankedGameOverDialog(
+              results: _gameResults(state, members),
+              coinsEarned:
+                  winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
+              xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
+              onDoubleCoins: () {
+                RewardedAdModal.show(context: context);
+              },
+              playAgainLabel:
+                  tournamentId == null ? 'Play Again' : 'View Bracket',
+              onPlayAgain: tournamentId == null
+                  ? () => _startNextRound(ref)
+                  : () => context
+                      .go(AppRoutes.tournamentPath(tournamentId)),
+              onLeave: tournamentId == null
+                  ? () => Navigator.of(context).pop()
+                  : () => context.go(AppRoutes.home),
+            );
+          }),
       ],
     );
   }
@@ -1088,6 +1134,12 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       socialMode: state.socialMode,
       showBidPill: true,
       hasBid: state.bids.containsKey(localPlayerId),
+      // roomId + playerId power the floating reaction/chat bubbles. The
+      // local node never received them, so a player's OWN emoji taps were
+      // invisible on their own seat — with the missing realtime publication
+      // (#9) this made reactions look completely dead in solo games.
+      roomId: widget.roomId,
+      playerId: localPlayerId,
       // Internal pulse/jump/sad ONLY mid-trick — fires on
       // _celebrationWinnerId (3150ms after trick complete, i.e. after
       // the cards have swooped to the winner).
@@ -1099,10 +1151,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
           _celebrationWinnerId == localPlayerId &&
           (state.tricksWon[localPlayerId] ?? 0) >
               (state.bids[localPlayerId] ?? 0),
+      // Same as opponent seats: ready replaces the verdict pill (#20).
       reactionEmote: isRoundEnd
-          ? (winnerPlayerIds.contains(localPlayerId)
-              ? 'YAY!'
-              : 'OH HELL')
+          ? (readySet.contains(localPlayerId)
+              ? null
+              : winnerPlayerIds.contains(localPlayerId)
+                  ? 'YAY!'
+                  : 'OH HELL')
           : (_celebrationWinnerId == localPlayerId &&
                   (state.tricksWon[localPlayerId] ?? 0) >
                       (state.bids[localPlayerId] ?? 0)
@@ -1138,14 +1193,24 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 
   void _playCard(WidgetRef ref, PlayingCard card) {
-    ref.read(gameStateProvider.notifier).sendMove(
+    // Optimistic: the played card leaves the hand and lands in the trick
+    // immediately; the server response/realtime reconciles. Without this,
+    // the card flashed back into the hand during the round-trip (#211).
+    ref.read(gameStateProvider.notifier).sendMoveOptimistic(
       roomId: widget.roomId,
-      move: {
+      localMove: OhHellPlayCardMove(
+        playerId: widget.localPlayerId,
+        card: card,
+      ),
+      wireMove: {
         'type': 'playCard',
         'player_id': widget.localPlayerId,
         'card': card.toJson(),
       },
-    );
+      // On rejection the notifier already rolled the card back into the
+      // hand; nothing else to do (client-side legality checks make this
+      // path near-impossible anyway).
+    ).catchError((_) {});
   }
 
   void _placeBid(WidgetRef ref, int bid) {

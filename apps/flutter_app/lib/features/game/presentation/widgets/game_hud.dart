@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game_core/game_core.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../../../shared/widgets/social_mode_indicator.dart';
+import '../../providers/game_provider.dart';
 
 /// Top HUD bar for the game screen.
 ///
@@ -80,6 +82,43 @@ class GameHud extends StatelessWidget {
 
           const Spacer(),
 
+          // Stream health: when the realtime subscription is reconnecting,
+          // the table may be stale — say so instead of impersonating a live
+          // view (#186). Consumer-scoped so every game's HUD gets it free.
+          Consumer(builder: (context, ref, _) {
+            final healthy = ref.watch(gameStreamHealthyProvider);
+            if (healthy) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GlassContainer(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 9,
+                      height: 9,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: AppColors.accentSoft,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Reconnecting…',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accentSoft,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+
           // Round info
           if (roundNumber != null)
             GlassContainer(
@@ -88,9 +127,14 @@ class GameHud extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    totalRounds != null
-                        ? 'Round $roundNumber/$totalRounds'
-                        : 'Round $roundNumber',
+                    // The engine advances roundNumber when a round COMPLETES,
+                    // so at round end / game end it reads one past the total
+                    // ("Round 8/7"). Clamp for display — there is no round 8.
+                    switch ((roundNumber ?? 1, totalRounds)) {
+                      (final int round, final int total) =>
+                        'Round ${round > total ? total : round}/$total',
+                      (final int round, null) => 'Round $round',
+                    },
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,

@@ -24,10 +24,18 @@ class CurrencyDisplay extends StatelessWidget {
     if (value >= 1000000) {
       return '${(value / 1000000).toStringAsFixed(1)}M';
     }
-    if (value >= 1000) {
+    // Below 100K, show the exact number: "4.5K" swallowed ±100 swings —
+    // an entire tournament entry fee was invisible on screen (#174).
+    if (value >= 100000) {
       return '${(value / 1000).toStringAsFixed(1)}K';
     }
-    return value.toString();
+    final s = value.toString();
+    final b = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+      b.write(s[i]);
+    }
+    return b.toString();
   }
 
   @override

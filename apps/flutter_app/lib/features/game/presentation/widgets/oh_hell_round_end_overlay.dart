@@ -29,6 +29,9 @@ class OhHellRoundEndOverlay extends StatefulWidget {
   final int autoStartSeconds;
   final VoidCallback onContinue;
 
+  /// playerId → display name, forwarded to the score table (#183).
+  final Map<String, String> playerNames;
+
   const OhHellRoundEndOverlay({
     super.key,
     required this.roundNumber,
@@ -43,6 +46,7 @@ class OhHellRoundEndOverlay extends StatefulWidget {
     required this.onContinue,
     this.isGameOver = false,
     this.autoStartSeconds = 30,
+    this.playerNames = const {},
   });
 
   @override
@@ -124,6 +128,7 @@ class _OhHellRoundEndOverlayState extends State<OhHellRoundEndOverlay> {
                     tricksWon: widget.tricksWon,
                     roundPoints: widget.roundPoints,
                     scores: widget.scores,
+                    playerNames: widget.playerNames,
                     roundHistory: widget.roundHistory,
                     isGameOver: widget.isGameOver,
                   ),
@@ -194,6 +199,15 @@ class OhHellScoreTable extends StatelessWidget {
   final List<Map<String, int>> roundHistory;
   final bool isGameOver;
 
+  /// playerId → display name. Without it every non-local player rendered as
+  /// "Bot N" even when the seats showed real names (#183).
+  final Map<String, String> playerNames;
+
+  /// Completed-round index (0-based) → MY bid that round. Tracked on-device
+  /// by the game screen (bids are not kept in round history server-side).
+  /// Rounds observed before a mid-game rejoin show '—'.
+  final Map<int, int> myBidHistory;
+
   const OhHellScoreTable({
     super.key,
     required this.roundNumber,
@@ -206,6 +220,8 @@ class OhHellScoreTable extends StatelessWidget {
     required this.scores,
     required this.roundHistory,
     this.isGameOver = false,
+    this.playerNames = const {},
+    this.myBidHistory = const {},
   });
 
   @override
@@ -288,9 +304,11 @@ class OhHellScoreTable extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          for (final pid in playerOrder) ...[
+          // Local player first — the row you look for is always on top,
+          // matching the history strip's ordering (#214).
+          for (final pid in _historyRowOrder()) ...[
             _buildPlayerRow(pid, emojis, cellStyle),
-            if (pid != playerOrder.last)
+            if (pid != _historyRowOrder().last)
               Divider(
                 height: 8,
                 thickness: 0.5,
@@ -317,6 +335,7 @@ class OhHellScoreTable extends StatelessWidget {
       playerId: pid,
       localPlayerId: localPlayerId,
       seatIndex: playerOrder.indexOf(pid),
+      displayName: playerNames[pid],
     );
     final ptsColor = madeBid ? AppColors.success : AppColors.danger;
 
@@ -364,6 +383,12 @@ class OhHellScoreTable extends StatelessWidget {
     );
   }
 
+  /// Local player first so the 'You bid' row sits directly above 'You'.
+  List<String> _historyRowOrder() => [
+        if (playerOrder.contains(localPlayerId)) localPlayerId,
+        ...playerOrder.where((p) => p != localPlayerId),
+      ];
+
   Widget _buildHistoryStrip() {
     final cellStyle = GoogleFonts.inter(
       fontSize: 10.5,
@@ -394,11 +419,18 @@ class OhHellScoreTable extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                // Rows: 'You bid' (my bid per round), then 'You' (my
+                // points) directly beneath, then the other players — the
+                // local player's story reads top-to-bottom in one glance.
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('R', style: headerStyle),
-                    for (final pid in playerOrder)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('You bid', style: headerStyle),
+                    ),
+                    for (final pid in _historyRowOrder())
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -406,6 +438,7 @@ class OhHellScoreTable extends StatelessWidget {
                             playerId: pid,
                             localPlayerId: localPlayerId,
                             seatIndex: playerOrder.indexOf(pid),
+                            displayName: playerNames[pid],
                           ))
                               .split(' ')
                               .first,
@@ -420,7 +453,20 @@ class OhHellScoreTable extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text('${i + 1}', style: headerStyle),
-                      for (final pid in playerOrder)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: SizedBox(
+                          width: 24,
+                          child: Text(
+                            myBidHistory.containsKey(i)
+                                ? '${myBidHistory[i]}'
+                                : '—',
+                            style: headerStyle,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                      for (final pid in _historyRowOrder())
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: SizedBox(

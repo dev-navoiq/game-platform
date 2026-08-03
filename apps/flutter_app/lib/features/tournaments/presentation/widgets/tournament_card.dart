@@ -9,10 +9,17 @@ class TournamentCard extends StatelessWidget {
   final Tournament tournament;
   final VoidCallback? onTap;
 
+  /// Optional outcome line for history contexts (My Tournaments): placement
+  /// and net coins/gems for the viewing user (#187).
+  final String? outcomeText;
+  final Color? outcomeColor;
+
   const TournamentCard({
     super.key,
     required this.tournament,
     this.onTap,
+    this.outcomeText,
+    this.outcomeColor,
   });
 
   @override
@@ -98,6 +105,20 @@ class TournamentCard extends StatelessWidget {
                 ),
               ],
             ),
+
+            // Outcome line (history contexts only): how MY run went.
+            if (outcomeText != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _InfoChip(
+                    icon: Icons.emoji_events_outlined,
+                    label: outcomeText!,
+                    color: outcomeColor,
+                  ),
+                ],
+              ),
+            ],
 
             const SizedBox(height: 10),
 

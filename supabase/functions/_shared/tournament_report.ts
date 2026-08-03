@@ -307,10 +307,21 @@ export async function startTournamentMatch(
 
   const { data: tournament } = await admin
     .from('tournaments')
-    .select('game_type, room_social_mode')
+    .select('game_type, room_social_mode, settings')
     .eq('id', match.tournament_id)
     .single();
   if (!tournament) return null;
+
+  // ── Per-game room config ─────────────────────────────────────────────────
+  // Oh Hell: without a cap, a 1v1 match deals 52/2 = 26 cards over a 51-round
+  // sequence — unfinishable inside the idle-forfeit window. Default tournament
+  // matches to a short down-only game (7 → 1, 7 rounds); organizers can
+  // override via tournaments.settings.oh_hell {max_cards, down_only}.
+  const settings = (tournament.settings ?? {}) as Record<string, unknown>;
+  const gameConfig: Record<string, unknown> =
+    tournament.game_type === 'oh_hell'
+      ? { oh_hell: settings.oh_hell ?? { max_cards: 7, down_only: true } }
+      : {};
 
   // ── Seat order ───────────────────────────────────────────────────────────
   // Team matches seat partners OPPOSITE (0/2 vs 1/3): the 29/bridge outcome
@@ -350,7 +361,7 @@ export async function startTournamentMatch(
       max_players: seatOrder.length,
       current_players: 0,
       is_private: true,
-      config: { tournament_id: match.tournament_id, tournament_match_id: matchId },
+      config: { tournament_id: match.tournament_id, tournament_match_id: matchId, ...gameConfig },
     })
     .select('id, code')
     .single();
@@ -385,7 +396,7 @@ export async function startTournamentMatch(
 
   // Build the authoritative initial state and create the game_states row.
   const dealerIndex = crypto.getRandomValues(new Uint8Array(1))[0] % seatOrder.length;
-  const state = buildInitialState(tournament.game_type, seatOrder, dealerIndex, socialMode);
+  const state = buildInitialState(tournament.game_type, seatOrder, dealerIndex, socialMode, gameConfig);
   await admin.from('game_states').insert({
     room_id: newRoom.id,
     phase: initialDbPhase(state),
@@ -984,5 +995,29 @@ export async function forfeitTournamentMatch(
   if (match.next_match_id && match.next_match_slot) {
     await advanceInto(admin, match.next_match_id, match.next_match_slot, winnerId, winnerTeamId);
   }
+
+  // End the live game state too. Clients render from the game_states realtime
+  // stream — without this transition they never learn the match is over and
+  // sit on a frozen table forever (#178). Patching state_data.phase to
+  // gameEnd pushes the result screen to every subscribed device.
+  if (match.room_id) {
+    const { data: gs } = await admin
+      .from('game_states')
+      .select('id, state_data')
+      .eq('room_id', match.room_id)
+      .maybeSingle();
+    const sd = (gs?.state_data ?? null) as Record<string, unknown> | null;
+    if (gs && sd && sd.phase !== 'gameEnd') {
+      await admin.from('game_states').update({
+        phase: 'complete',
+        state_data: {
+          ...sd,
+          phase: 'gameEnd',
+          forfeit: { forfeited_by: forfeitingUserId, winner_id: winnerId },
+        },
+      }).eq('id', gs.id);
+    }
+  }
+
   await checkTournamentProgress(admin, match.tournament_id, t?.format ?? '');
 }

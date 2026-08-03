@@ -338,10 +338,11 @@ class BotMoveController {
       thinkDelay = const Duration(milliseconds: 3000);
       _justCompletedTrick = false;
     } else {
-      // Brief delay so moves don't feel instant. Kept short because
-      // cloud-staging round-trips already add ~500ms — a longer think
-      // delay stacks badly.
-      thinkDelay = const Duration(milliseconds: 200);
+      // Long enough that consecutive bot plays read as separate events —
+      // at 200ms two bot cards could land in the same visual beat and
+      // players lost track of who played what (#213). ~700ms think plus
+      // the ~500ms cloud round-trip paces a full bot trick at ~3-4s.
+      thinkDelay = const Duration(milliseconds: 700);
     }
     _moveTimer = Timer(thinkDelay, () async {
       if (_disposed) {

@@ -46,7 +46,8 @@ void main() {
       when(() => mockSupabase.subscribeToGameState(
             roomId: any(named: 'roomId'),
             onUpdate: any(named: 'onUpdate'),
-          )).thenReturn(null);
+            onHealth: any(named: 'onHealth'),
+          )).thenReturn(GameStateSubscription.inert());
 
       await tester.pumpWidget(ProviderScope(
         overrides: [supabaseServiceProvider.overrideWithValue(mockSupabase)],

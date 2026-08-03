@@ -8,9 +8,18 @@ import 'package:game_twenty_nine/game_twenty_nine.dart';
 import '../../../core/services/supabase_service.dart';
 import '../local/local_game_session.dart';
 
+/// Health of the active game's realtime stream. False while the subscription
+/// is reconnecting/catching up — the HUD shows a "Reconnecting…" chip so a
+/// stale table is never mistaken for a live one (#186).
+final gameStreamHealthyProvider = StateProvider<bool>((ref) => true);
+
 final gameStateProvider =
     StateNotifierProvider<GameNotifier, GameState?>((ref) {
-  return GameNotifier(ref.watch(supabaseServiceProvider));
+  return GameNotifier(
+    ref.watch(supabaseServiceProvider),
+    onStreamHealth: (healthy) =>
+        ref.read(gameStreamHealthyProvider.notifier).state = healthy,
+  );
 });
 
 /// Active room id while the GameScreen is mounted. Set in
@@ -29,16 +38,25 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// state. See [_versionOf]. Starts at -1 so the very first state always wins.
   int _appliedVersion = -1;
 
-  /// Pure rules engine used to predict the result of a deterministic move
+  /// Pure rules engines used to predict the result of a deterministic move
   /// locally, before the server confirms it (optimistic UI).
   final _twentyNineRules = TwentyNineRules();
+  final _ohHellRules = OhHellRules();
 
-  GameNotifier(this._supabase) : super(null);
+  GameNotifier(this._supabase, {this.onStreamHealth}) : super(null);
+
+  /// Invoked by the self-healing subscription as the stream drops/recovers.
+  final void Function(bool healthy)? onStreamHealth;
 
   /// On-device practice session ("Practice vs Bots"). While attached, moves
   /// whose roomId matches the session are applied by the local engine and no
   /// realtime subscription is opened — zero server round-trips.
   LocalGameSession? _localSession;
+
+  /// Self-healing realtime subscription for the active room (reconnect +
+  /// catch-up + watchdog live in SupabaseService). Cancelled on re-subscribe
+  /// and dispose.
+  GameStateSubscription? _gameStateSub;
 
   /// Attach a local practice session. Any previous session is disposed so a
   /// stale coordinator can't keep publishing into this notifier.
@@ -61,7 +79,12 @@ class GameNotifier extends StateNotifier<GameState?> {
       return;
     }
     print('[GameNotifier] subscribeToGame roomId=$roomId gameType=$_gameType');
-    _supabase.subscribeToGameState(
+    // Replace any previous room's subscription — its reconnect timers and
+    // watchdog must not keep feeding a screen we've left.
+    _gameStateSub?.cancel();
+    onStreamHealth?.call(true);
+    _gameStateSub = _supabase.subscribeToGameState(
+      onHealth: onStreamHealth,
       roomId: roomId,
       onUpdate: (data) {
         print('[GameNotifier] onUpdate received: gameType=$_gameType, dataKeys=${(data as Map).keys.toList()}');
@@ -167,7 +190,13 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// behaviour), which is correct because they never apply state ahead of the
   /// server.
   void _applyAuthoritative(GameState newState) {
-    if (_gameType == 'twenty_nine' && _versionOf(newState) < _appliedVersion) {
+    // Stale-drop for ALL games, not just twenty_nine: the staleness
+    // watchdog's catch-up fetch can race a just-played move and would
+    // otherwise clobber the fresh trick with the pre-move row — played
+    // cards visibly vanished mid-trick (#192). turnNumber is monotonic in
+    // every engine; equal versions still apply so twenty_nine's optimistic
+    // reconciliation keeps working.
+    if (_versionOf(newState) < _appliedVersion) {
       return; // stale — ignore
     }
     _appliedVersion = _versionOf(newState);
@@ -186,6 +215,15 @@ class GameNotifier extends StateNotifier<GameState?> {
   /// non-deterministic (shuffles / deals hidden cards) or unsupported here.
   GameState? _predictOptimisticState(
       String gameType, GameState before, GameMove move) {
+    // Oh Hell: card plays and bids are fully deterministic — predicting
+    // them locally removes the latency window where a played card flashed
+    // back into the hand before the server state landed (#211). newRound
+    // deals hidden cards and is never predicted.
+    if (gameType == 'oh_hell') {
+      if (before is! OhHellState || move is! OhHellMove) return null;
+      final result = _ohHellRules.applyMove(before, move);
+      return result.isValid ? result.newState : null;
+    }
     if (gameType != 'twenty_nine') return null;
     if (before is! TwentyNineState || move is! TwentyNineMove) return null;
 
@@ -228,6 +266,8 @@ class GameNotifier extends StateNotifier<GameState?> {
     // GameScreen.dispose invalidates gameStateProvider, which lands here —
     // tear the practice session down with the notifier so no bot timer keeps
     // firing into a disposed StateNotifier.
+    _gameStateSub?.cancel();
+    _gameStateSub = null;
     _localSession?.dispose();
     _localSession = null;
     super.dispose();

@@ -12,7 +12,7 @@ final tournamentRepositoryProvider = Provider<TournamentRepository>((ref) {
 
 /// Upcoming tournaments (status: registration or starting).
 final upcomingTournamentsProvider =
-    FutureProvider.family<List<Tournament>, String?>(
+    FutureProvider.autoDispose.family<List<Tournament>, String?>(
         (ref, gameType) async {
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getUpcomingTournaments(gameType: gameType);
@@ -20,7 +20,7 @@ final upcomingTournamentsProvider =
 
 /// Live tournaments (status: in_progress).
 final liveTournamentsProvider =
-    FutureProvider.family<List<Tournament>, String?>(
+    FutureProvider.autoDispose.family<List<Tournament>, String?>(
         (ref, gameType) async {
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getLiveTournaments(gameType: gameType);
@@ -28,14 +28,14 @@ final liveTournamentsProvider =
 
 /// Completed tournaments.
 final completedTournamentsProvider =
-    FutureProvider.family<List<Tournament>, String?>(
+    FutureProvider.autoDispose.family<List<Tournament>, String?>(
         (ref, gameType) async {
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getCompletedTournaments(gameType: gameType);
 });
 
 /// Tournaments the current user is registered in.
-final myTournamentsProvider = FutureProvider<List<Tournament>>((ref) async {
+final myTournamentsProvider = FutureProvider.autoDispose<List<Tournament>>((ref) async {
   final userId = ref.watch(currentUserProvider)?.id;
   if (userId == null) return [];
 
@@ -45,14 +45,14 @@ final myTournamentsProvider = FutureProvider<List<Tournament>>((ref) async {
 
 /// Single tournament detail.
 final tournamentDetailProvider =
-    FutureProvider.family<Tournament?, String>((ref, tournamentId) async {
+    FutureProvider.autoDispose.family<Tournament?, String>((ref, tournamentId) async {
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getTournament(tournamentId);
 });
 
 /// Participants for a tournament.
 final tournamentParticipantsProvider =
-    FutureProvider.family<List<TournamentParticipant>, String>(
+    FutureProvider.autoDispose.family<List<TournamentParticipant>, String>(
         (ref, tournamentId) async {
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getParticipants(tournamentId);
@@ -60,7 +60,7 @@ final tournamentParticipantsProvider =
 
 /// Teams (with members, captain first) for 2v2 tournaments.
 final tournamentTeamsProvider =
-    FutureProvider.family<List<TournamentTeam>, String>(
+    FutureProvider.autoDispose.family<List<TournamentTeam>, String>(
         (ref, tournamentId) async {
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getTeams(tournamentId);
@@ -68,7 +68,7 @@ final tournamentTeamsProvider =
 
 /// Current user's participation in a tournament (null if not registered).
 final myParticipationProvider =
-    FutureProvider.family<TournamentParticipant?, String>(
+    FutureProvider.autoDispose.family<TournamentParticipant?, String>(
         (ref, tournamentId) async {
   final userId = ref.watch(currentUserProvider)?.id;
   if (userId == null) return null;

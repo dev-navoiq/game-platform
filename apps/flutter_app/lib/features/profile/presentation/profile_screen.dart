@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/di/monetization_providers.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/currency_display.dart';
@@ -130,7 +131,10 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   // Currency
-                  const CurrencyDisplay(coins: 200, gems: 0),
+                  CurrencyDisplay(
+                    coins: ref.watch(currencyBalanceProvider).coins,
+                    gems: ref.watch(currencyBalanceProvider).gems,
+                  ),
                 ],
               ),
             ),

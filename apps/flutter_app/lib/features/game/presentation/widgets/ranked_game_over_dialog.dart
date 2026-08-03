@@ -43,6 +43,10 @@ class RankedGameOverDialog extends ConsumerStatefulWidget {
   final VoidCallback? onPlayAgain;
   final VoidCallback? onLeave;
 
+  /// Label for the primary action. Tournament matches override this to
+  /// "View Bracket" — replaying a bracket match is not a thing (#176).
+  final String playAgainLabel;
+
   // Reward display
   final int coinsEarned;
   final int xpEarned;
@@ -53,6 +57,7 @@ class RankedGameOverDialog extends ConsumerStatefulWidget {
     required this.results,
     this.onPlayAgain,
     this.onLeave,
+    this.playAgainLabel = 'Play Again',
     this.coinsEarned = 0,
     this.xpEarned = 0,
     this.onDoubleCoins,
@@ -234,7 +239,7 @@ class _RankedGameOverDialogState extends ConsumerState<RankedGameOverDialog> {
                           ),
                         if (widget.onPlayAgain != null)
                           GlassButton(
-                            label: 'Play Again',
+                            label: widget.playAgainLabel,
                             onPressed: widget.onPlayAgain,
                           ),
                       ],

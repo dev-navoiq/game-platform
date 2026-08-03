@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/assets/asset_registry.dart';
+import '../../../core/di/monetization_providers.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/di/skin_theme_providers.dart';
 import '../../../core/routing/routes.dart';
@@ -46,7 +47,11 @@ class _ShopScreenState extends ConsumerState<ShopScreen>
         appBar: GlassAppBar(
           title: 'Shop',
           actions: [
-            const CurrencyDisplay(coins: 200, gems: 0, compact: true),
+            CurrencyDisplay(
+              coins: ref.watch(currencyBalanceProvider).coins,
+              gems: ref.watch(currencyBalanceProvider).gems,
+              compact: true,
+            ),
             const SizedBox(width: 8),
           ],
         ),
