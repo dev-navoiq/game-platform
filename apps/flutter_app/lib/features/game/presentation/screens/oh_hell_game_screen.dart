@@ -702,7 +702,7 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       roundStatusColor = bidDelta > 0 ? _overbidColor : _underbidColor;
       statusExplainer = bidDelta > 0
           ? '$totalBids tricks bid, only ${state.cardsThisRound} exist — someone has to bust 🔥'
-          : 'Only $totalBids of ${state.cardsThisRound} tricks bid — tricks nobody wants are floating';
+          : 'Only $totalBids of ${state.cardsThisRound} tricks bid — ${-bidDelta} trick${bidDelta == -1 ? '' : 's'} nobody wants must go to someone';
     }
     final explainer = statusExplainer;
 
