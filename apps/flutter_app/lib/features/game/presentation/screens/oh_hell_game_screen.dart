@@ -15,6 +15,7 @@ import '../../../../shared/animations/gameplay/ohell_bust_animation.dart';
 import '../../../../shared/widgets/glass_bottom_sheet.dart';
 import '../../../lobby/models/room_member.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../../providers/game_session_providers.dart';
 import '../../services/ready_broadcast_controller.dart';
 import '../../services/round_advance_guard.dart';
@@ -324,20 +325,6 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
       _readyTicker = null;
       _startNextRound(ref);
     }
-  }
-
-  /// Oh Hell: per-round winner is the single player with the highest
-  /// At GAME end (state.phase == gameEnd) — players with the highest total
-  /// score win the game. They get the jump + "yay!" shout; everyone else
-  /// gets the sad shake + "oh hell" shout. Empty set for empty score map.
-  Set<String> _ohHellGameWinners(OhHellState state) {
-    if (state.scores.isEmpty) return const {};
-    final maxScore = state.scores.values
-        .fold<int>(-1 << 31, (a, b) => a > b ? a : b);
-    return {
-      for (final e in state.scores.entries)
-        if (e.value == maxScore) e.key,
-    };
   }
 
   /// Caches bid results (made vs missed) BEFORE the engine clears bids at
@@ -681,15 +668,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
     final isRoundEnd = state.phase == GamePhase.roundEnd ||
         state.phase == GamePhase.gameEnd;
-    // At game end the winner is the highest cumulative scorer (ties OK).
-    // At round end it's anyone who made their bid exactly. Without this
-    // split, the game-end celebration was based on the bid match of the
-    // final round, which has nothing to do with who actually won.
-    final winnerPlayerIds = !isRoundEnd
-        ? const <String>{}
-        : (state.phase == GamePhase.gameEnd
-            ? _ohHellGameWinners(state)
-            : _ohHellWinners(state));
+    // Seat verdicts (YAY / OH HELL) always reflect THE ROUND — did you make
+    // your bid exactly — including the final round. The overall game result
+    // is the podium's job (product decision 2026-08-04: a player who nails
+    // their last bid but loses the game was reading the game-end "OH HELL"
+    // as a scoring error).
+    final winnerPlayerIds =
+        !isRoundEnd ? const <String>{} : _ohHellWinners(state);
     final showPulse = state.phase == GamePhase.bidding &&
         state.currentPlayerId == localPlayerId;
 
@@ -1080,9 +1065,19 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
             final tournamentId = ref.read(activeTournamentIdProvider);
             return RankedGameOverDialog(
               results: _gameResults(state, members),
-              coinsEarned:
-                  winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
-              xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
+              coinsEarned: ref
+                      .watch(gameRewardReceiptProvider(widget.roomId))
+                      .valueOrNull
+                      ?.coins ??
+                  0,
+              xpEarned: ref
+                      .watch(gameRewardReceiptProvider(widget.roomId))
+                      .valueOrNull
+                      ?.xp ??
+                  0,
+              rewardNote: rewardNoteFor(ref
+                  .watch(gameRewardReceiptProvider(widget.roomId))
+                  .valueOrNull),
               onDoubleCoins: () {
                 RewardedAdModal.show(context: context);
               },

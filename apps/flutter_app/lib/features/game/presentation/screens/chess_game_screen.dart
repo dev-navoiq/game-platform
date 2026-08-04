@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../widgets/chess_board_widget.dart';
 import '../widgets/emoji_bar.dart';
 import '../widgets/game_actions.dart';
@@ -194,8 +195,19 @@ class _ChessGameScreenState extends ConsumerState<ChessGameScreen> {
             isWinner: state.result?.winnerId == widget.localPlayerId,
             winnerName: state.result?.winnerId,
             finalScores: {},
-            coinsEarned: state.result?.winnerId == widget.localPlayerId ? 50 : 10,
-            xpEarned: state.result?.winnerId == widget.localPlayerId ? 30 : 10,
+            coinsEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.coins ??
+                0,
+            xpEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.xp ??
+                0,
+            rewardNote: rewardNoteFor(ref
+                .watch(gameRewardReceiptProvider(widget.roomId))
+                .valueOrNull),
             onDoubleCoins: () {
               RewardedAdModal.show(context: context);
             },

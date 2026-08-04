@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../../providers/game_session_providers.dart';
 import '../widgets/card_hand.dart';
 import '../widgets/emoji_bar.dart';
@@ -206,8 +207,19 @@ class _SequenceGameScreenState extends ConsumerState<SequenceGameScreen> {
           GameOverDialog(
             isWinner: state.winnerId == widget.localPlayerId,
             winnerName: state.winnerId,
-            coinsEarned: state.winnerId == widget.localPlayerId ? 50 : 10,
-            xpEarned: state.winnerId == widget.localPlayerId ? 30 : 10,
+            coinsEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.coins ??
+                0,
+            xpEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.xp ??
+                0,
+            rewardNote: rewardNoteFor(ref
+                .watch(gameRewardReceiptProvider(widget.roomId))
+                .valueOrNull),
             onDoubleCoins: () {
               RewardedAdModal.show(context: context);
             },

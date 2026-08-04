@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../../providers/game_session_providers.dart';
 import '../widgets/emoji_bar.dart';
 import '../widgets/game_actions.dart';
@@ -115,8 +116,19 @@ class _LudoGameScreenState extends ConsumerState<LudoGameScreen> {
           GameOverDialog(
             isWinner: state.winnerId == widget.localPlayerId,
             winnerName: _nameFor(state.winnerId),
-            coinsEarned: state.winnerId == widget.localPlayerId ? 50 : 10,
-            xpEarned: state.winnerId == widget.localPlayerId ? 30 : 10,
+            coinsEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.coins ??
+                0,
+            xpEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.xp ??
+                0,
+            rewardNote: rewardNoteFor(ref
+                .watch(gameRewardReceiptProvider(widget.roomId))
+                .valueOrNull),
             onDoubleCoins: () {
               RewardedAdModal.show(context: context);
             },

@@ -32,6 +32,15 @@ interface DailyEarnState {
   first_win_claimed: boolean;
 }
 
+/** What was actually granted to one player — persisted to recent_games so
+ *  the game-over dialog can show real numbers (#54). */
+interface RewardReceipt {
+  coins: number;
+  xp: number;
+  firstWinBonus: boolean;
+  dailyCapHit: boolean;
+}
+
 function todayUtc(): string {
   return new Date().toISOString().split('T')[0];
 }
@@ -72,8 +81,10 @@ export async function grantGameEndRewards(
   const config = await getEconomyConfig(admin);
   const today = todayUtc();
 
+  const receipts = new Map<string, RewardReceipt>();
   for (const o of humanOutcomes) {
-    await grantOne(admin, roomId, o, config, today);
+    const receipt = await grantOne(admin, roomId, o, config, today);
+    if (receipt) receipts.set(o.user_id, receipt);
 
     // ── Update leaderboard (Story #52) ──────────────────────────────────────
     const ratingChange = o.result === 'win' ? 25 : (o.result === 'loss' ? -15 : 0);
@@ -84,7 +95,7 @@ export async function grantGameEndRewards(
     }
   }
 
-  // ── Record match history (humans only; bots aren't in profiles) ─────────
+  // ── Record match history + reward receipt (humans only) ─────────────────
   try {
     await admin.rpc('record_game_completion', {
       p_room_id: roomId,
@@ -95,6 +106,11 @@ export async function grantGameEndRewards(
         position: o.position,
         points: o.points,
         elo_change: 0,
+        coins_earned: receipts.get(o.user_id)?.coins ?? 0,
+        xp_earned: receipts.get(o.user_id)?.xp ?? 0,
+        gems_earned: 0, // never granted at game end by design
+        first_win_bonus: receipts.get(o.user_id)?.firstWinBonus ?? false,
+        daily_cap_hit: receipts.get(o.user_id)?.dailyCapHit ?? false,
       })),
     });
   } catch (e) {
@@ -108,13 +124,13 @@ async function grantOne(
   o: PlayerOutcome,
   config: EconomyConfig,
   today: string,
-): Promise<void> {
+): Promise<RewardReceipt | null> {
   const { data: profile } = await admin
     .from('profiles')
     .select('subscription_tier, daily_earn_state')
     .eq('id', o.user_id)
     .single();
-  if (!profile) return;
+  if (!profile) return null;
 
   const tier = (profile.subscription_tier as string) ?? 'free';
   const multiplier = config.tier_earn_multiplier[tier] ?? 1.0;
@@ -154,6 +170,13 @@ async function grantOne(
     await grantXp(admin, o.user_id, xp);
     await addSeasonXp(admin, o.user_id, xp);
   }
+
+  return {
+    coins: grantCoins,
+    xp,
+    firstWinBonus: firstWin,
+    dailyCapHit: grantCoins < scaledCoins,
+  };
 }
 
 /**
