@@ -327,20 +327,6 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
     }
   }
 
-  /// Oh Hell: per-round winner is the single player with the highest
-  /// At GAME end (state.phase == gameEnd) — players with the highest total
-  /// score win the game. They get the jump + "yay!" shout; everyone else
-  /// gets the sad shake + "oh hell" shout. Empty set for empty score map.
-  Set<String> _ohHellGameWinners(OhHellState state) {
-    if (state.scores.isEmpty) return const {};
-    final maxScore = state.scores.values
-        .fold<int>(-1 << 31, (a, b) => a > b ? a : b);
-    return {
-      for (final e in state.scores.entries)
-        if (e.value == maxScore) e.key,
-    };
-  }
-
   /// Caches bid results (made vs missed) BEFORE the engine clears bids at
   /// round end. Must be called every build while bids are still populated;
   /// the cache persists into roundEnd phase where bids are already empty.
@@ -682,15 +668,13 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
     final isRoundEnd = state.phase == GamePhase.roundEnd ||
         state.phase == GamePhase.gameEnd;
-    // At game end the winner is the highest cumulative scorer (ties OK).
-    // At round end it's anyone who made their bid exactly. Without this
-    // split, the game-end celebration was based on the bid match of the
-    // final round, which has nothing to do with who actually won.
-    final winnerPlayerIds = !isRoundEnd
-        ? const <String>{}
-        : (state.phase == GamePhase.gameEnd
-            ? _ohHellGameWinners(state)
-            : _ohHellWinners(state));
+    // Seat verdicts (YAY / OH HELL) always reflect THE ROUND — did you make
+    // your bid exactly — including the final round. The overall game result
+    // is the podium's job (product decision 2026-08-04: a player who nails
+    // their last bid but loses the game was reading the game-end "OH HELL"
+    // as a scoring error).
+    final winnerPlayerIds =
+        !isRoundEnd ? const <String>{} : _ohHellWinners(state);
     final showPulse = state.phase == GamePhase.bidding &&
         state.currentPlayerId == localPlayerId;
 
