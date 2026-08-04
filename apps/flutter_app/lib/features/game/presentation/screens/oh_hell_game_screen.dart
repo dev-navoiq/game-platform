@@ -15,6 +15,7 @@ import '../../../../shared/animations/gameplay/ohell_bust_animation.dart';
 import '../../../../shared/widgets/glass_bottom_sheet.dart';
 import '../../../lobby/models/room_member.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../../providers/game_session_providers.dart';
 import '../../services/ready_broadcast_controller.dart';
 import '../../services/round_advance_guard.dart';
@@ -1080,9 +1081,19 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
             final tournamentId = ref.read(activeTournamentIdProvider);
             return RankedGameOverDialog(
               results: _gameResults(state, members),
-              coinsEarned:
-                  winnerPlayerIds.contains(localPlayerId) ? 50 : 10,
-              xpEarned: winnerPlayerIds.contains(localPlayerId) ? 30 : 10,
+              coinsEarned: ref
+                      .watch(gameRewardReceiptProvider(widget.roomId))
+                      .valueOrNull
+                      ?.coins ??
+                  0,
+              xpEarned: ref
+                      .watch(gameRewardReceiptProvider(widget.roomId))
+                      .valueOrNull
+                      ?.xp ??
+                  0,
+              rewardNote: rewardNoteFor(ref
+                  .watch(gameRewardReceiptProvider(widget.roomId))
+                  .valueOrNull),
               onDoubleCoins: () {
                 RewardedAdModal.show(context: context);
               },

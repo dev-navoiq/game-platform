@@ -8,6 +8,7 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../widgets/card_hand.dart';
 import '../widgets/emoji_bar.dart';
 import '../widgets/game_actions.dart';
@@ -207,8 +208,19 @@ class HeartsGameScreen extends ConsumerWidget {
             isWinner: _isLocalWinner(),
             winnerName: _winnerName(),
             finalScores: state.scores,
-            coinsEarned: _isLocalWinner() ? 50 : 10,
-            xpEarned: _isLocalWinner() ? 30 : 10,
+            coinsEarned: ref
+                    .watch(gameRewardReceiptProvider(roomId))
+                    .valueOrNull
+                    ?.coins ??
+                0,
+            xpEarned: ref
+                    .watch(gameRewardReceiptProvider(roomId))
+                    .valueOrNull
+                    ?.xp ??
+                0,
+            rewardNote: rewardNoteFor(ref
+                .watch(gameRewardReceiptProvider(roomId))
+                .valueOrNull),
             onDoubleCoins: () {
               RewardedAdModal.show(context: context);
             },

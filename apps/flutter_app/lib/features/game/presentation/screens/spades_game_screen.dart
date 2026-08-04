@@ -8,6 +8,7 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../providers/game_provider.dart';
+import '../../providers/game_rewards_provider.dart';
 import '../widgets/bidding_modal.dart';
 import '../widgets/card_hand.dart';
 import '../widgets/emoji_bar.dart';
@@ -246,8 +247,19 @@ class SpadesGameScreen extends ConsumerWidget {
               'Team 1': state.teamScores[0] ?? 0,
               'Team 2': state.teamScores[1] ?? 0,
             },
-            coinsEarned: _isLocalWinner() ? 50 : 10,
-            xpEarned: _isLocalWinner() ? 30 : 10,
+            coinsEarned: ref
+                    .watch(gameRewardReceiptProvider(roomId))
+                    .valueOrNull
+                    ?.coins ??
+                0,
+            xpEarned: ref
+                    .watch(gameRewardReceiptProvider(roomId))
+                    .valueOrNull
+                    ?.xp ??
+                0,
+            rewardNote: rewardNoteFor(ref
+                .watch(gameRewardReceiptProvider(roomId))
+                .valueOrNull),
             onDoubleCoins: () {
               RewardedAdModal.show(context: context);
             },

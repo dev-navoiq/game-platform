@@ -52,6 +52,10 @@ class RankedGameOverDialog extends ConsumerStatefulWidget {
   final int xpEarned;
   final VoidCallback? onDoubleCoins;
 
+  /// Optional one-liner under the reward chips (e.g. "Includes first win of
+  /// the day 🌟" or "Daily earn limit reached"). Hidden when null.
+  final String? rewardNote;
+
   const RankedGameOverDialog({
     super.key,
     required this.results,
@@ -61,6 +65,7 @@ class RankedGameOverDialog extends ConsumerStatefulWidget {
     this.coinsEarned = 0,
     this.xpEarned = 0,
     this.onDoubleCoins,
+    this.rewardNote,
   });
 
   @override
@@ -185,6 +190,20 @@ class _RankedGameOverDialogState extends ConsumerState<RankedGameOverDialog> {
                                 label: '+${widget.xpEarned} XP',
                               ),
                           ],
+                        ),
+                      ),
+
+                    if (widget.rewardNote != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          widget.rewardNote!,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: AppColors.textMuted,
+                          ),
                         ),
                       ),
 
