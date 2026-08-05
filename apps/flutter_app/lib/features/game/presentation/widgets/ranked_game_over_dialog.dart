@@ -50,6 +50,11 @@ class RankedGameOverDialog extends ConsumerStatefulWidget {
   // Reward display
   final int coinsEarned;
   final int xpEarned;
+
+  /// Gems are never granted at regular game end — this only renders for
+  /// flows that do pay gems (e.g. tournament payouts routed through the
+  /// dialog). Hidden when 0 (#55).
+  final int gemsEarned;
   final VoidCallback? onDoubleCoins;
 
   /// Optional one-liner under the reward chips (e.g. "Includes first win of
@@ -64,6 +69,7 @@ class RankedGameOverDialog extends ConsumerStatefulWidget {
     this.playAgainLabel = 'Play Again',
     this.coinsEarned = 0,
     this.xpEarned = 0,
+    this.gemsEarned = 0,
     this.onDoubleCoins,
     this.rewardNote,
   });
@@ -168,11 +174,15 @@ class _RankedGameOverDialogState extends ConsumerState<RankedGameOverDialog> {
                     const SizedBox(height: 16),
 
                     // Reward chips
-                    if (widget.coinsEarned > 0 || widget.xpEarned > 0)
+                    if (widget.coinsEarned > 0 ||
+                        widget.xpEarned > 0 ||
+                        widget.gemsEarned > 0)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 12,
+                          runSpacing: 8,
                           children: [
                             if (widget.coinsEarned > 0)
                               _RewardChip(
@@ -180,9 +190,12 @@ class _RankedGameOverDialogState extends ConsumerState<RankedGameOverDialog> {
                                 iconColor: GlassTokens.warning,
                                 label: '+${widget.coinsEarned}',
                               ),
-                            if (widget.coinsEarned > 0 &&
-                                widget.xpEarned > 0)
-                              const SizedBox(width: 12),
+                            if (widget.gemsEarned > 0)
+                              _RewardChip(
+                                icon: Icons.diamond,
+                                iconColor: const Color(0xFF9C27B0),
+                                label: '+${widget.gemsEarned}',
+                              ),
                             if (widget.xpEarned > 0)
                               _RewardChip(
                                 icon: Icons.bolt,
