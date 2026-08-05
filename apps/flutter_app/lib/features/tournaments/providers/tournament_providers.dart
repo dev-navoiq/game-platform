@@ -1,8 +1,44 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/di/providers.dart';
 import '../data/tournament_models.dart';
 import '../data/tournament_repository.dart';
+
+/// Emits a new version whenever any `tournaments` row changes. Shared change
+/// signal: the list/detail providers watch this so new tournaments and status
+/// transitions (registration → in_progress) show up without a manual refresh.
+/// Debounced because current_participants updates once per registration, so
+/// bursts are common.
+final _tournamentsChangesProvider = StreamProvider<int>((ref) {
+  final supabase = ref.watch(supabaseProvider);
+  final controller = StreamController<int>();
+  var version = 0;
+  Timer? debounce;
+
+  final channel = supabase.channel('public:tournaments:changes')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'tournaments',
+      callback: (_) {
+        debounce?.cancel();
+        debounce = Timer(const Duration(milliseconds: 300), () {
+          if (!controller.isClosed) controller.add(++version);
+        });
+      },
+    )
+    ..subscribe();
+
+  ref.onDispose(() {
+    debounce?.cancel();
+    supabase.removeChannel(channel);
+    controller.close();
+  });
+  return controller.stream;
+});
 
 /// Repository provider — always available (read queries don't require auth).
 final tournamentRepositoryProvider = Provider<TournamentRepository>((ref) {
@@ -10,26 +46,31 @@ final tournamentRepositoryProvider = Provider<TournamentRepository>((ref) {
   return TournamentRepository(supabase: supabase);
 });
 
-/// Upcoming tournaments (status: registration or starting).
+/// Upcoming tournaments (status: registration or starting). Refetches on any
+/// tournaments-table change via [_tournamentsChangesProvider].
 final upcomingTournamentsProvider =
     FutureProvider.autoDispose.family<List<Tournament>, String?>(
         (ref, gameType) async {
+  ref.watch(_tournamentsChangesProvider);
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getUpcomingTournaments(gameType: gameType);
 });
 
-/// Live tournaments (status: in_progress).
+/// Live tournaments (status: in_progress). Live like
+/// [upcomingTournamentsProvider].
 final liveTournamentsProvider =
     FutureProvider.autoDispose.family<List<Tournament>, String?>(
         (ref, gameType) async {
+  ref.watch(_tournamentsChangesProvider);
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getLiveTournaments(gameType: gameType);
 });
 
-/// Completed tournaments.
+/// Completed tournaments. Live like [upcomingTournamentsProvider].
 final completedTournamentsProvider =
     FutureProvider.autoDispose.family<List<Tournament>, String?>(
         (ref, gameType) async {
+  ref.watch(_tournamentsChangesProvider);
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getCompletedTournaments(gameType: gameType);
 });
@@ -43,27 +84,32 @@ final myTournamentsProvider = FutureProvider.autoDispose<List<Tournament>>((ref)
   return repo.getMyTournaments(userId);
 });
 
-/// Single tournament detail.
+/// Single tournament detail. Watches the change signal so status transitions
+/// (e.g. auto-start via tournament-tick) and the participant counter reach an
+/// open detail screen.
 final tournamentDetailProvider =
     FutureProvider.autoDispose.family<Tournament?, String>((ref, tournamentId) async {
+  ref.watch(_tournamentsChangesProvider);
   final repo = ref.watch(tournamentRepositoryProvider);
   return repo.getTournament(tournamentId);
 });
 
-/// Participants for a tournament.
+/// Participants for a tournament (live — refetches on realtime changes so
+/// other users' registrations/withdrawals show up without a manual refresh).
 final tournamentParticipantsProvider =
-    FutureProvider.autoDispose.family<List<TournamentParticipant>, String>(
-        (ref, tournamentId) async {
+    StreamProvider.autoDispose.family<List<TournamentParticipant>, String>(
+        (ref, tournamentId) {
   final repo = ref.watch(tournamentRepositoryProvider);
-  return repo.getParticipants(tournamentId);
+  return repo.watchParticipants(tournamentId);
 });
 
-/// Teams (with members, captain first) for 2v2 tournaments.
+/// Teams (with members, captain first) for 2v2 tournaments. Live like
+/// [tournamentParticipantsProvider].
 final tournamentTeamsProvider =
-    FutureProvider.autoDispose.family<List<TournamentTeam>, String>(
-        (ref, tournamentId) async {
+    StreamProvider.autoDispose.family<List<TournamentTeam>, String>(
+        (ref, tournamentId) {
   final repo = ref.watch(tournamentRepositoryProvider);
-  return repo.getTeams(tournamentId);
+  return repo.watchTeams(tournamentId);
 });
 
 /// Current user's participation in a tournament (null if not registered).
