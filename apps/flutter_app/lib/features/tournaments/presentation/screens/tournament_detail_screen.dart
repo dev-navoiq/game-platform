@@ -38,6 +38,11 @@ class _TournamentDetailScreenState
   bool _isRegistering = false;
   Timer? _refreshTimer;
 
+  /// Room already auto-entered — so a bracket re-emission (opponent check-in,
+  /// forfeit elsewhere) doesn't shove the user back into a game they
+  /// deliberately backed out of.
+  String? _autoEnteredRoomId;
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +59,38 @@ class _TournamentDetailScreenState
     });
   }
 
+  /// Take the player straight to their table the moment their match has a
+  /// room (auto-start when full, scheduled start, next-round pairing).
+  /// Waiting for a banner tap cost real matches: the opponent would play
+  /// alone against silence until the 10-minute stall sweeper forfeited the
+  /// no-show. The banner stays as the manual re-entry path.
+  void _maybeAutoEnterMatch() {
+    if (!mounted) return;
+    final userId = ref.read(currentUserProvider)?.id;
+    if (userId == null) return;
+    final matches = ref
+        .read(tournamentBracketStreamProvider(widget.tournamentId))
+        .valueOrNull;
+    if (matches == null) return;
+    // Partner seats on team matches only resolve via team_id, so this can
+    // run before participation loads and succeed later when it emits.
+    final myTeamId = ref
+        .read(myParticipationProvider(widget.tournamentId))
+        .valueOrNull
+        ?.teamId;
+
+    for (final m in matches) {
+      if ((m.isLive || m.isReady) &&
+          m.roomId != null &&
+          m.involves(userId, teamId: myTeamId)) {
+        if (_autoEnteredRoomId == m.roomId) return;
+        _autoEnteredRoomId = m.roomId;
+        context.push(AppRoutes.gamePath(m.roomId!));
+        return;
+      }
+    }
+  }
+
   @override
   void dispose() {
     _refreshTimer?.cancel();
@@ -63,6 +100,25 @@ class _TournamentDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    // My-registration state is a one-shot provider; the live roster stream is
+    // the change signal that refreshes it when my row changes server-side
+    // (admin kick, tournament cancel). The header's tournament row refreshes
+    // itself via the tournaments change signal in tournamentDetailProvider.
+    ref.listen(tournamentParticipantsProvider(widget.tournamentId),
+        (prev, next) {
+      if (prev?.valueOrNull?.length != next.valueOrNull?.length) {
+        ref.invalidate(myParticipationProvider(widget.tournamentId));
+      }
+    });
+
+    // Auto-enter my live match. Two triggers because either can arrive
+    // first: the bracket stream (match got a room) and my participation
+    // (needed for team_id on 2v2 partner seats).
+    ref.listen(tournamentBracketStreamProvider(widget.tournamentId),
+        (_, __) => _maybeAutoEnterMatch());
+    ref.listen(myParticipationProvider(widget.tournamentId),
+        (_, __) => _maybeAutoEnterMatch());
+
     final tournamentAsync =
         ref.watch(tournamentDetailProvider(widget.tournamentId));
 
