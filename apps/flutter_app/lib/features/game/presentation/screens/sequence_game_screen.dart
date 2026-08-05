@@ -217,6 +217,11 @@ class _SequenceGameScreenState extends ConsumerState<SequenceGameScreen> {
                     .valueOrNull
                     ?.xp ??
                 0,
+            gemsEarned: ref
+                    .watch(gameRewardReceiptProvider(widget.roomId))
+                    .valueOrNull
+                    ?.gems ??
+                0,
             rewardNote: rewardNoteFor(ref
                 .watch(gameRewardReceiptProvider(widget.roomId))
                 .valueOrNull),

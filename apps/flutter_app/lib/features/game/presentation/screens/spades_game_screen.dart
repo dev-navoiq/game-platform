@@ -257,6 +257,11 @@ class SpadesGameScreen extends ConsumerWidget {
                     .valueOrNull
                     ?.xp ??
                 0,
+            gemsEarned: ref
+                    .watch(gameRewardReceiptProvider(roomId))
+                    .valueOrNull
+                    ?.gems ??
+                0,
             rewardNote: rewardNoteFor(ref
                 .watch(gameRewardReceiptProvider(roomId))
                 .valueOrNull),
