@@ -1183,13 +1183,24 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   }
 
   void _startNextRound(WidgetRef ref) {
-    ref.read(gameStateProvider.notifier).sendMove(
-      roomId: widget.roomId,
-      move: {
-        'type': 'newRound',
-        'player_id': widget.localPlayerId,
+    // Retry with backoff (#237): a single dropped request used to strand
+    // the table at roundEnd forever. Stops early once the state advances
+    // (someone else's dispatch landed) or this screen is gone.
+    unawaited(RoundAdvanceGuard.dispatchNewRoundWithRetry(
+      send: () => ref.read(gameStateProvider.notifier).sendMove(
+        roomId: widget.roomId,
+        move: {
+          'type': 'newRound',
+          'player_id': widget.localPlayerId,
+        },
+      ),
+      stillNeeded: () {
+        if (!mounted) return false;
+        final s = ref.read(gameStateProvider);
+        return s is OhHellState &&
+            (s.phase == GamePhase.roundEnd || s.phase == GamePhase.gameEnd);
       },
-    );
+    ));
   }
 
   void _playCard(WidgetRef ref, PlayingCard card) {
