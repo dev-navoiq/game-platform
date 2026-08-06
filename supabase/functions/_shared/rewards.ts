@@ -61,10 +61,16 @@ export async function grantGameEndRewards(
   state: Record<string, unknown>,
 ): Promise<void> {
   // ── Exactly-once guard ──────────────────────────────────────────────────
-  const { error: guardErr } = await admin
+  // granted_at doubles as the ledger session key (#234): Play Again re-arms
+  // this guard for the same room, so each armed session must be a distinct
+  // uniqueness scope for its game_reward credits.
+  const { data: guardRow, error: guardErr } = await admin
     .from('game_reward_grants')
-    .insert({ room_id: roomId });
-  if (guardErr) return; // unique_violation (already granted) or FK issue → no-op
+    .insert({ room_id: roomId })
+    .select('granted_at')
+    .single();
+  if (guardErr || !guardRow) return; // unique_violation (already granted) → no-op
+  const sessionKey = `${roomId}:${guardRow.granted_at}`;
 
   const outcomes = computeOutcomes(gameType, state);
   if (!outcomes.length) return; // unsupported game type / no end state
@@ -83,7 +89,7 @@ export async function grantGameEndRewards(
 
   const receipts = new Map<string, RewardReceipt>();
   for (const o of humanOutcomes) {
-    const receipt = await grantOne(admin, roomId, o, config, today);
+    const receipt = await grantOne(admin, roomId, o, config, today, sessionKey);
     if (receipt) receipts.set(o.user_id, receipt);
 
     // ── Update leaderboard (Story #52) ──────────────────────────────────────
@@ -124,6 +130,7 @@ async function grantOne(
   o: PlayerOutcome,
   config: EconomyConfig,
   today: string,
+  sessionKey: string,
 ): Promise<RewardReceipt | null> {
   const { data: profile } = await admin
     .from('profiles')
@@ -151,18 +158,24 @@ async function grantOne(
   const remaining = Math.max(0, config.daily_coin_earn_cap - daily.coins_earned_today);
   const grantCoins = Math.min(scaledCoins, remaining);
 
+  // ── Credit FIRST, atomically; only count what actually landed (#234) ────
+  // Wallet + ledger move together (or not at all). If the credit is a
+  // duplicate for this session, creditedCoins stays 0 and neither the daily
+  // cap nor the receipt claims money that never moved.
+  let creditedCoins = 0;
+  if (grantCoins > 0) {
+    const res = await creditCurrency(
+        admin, o.user_id, 'coins', grantCoins, 'game_reward', roomId, sessionKey);
+    if (res.credited) creditedCoins = grantCoins;
+  }
+
   if (firstWin) daily.first_win_claimed = true;
-  daily.coins_earned_today += grantCoins;
+  daily.coins_earned_today += creditedCoins;
 
   await admin
     .from('profiles')
     .update({ daily_earn_state: daily })
     .eq('id', o.user_id);
-
-  // Single coins credit per (user, room) — satisfies uq_currency_game_reward.
-  if (grantCoins > 0) {
-    await creditCurrency(admin, o.user_id, 'coins', grantCoins, 'game_reward', roomId);
-  }
 
   // ── XP: global + active season ──────────────────────────────────────────
   const xp = isWin ? config.game_end_xp_win : config.game_end_xp_loss;
@@ -172,7 +185,7 @@ async function grantOne(
   }
 
   return {
-    coins: grantCoins,
+    coins: creditedCoins,
     xp,
     firstWinBonus: firstWin,
     dailyCapHit: grantCoins < scaledCoins,

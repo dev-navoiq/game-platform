@@ -1,9 +1,17 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 /**
- * Credit coins or gems to a user.
- * Updates the profile balance and inserts a currency_transaction record.
- * Uses the admin (service-role) client to bypass RLS.
+ * Credit coins or gems to a user — atomically (#234).
+ *
+ * Delegates to the credit_currency_atomic RPC: the wallet moves IF AND ONLY
+ * IF the ledger row inserts (the old TS implementation updated the wallet
+ * first and fired the ledger insert unchecked, so a unique-index conflict
+ * silently produced wallet ≠ Σ ledger on Play Again rematches). The RPC also
+ * row-locks the profile, fixing the read-modify-write race.
+ *
+ * `credited: false` means the (user, reference, session) was already paid —
+ * callers must treat the grant as NOT having happened (don't count it toward
+ * caps or receipts).
  */
 export async function creditCurrency(
   admin: SupabaseClient,
@@ -12,40 +20,26 @@ export async function creditCurrency(
   amount: number,
   reason: string,
   referenceId?: string,
-): Promise<{ balance_after: number }> {
+  sessionKey?: string,
+): Promise<{ balance_after: number; credited: boolean }> {
   if (amount <= 0) throw new Error('Credit amount must be positive');
 
-  // Read current balance
-  const { data: profile, error: readErr } = await admin
-    .from('profiles')
-    .select(currency)
-    .eq('id', userId)
-    .single();
-
-  if (readErr || !profile) throw new Error(`Profile not found: ${userId}`);
-
-  const currentBalance = (profile as Record<string, number>)[currency] ?? 0;
-  const newBalance = currentBalance + amount;
-
-  // Update balance
-  const { error: updateErr } = await admin
-    .from('profiles')
-    .update({ [currency]: newBalance })
-    .eq('id', userId);
-
-  if (updateErr) throw new Error(`Failed to update ${currency}: ${updateErr.message}`);
-
-  // Log transaction
-  await admin.from('currency_transactions').insert({
-    user_id: userId,
-    currency,
-    amount,
-    balance_after: newBalance,
-    reason,
-    ...(referenceId ? { reference_id: referenceId } : {}),
+  const { data, error } = await admin.rpc('credit_currency_atomic', {
+    p_user_id: userId,
+    p_currency: currency,
+    p_amount: amount,
+    p_reason: reason,
+    p_reference_id: referenceId ?? null,
+    p_session_key: sessionKey ?? null,
   });
+  if (error) throw new Error(`Credit failed for ${userId}: ${error.message}`);
 
-  return { balance_after: newBalance };
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error(`Credit returned no result for ${userId}`);
+  return {
+    balance_after: row.balance_after as number,
+    credited: row.credited as boolean,
+  };
 }
 
 /**
