@@ -82,6 +82,14 @@ class PlayerNode extends ConsumerWidget {
   double get _avatarSize => isSmall ? 42.0 : 48.0;
 
   /// Seat-label compaction: strip a trailing parenthetical ("Tester 05 (L8)"
+  /// A bubble may only be shown while its event is genuinely recent AT
+  /// DISPLAY TIME — slightly wider than the providers' 5s ingest window so
+  /// a legitimately fresh bubble isn't cut off mid-animation by a rebuild.
+  static const Duration bubbleFreshness = Duration(seconds: 6);
+
+  static bool _isBubbleFresh(DateTime createdAt) =>
+      DateTime.now().difference(createdAt) < bubbleFreshness;
+
   /// → "Tester 05"), keep everything up to 16 chars, ellipsize beyond.
   static String _compactName(String raw) {
     final base = raw.replaceAll(RegExp(r'\s*\([^)]*\)\s*$'), '').trim();
@@ -106,11 +114,18 @@ class PlayerNode extends ConsumerWidget {
       final reaction = latestReactions[playerId];
       final chat = latestChats[playerId];
 
-      if (reaction != null) {
+      // Render-time freshness gate (#221): the latest-by-player maps only
+      // recompute when a NEW event arrives — their 5s cutoff is evaluated
+      // at that moment, so with no newer events the map stays "fresh"
+      // forever. Any round-boundary remount of this subtree (the verdict
+      // pill swapping the bubble out and back, Ready clearing it) re-read
+      // the stale map and replayed the player's last reaction minutes
+      // later. Stale entries must render nothing.
+      if (reaction != null && _isBubbleFresh(reaction.createdAt)) {
         bubbleText = reaction.reaction;
         isEmote = true;
         bubbleKey = reaction.id;
-      } else if (chat != null) {
+      } else if (chat != null && _isBubbleFresh(chat.createdAt)) {
         bubbleText = chat.content;
         bubbleKey = chat.id;
       }
