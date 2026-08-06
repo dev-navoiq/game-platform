@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
 /// Pure-function helpers that the game screens consult before firing the
 /// `newRound` / `newDeal` move at round-end.
 ///
@@ -42,5 +46,39 @@ class RoundAdvanceGuard {
     if (humans.isEmpty) return false;
     final allHumansReady = humans.every(readyPlayerIds.contains);
     return allHumansReady || secondsElapsed >= countdownLimit;
+  }
+
+  /// Fire the newRound dispatch with retry + backoff (#237).
+  ///
+  /// The screens send newRound exactly once — the ready ticker is already
+  /// cancelled by then — so a single dropped request (network blip, edge
+  /// function redeploy) stranded the table at roundEnd forever. newRound is
+  /// safe to retry: once the round has advanced (this send, another client's,
+  /// or a duplicate) the server rejects extras, and [stillNeeded] stops the
+  /// loop as soon as the state has moved on.
+  ///
+  /// Exhausted retries are swallowed with a log rather than rethrown — the
+  /// caller is fire-and-forget and the user still has the manual "Next
+  /// Round" button in the scoreboard sheet as a last resort.
+  static Future<void> dispatchNewRoundWithRetry({
+    required Future<void> Function() send,
+    bool Function()? stillNeeded,
+    int attempts = 4,
+    Duration baseDelay = const Duration(milliseconds: 800),
+  }) async {
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await send();
+        return;
+      } catch (e) {
+        if (attempt == attempts) {
+          debugPrint(
+              '[RoundAdvanceGuard] newRound dispatch failed after $attempts attempts: $e');
+          return;
+        }
+        await Future<void>.delayed(baseDelay * attempt);
+        if (stillNeeded != null && !stillNeeded()) return;
+      }
+    }
   }
 }
