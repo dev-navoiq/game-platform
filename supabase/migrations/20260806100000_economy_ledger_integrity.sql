@@ -91,13 +91,27 @@ declare
 begin
   for result_row in select * from jsonb_array_elements(p_results)
   loop
-    -- Opponents = everyone in the room EXCEPT this player (#235).
-    select array_agg(p.username)
-    into player_names
-    from room_players rp
-    join profiles p on rp.user_id = p.id
-    where rp.room_id = p_room_id
-      and rp.user_id <> (result_row->>'user_id')::uuid;
+    -- Opponents = other HUMANS in the room (#235: never the player
+    -- themselves) plus the room's bots (bots live only in
+    -- game_rooms.config.bots — room_players holds humans exclusively, so
+    -- without this a bots-only game recorded no opponents at all).
+    select coalesce(
+             (select array_agg(p.username)
+                from room_players rp
+                join profiles p on rp.user_id = p.id
+               where rp.room_id = p_room_id
+                 and rp.user_id <> (result_row->>'user_id')::uuid),
+             '{}'
+           ) ||
+           coalesce(
+             (select array_agg('Bot ' || coalesce(b->>'seat_index', '?')
+                               order by (b->>'seat_index')::int)
+                from game_rooms gr,
+                     jsonb_array_elements(coalesce(gr.config->'bots', '[]'::jsonb)) b
+               where gr.id = p_room_id),
+             '{}'
+           )
+    into player_names;
 
     insert into recent_games (
       user_id, game_type, room_id, result, final_position, points_earned,
