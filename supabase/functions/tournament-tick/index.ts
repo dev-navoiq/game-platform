@@ -8,6 +8,11 @@ import {
   forfeitTournamentMatch,
 } from '../_shared/tournament_report.ts';
 import { sendPush } from '../_shared/push.ts';
+import {
+  TournamentTemplate,
+  nextTemplateStartMs,
+  spawnTemplateInstance,
+} from '../_shared/tournament_templates.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // tournament-tick — the tournament lifecycle heartbeat (prompts/25 §T1 + §T2).
@@ -34,6 +39,7 @@ import { sendPush } from '../_shared/push.ts';
 const STALL_FORFEIT_MINUTES = 10;
 const MAX_STARTS_PER_TICK = 20;
 const MAX_SWEEPS_PER_TICK = 20;
+const MAX_MATERIALIZE_PER_TICK = 20;
 
 serve(async (req) => {
   const corsResponse = handleCors(req);
@@ -49,7 +55,54 @@ serve(async (req) => {
       repaired: 0,
       forfeited: [] as { match_id: string; forfeited_user: string }[],
       rooms_expired: 0,
+      materialized: [] as string[],
     };
+
+    // ── -1. Materialize template instances (#251) ──────────────────────────
+    // For each active clock-driven template whose next occurrence is within
+    // its registration lead window, create the instance. Idempotent via
+    // uq_tournament_template_instance (template_id, start_time) — a racing
+    // duplicate tick loses the unique index and no-ops.
+    {
+      const { data: templates } = await admin
+        .from('tournament_templates')
+        .select('*')
+        .eq('active', true)
+        .limit(MAX_MATERIALIZE_PER_TICK);
+
+      for (const t of (templates ?? []) as TournamentTemplate[]) {
+        try {
+          if (t.schedule_kind === 'sitgo') {
+            // #252 backstop: sit&gos spawn instantly on fill-start inside
+            // tournament-register; here we cover the FIRST spawn for a new
+            // template and self-heal if the instant path ever failed. The
+            // partial unique index (one open instance per template) makes
+            // a redundant spawn a 23505 no-op.
+            const { count } = await admin
+              .from('tournaments')
+              .select('id', { count: 'exact', head: true })
+              .eq('template_id', t.id)
+              .eq('status', 'registration');
+            if ((count ?? 0) === 0) {
+              if (await spawnTemplateInstance(admin, t) === 'created') {
+                summary.materialized.push(t.id);
+              }
+            }
+            continue;
+          }
+
+          const startMs = nextTemplateStartMs(t, Date.now());
+          if (startMs === null) continue;
+          if (startMs - Date.now() > t.registration_lead_minutes * 60_000) continue;
+
+          const result = await spawnTemplateInstance(
+              admin, t, new Date(startMs).toISOString());
+          if (result === 'created') summary.materialized.push(t.id);
+        } catch (e) {
+          console.error(`tick: materialize threw for template ${t.id}:`, e);
+        }
+      }
+    }
 
     // ── 0. Check-in window announcements (§T6) ─────────────────────────────
     // Push "check in now" once per tournament when its window opens.
