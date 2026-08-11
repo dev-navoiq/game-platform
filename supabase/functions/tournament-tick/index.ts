@@ -145,7 +145,11 @@ serve(async (req) => {
             entry_fee_coins: t.entry_fee_coins,
             entry_fee_gems: t.entry_fee_gems,
             prize_pool: t.prize_pool,
-            settings: t.settings ?? {},
+            // Scheduled dailies keep their appointment: filling early must
+            // NOT start them early (product decision 2026-08-11 after the
+            // first materialized instance auto-started 2min before its
+            // clock). Templates can still opt back in via their settings.
+            settings: { auto_start_when_full: false, ...(t.settings ?? {}) },
             status: 'registration',
             template_id: t.id,
             check_in_minutes: t.check_in_minutes,
