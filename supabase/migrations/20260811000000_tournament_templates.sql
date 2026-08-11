@@ -74,5 +74,22 @@ create unique index if not exists uq_tournament_template_instance
   on tournaments (template_id, start_time)
   where template_id is not null;
 
+-- Exactly ONE open (registration) instance per template at any moment —
+-- the #252 sit&go respawn guard, and a sanity bound for clock templates
+-- (whose lead windows must therefore be shorter than their recurrence
+-- interval; enforced below). Racing spawners lose with 23505 and no-op.
+create unique index if not exists uq_tournament_template_open
+  on tournaments (template_id)
+  where template_id is not null and status = 'registration';
+
 create index if not exists idx_tournaments_template on tournaments(template_id)
   where template_id is not null;
+
+-- Lead window < recurrence interval, so one-open-instance always suffices.
+alter table tournament_templates drop constraint if exists lead_shorter_than_interval;
+alter table tournament_templates add constraint lead_shorter_than_interval
+  check (
+    (schedule_kind = 'daily'  and registration_lead_minutes < 1440) or
+    (schedule_kind = 'weekly' and registration_lead_minutes < 10080) or
+    (schedule_kind = 'sitgo')
+  );

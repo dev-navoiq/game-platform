@@ -5,6 +5,10 @@ import { requireAuth, jsonResponse, errorResponse } from '../_shared/validation.
 import { debitCurrency, creditCurrency } from '../_shared/currency.ts';
 import { getEconomyConfig } from '../_shared/rewards.ts';
 import { startTournament } from '../_shared/tournament_report.ts';
+import {
+  TournamentTemplate,
+  spawnTemplateInstance,
+} from '../_shared/tournament_templates.ts';
 
 // Registration, including team tournaments (team_size = 2):
 //   { tournament_id }                    — individual, or solo entry when the
@@ -37,7 +41,7 @@ serve(async (req) => {
     // ── Load tournament ────────────────────────────────────────────────────
     const { data: t } = await admin
       .from('tournaments')
-      .select('id, status, max_participants, current_participants, entry_fee_coins, entry_fee_gems, min_subscription_tier, settings, team_size, allow_solo_pairing, check_in_minutes')
+      .select('id, status, max_participants, current_participants, entry_fee_coins, entry_fee_gems, min_subscription_tier, settings, team_size, allow_solo_pairing, check_in_minutes, template_id')
       .eq('id', body.tournament_id)
       .single();
     if (!t) return errorResponse('Tournament not found', 404, 'NOT_FOUND');
@@ -232,6 +236,25 @@ serve(async (req) => {
       } catch (e) {
         // Registration itself succeeded — never fail the request over this.
         console.error('auto-start after fill failed:', e);
+      }
+
+      // ── #252: sit&go templates respawn the moment their instance starts ──
+      // Instant (not cron-latency dependent); the one-open-instance unique
+      // index makes a race between final registrants a 23505 no-op, and the
+      // tick's backstop self-heals if this path ever fails.
+      if (started && t.template_id) {
+        try {
+          const { data: tpl } = await admin
+            .from('tournament_templates')
+            .select('*')
+            .eq('id', t.template_id)
+            .single();
+          if (tpl && tpl.active && tpl.schedule_kind === 'sitgo') {
+            await spawnTemplateInstance(admin, tpl as TournamentTemplate);
+          }
+        } catch (e) {
+          console.error('sit&go respawn failed (tick will backstop):', e);
+        }
       }
     }
 

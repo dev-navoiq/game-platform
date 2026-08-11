@@ -8,6 +8,11 @@ import {
   forfeitTournamentMatch,
 } from '../_shared/tournament_report.ts';
 import { sendPush } from '../_shared/push.ts';
+import {
+  TournamentTemplate,
+  nextTemplateStartMs,
+  spawnTemplateInstance,
+} from '../_shared/tournament_templates.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // tournament-tick — the tournament lifecycle heartbeat (prompts/25 §T1 + §T2).
@@ -36,64 +41,6 @@ const MAX_STARTS_PER_TICK = 20;
 const MAX_SWEEPS_PER_TICK = 20;
 const MAX_MATERIALIZE_PER_TICK = 20;
 
-// ── Template materialization (#251) ──────────────────────────────────────────
-
-interface TournamentTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  game_type: string;
-  format: string;
-  min_participants: number;
-  max_participants: number;
-  entry_fee_coins: number;
-  entry_fee_gems: number;
-  prize_pool: unknown;
-  settings: Record<string, unknown>;
-  team_size: number | null;
-  allow_solo_pairing: boolean | null;
-  rake_percent: number | null;
-  room_social_mode: string | null;
-  min_subscription_tier: string | null;
-  check_in_minutes: number;
-  schedule_kind: 'daily' | 'weekly' | 'sitgo';
-  start_hhmm: string | null;
-  weekday: number | null;
-  tz_offset_min: number;
-  registration_lead_minutes: number;
-}
-
-/**
- * Next occurrence (UTC ms) of a clock-driven template at/after `nowMs`.
- * Template times are template-local via a fixed UTC offset (no DST — see
- * migration 20260811000000).
- */
-export function nextTemplateStartMs(
-  t: Pick<TournamentTemplate, 'schedule_kind' | 'start_hhmm' | 'weekday' | 'tz_offset_min'>,
-  nowMs: number,
-): number | null {
-  if (t.schedule_kind === 'sitgo' || !t.start_hhmm) return null;
-  const [hh, mm] = t.start_hhmm.split(':').map(Number);
-  const offsetMs = t.tz_offset_min * 60_000;
-
-  // Work in template-local time: local = utc + offset.
-  const local = new Date(nowMs + offsetMs);
-  const candidate = Date.UTC(
-    local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), hh, mm);
-
-  let startLocalMs = candidate;
-  if (t.schedule_kind === 'daily') {
-    if (startLocalMs <= local.getTime()) startLocalMs += 24 * 3_600_000;
-  } else {
-    // weekly: advance to the template's weekday (0=Sunday, local).
-    const wd = local.getUTCDay();
-    let deltaDays = ((t.weekday ?? 0) - wd + 7) % 7;
-    if (deltaDays === 0 && startLocalMs <= local.getTime()) deltaDays = 7;
-    startLocalMs += deltaDays * 24 * 3_600_000;
-  }
-  return startLocalMs - offsetMs; // back to UTC
-}
-
 serve(async (req) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
@@ -121,53 +68,36 @@ serve(async (req) => {
         .from('tournament_templates')
         .select('*')
         .eq('active', true)
-        .in('schedule_kind', ['daily', 'weekly'])
         .limit(MAX_MATERIALIZE_PER_TICK);
 
       for (const t of (templates ?? []) as TournamentTemplate[]) {
         try {
+          if (t.schedule_kind === 'sitgo') {
+            // #252 backstop: sit&gos spawn instantly on fill-start inside
+            // tournament-register; here we cover the FIRST spawn for a new
+            // template and self-heal if the instant path ever failed. The
+            // partial unique index (one open instance per template) makes
+            // a redundant spawn a 23505 no-op.
+            const { count } = await admin
+              .from('tournaments')
+              .select('id', { count: 'exact', head: true })
+              .eq('template_id', t.id)
+              .eq('status', 'registration');
+            if ((count ?? 0) === 0) {
+              if (await spawnTemplateInstance(admin, t) === 'created') {
+                summary.materialized.push(t.id);
+              }
+            }
+            continue;
+          }
+
           const startMs = nextTemplateStartMs(t, Date.now());
           if (startMs === null) continue;
           if (startMs - Date.now() > t.registration_lead_minutes * 60_000) continue;
 
-          const startIso = new Date(startMs).toISOString();
-          const { error: insErr } = await admin.from('tournaments').insert({
-            name: t.name,
-            description: t.description,
-            game_type: t.game_type,
-            format: t.format,
-            is_official: true,
-            registration_start: nowIso,
-            registration_end: startIso,
-            start_time: startIso,
-            min_participants: t.min_participants,
-            max_participants: t.max_participants,
-            entry_fee_coins: t.entry_fee_coins,
-            entry_fee_gems: t.entry_fee_gems,
-            prize_pool: t.prize_pool,
-            // Scheduled dailies keep their appointment: filling early must
-            // NOT start them early (product decision 2026-08-11 after the
-            // first materialized instance auto-started 2min before its
-            // clock). Templates can still opt back in via their settings.
-            settings: { auto_start_when_full: false, ...(t.settings ?? {}) },
-            status: 'registration',
-            template_id: t.id,
-            check_in_minutes: t.check_in_minutes,
-            ...(t.team_size != null ? { team_size: t.team_size } : {}),
-            ...(t.allow_solo_pairing != null ? { allow_solo_pairing: t.allow_solo_pairing } : {}),
-            ...(t.rake_percent != null ? { rake_percent: t.rake_percent } : {}),
-            ...(t.room_social_mode != null ? { room_social_mode: t.room_social_mode } : {}),
-            ...(t.min_subscription_tier != null ? { min_subscription_tier: t.min_subscription_tier } : {}),
-          });
-          if (!insErr) {
-            summary.materialized.push(t.id);
-          } else if (insErr.code !== '23505') {
-            // 23505 = instance already exists (expected); anything else is real.
-            console.error(`tick: materialize failed for template ${t.id}:`, insErr);
-            await admin.from('tournament_templates')
-              .update({ last_error: `${nowIso}: ${insErr.message}` })
-              .eq('id', t.id);
-          }
+          const result = await spawnTemplateInstance(
+              admin, t, new Date(startMs).toISOString());
+          if (result === 'created') summary.materialized.push(t.id);
         } catch (e) {
           console.error(`tick: materialize threw for template ${t.id}:`, e);
         }
