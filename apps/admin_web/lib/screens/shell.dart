@@ -13,6 +13,7 @@ class AdminShell extends ConsumerWidget {
 
   static const _destinations = [
     (label: 'Tournaments', icon: Icons.emoji_events_outlined, path: '/tournaments'),
+    (label: 'Recurring', icon: Icons.event_repeat, path: '/templates'),
     (label: 'Economy', icon: Icons.tune, path: '/economy'),
   ];
 

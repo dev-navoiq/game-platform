@@ -137,6 +137,40 @@ serve(async (req) => {
       }
     }
 
+    // ── 0b. Start reminder push at T-15 (Epic #250 Phase 2) ────────────────
+    // One "starting soon" push to everyone registered. settings.
+    // start_reminder_notified is the once-flag (same pattern as check-in).
+    // Sit&go horizon instances never qualify (start_time is days out).
+    const { data: startingSoon } = await admin
+      .from('tournaments')
+      .select('id, name, start_time, settings')
+      .eq('status', 'registration')
+      .gt('start_time', nowIso)
+      .lte('start_time', new Date(Date.now() + 15 * 60_000).toISOString())
+      .limit(50);
+    for (const s of startingSoon ?? []) {
+      const settings = (s.settings ?? {}) as Record<string, unknown>;
+      if (settings.start_reminder_notified) continue;
+      try {
+        const { data: parts } = await admin
+          .from('tournament_participants')
+          .select('user_id')
+          .eq('tournament_id', s.id);
+        await admin.from('tournaments')
+          .update({ settings: { ...settings, start_reminder_notified: true } })
+          .eq('id', s.id);
+        if ((parts ?? []).length > 0) {
+          await sendPush(admin, (parts ?? []).map((p) => p.user_id as string), 'tournament_updates', {
+            title: s.name ?? 'Tournament',
+            body: 'Starting in 15 minutes — get ready!',
+            data: { route: `/tournament/${s.id}` },
+          });
+        }
+      } catch (e) {
+        console.error(`tick: start reminder failed for ${s.id}:`, e);
+      }
+    }
+
     // ── 1. Due starts ──────────────────────────────────────────────────────
     const { data: due } = await admin
       .from('tournaments')
