@@ -91,6 +91,20 @@ export async function spawnTemplateInstance(
   const isSitgo = t.schedule_kind === 'sitgo';
   const start = startIso ?? new Date(Date.now() + SITGO_HORIZON_MS).toISOString();
 
+  // Rake must be on the row from birth: startTournament re-snapshots it at
+  // start anyway (authoritative for payout), but pre-start the card computes
+  // the pool projection from this row — an unset rake displayed "0% rake"
+  // and over-promised the pool (user-caught, 2026-08-12).
+  let rakePercent = t.rake_percent;
+  if (rakePercent == null) {
+    const { data: cfg } = await admin
+      .from('economy_config')
+      .select('rake_percent_default')
+      .eq('id', 1)
+      .single();
+    rakePercent = (cfg?.rake_percent_default as number | null) ?? 10;
+  }
+
   // Scheduled events keep their appointment — filling early must not start
   // them early (product decision 2026-08-11). Sit&gos are the opposite: the
   // fill IS the start. Template settings may override either default.
@@ -118,7 +132,7 @@ export async function spawnTemplateInstance(
     check_in_minutes: t.check_in_minutes,
     ...(t.team_size != null ? { team_size: t.team_size } : {}),
     ...(t.allow_solo_pairing != null ? { allow_solo_pairing: t.allow_solo_pairing } : {}),
-    ...(t.rake_percent != null ? { rake_percent: t.rake_percent } : {}),
+    rake_percent: rakePercent,
     ...(t.room_social_mode != null ? { room_social_mode: t.room_social_mode } : {}),
     ...(t.min_subscription_tier != null ? { min_subscription_tier: t.min_subscription_tier } : {}),
   });

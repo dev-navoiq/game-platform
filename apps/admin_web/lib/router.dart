@@ -7,6 +7,7 @@ import 'screens/login_screen.dart';
 import 'screens/shell.dart';
 import 'screens/tournaments_screen.dart';
 import 'screens/create_tournament_screen.dart';
+import 'screens/templates_screen.dart';
 import 'screens/economy_config_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -45,6 +46,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/tournaments/new',
             builder: (_, __) => const CreateTournamentScreen(),
+          ),
+          GoRoute(
+            path: '/templates',
+            builder: (_, __) => const TemplatesScreen(),
           ),
           GoRoute(
             path: '/economy',

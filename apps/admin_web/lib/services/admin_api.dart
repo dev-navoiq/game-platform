@@ -70,6 +70,27 @@ class AdminApi {
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
+  // ── Recurrence templates (#253) ────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> listTemplates() async {
+    final res = await _invoke('admin-manage-template', {'action': 'list'});
+    return List<Map<String, dynamic>>.from(res['templates'] as List? ?? []);
+  }
+
+  Future<Map<String, dynamic>> createTemplate(
+      Map<String, dynamic> template) async {
+    final res = await _invoke(
+        'admin-manage-template', {'action': 'create', 'template': template});
+    return Map<String, dynamic>.from(res['template'] as Map);
+  }
+
+  Future<Map<String, dynamic>> updateTemplate(
+      String id, Map<String, dynamic> patch) async {
+    final res = await _invoke(
+        'admin-manage-template', {'action': 'update', 'id': id, 'patch': patch});
+    return Map<String, dynamic>.from(res['template'] as Map);
+  }
+
   Future<Map<String, dynamic>> getEconomyConfig() async {
     final row =
         await _client.from('economy_config').select().eq('id', 1).single();

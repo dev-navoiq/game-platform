@@ -113,7 +113,8 @@ class _UpcomingTab extends ConsumerWidget {
       ),
       data: (list) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(upcomingTournamentsProvider),
-        child: _buildList(context, list, 'No upcoming tournaments'),
+        child: _buildList(context, list, 'No upcoming tournaments',
+            showTodaySchedule: true),
       ),
     );
   }
@@ -237,8 +238,22 @@ Widget _buildMyList(
 Widget _buildList(
   BuildContext context,
   List<Tournament> tournaments,
-  String emptyMessage,
-) {
+  String emptyMessage, {
+  bool showTodaySchedule = false,
+}) {
+  // Today's schedule strip (#259/Epic #250 Phase 2): the day's clock events
+  // at a glance. Only upcoming registrations starting today, by start time.
+  final now = DateTime.now();
+  final today = !showTodaySchedule
+      ? const <Tournament>[]
+      : (tournaments
+          .where((t) =>
+              t.status == TournamentStatus.registration &&
+              t.startTime.toLocal().year == now.year &&
+              t.startTime.toLocal().month == now.month &&
+              t.startTime.toLocal().day == now.day)
+          .toList()
+        ..sort((a, b) => a.startTime.compareTo(b.startTime)));
   if (tournaments.isEmpty) {
     // Scrollable even when empty so pull-to-refresh still works.
     return ListView(
@@ -264,17 +279,104 @@ Widget _buildList(
     );
   }
 
+  final headerCount = today.isEmpty ? 0 : 1;
   return ListView.separated(
     physics: const AlwaysScrollableScrollPhysics(),
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    itemCount: tournaments.length,
+    itemCount: tournaments.length + headerCount,
     separatorBuilder: (_, __) => const SizedBox(height: 12),
     itemBuilder: (context, index) {
-      final tournament = tournaments[index];
+      if (headerCount == 1 && index == 0) {
+        return _TodayScheduleStrip(items: today);
+      }
+      final tournament = tournaments[index - headerCount];
       return TournamentCard(
         tournament: tournament,
         onTap: () => context.push(AppRoutes.tournamentPath(tournament.id)),
       );
     },
   );
+}
+
+/// Horizontal at-a-glance strip of today's scheduled events (#259).
+class _TodayScheduleStrip extends StatelessWidget {
+  const _TodayScheduleStrip({required this.items});
+  final List<Tournament> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 6),
+          child: Text(
+            "TODAY'S SCHEDULE",
+            style: TextStyle(
+              color: AppColors.textFeltMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final t in items) ...[
+                GestureDetector(
+                  onTap: () => context.push(AppRoutes.tournamentPath(t.id)),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.accent.withOpacity(0.35)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${t.startTime.toLocal().hour.toString().padLeft(2, '0')}:'
+                          '${t.startTime.toLocal().minute.toString().padLeft(2, '0')}',
+                          style: const TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          t.name,
+                          style: const TextStyle(
+                            color: AppColors.textDark,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          t.isFull
+                              ? 'Full'
+                              : '${t.currentParticipants}/${t.maxParticipants} joined',
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
 }
