@@ -150,6 +150,7 @@ class Tournament extends Equatable {
   final int currentParticipants;
   final int entryFeeCoins;
   final int entryFeeGems;
+  final double rakePercent;
   final List<TournamentPrize> prizes;
   final Map<String, dynamic> settings;
   final TournamentStatus status;
@@ -203,6 +204,7 @@ class Tournament extends Equatable {
     this.currentParticipants = 0,
     this.entryFeeCoins = 0,
     this.entryFeeGems = 0,
+    this.rakePercent = 10,
     this.prizes = const [],
     this.settings = const {},
     this.status = TournamentStatus.draft,
@@ -227,6 +229,23 @@ class Tournament extends Equatable {
           .isAfter(startTime.subtract(Duration(minutes: checkInMinutes)));
   bool get isFree => entryFeeCoins == 0 && entryFeeGems == 0;
   bool get isFull => currentParticipants >= maxParticipants;
+
+  /// Live player-funded prize projection (#259): entries × coin fee − rake,
+  /// split 50/30/20. Null when there's nothing to project (free event, no
+  /// entrants yet, or an explicit platform prize_pool exists — that list is
+  /// the authority then). Grows as registrations land.
+  ({int pool, int first, int second, int third})? get playerFundedPool {
+    if (entryFeeCoins <= 0 || prizes.isNotEmpty) return null;
+    if (currentParticipants <= 0) return null;
+    final gross = currentParticipants * entryFeeCoins;
+    final net = (gross * (100 - rakePercent) / 100).floor();
+    return (
+      pool: net,
+      first: (net * 0.5).floor(),
+      second: (net * 0.3).floor(),
+      third: (net * 0.2).floor(),
+    );
+  }
   bool get isRegistrationOpen =>
       status == TournamentStatus.registration &&
       !isFull &&
@@ -258,6 +277,7 @@ class Tournament extends Equatable {
       currentParticipants: (json['current_participants'] as int?) ?? 0,
       entryFeeCoins: (json['entry_fee_coins'] as int?) ?? 0,
       entryFeeGems: (json['entry_fee_gems'] as int?) ?? 0,
+      rakePercent: (json['rake_percent'] as num?)?.toDouble() ?? 10,
       prizes: (json['prize_pool'] as List<dynamic>?)
               ?.map((p) =>
                   TournamentPrize.fromJson(p as Map<String, dynamic>))

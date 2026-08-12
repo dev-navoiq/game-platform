@@ -710,6 +710,42 @@ class _TournamentHeader extends StatelessWidget {
                   .toList(),
             ),
           ],
+
+          // Player-funded pool projection (#259) — live: grows with entries.
+          if (tournament.playerFundedPool != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Prize pool — ${tournament.playerFundedPool!.pool} coins '
+              '(${tournament.currentParticipants} × ${tournament.entryFeeCoins}'
+              ' − ${tournament.rakePercent.toStringAsFixed(0)}% rake)',
+              style: const TextStyle(
+                color: AppColors.textDark,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _StatItem(
+                    icon: Icons.looks_one_outlined,
+                    label: '1st: ${tournament.playerFundedPool!.first}c'),
+                const SizedBox(width: 12),
+                _StatItem(
+                    icon: Icons.looks_two_outlined,
+                    label: '2nd: ${tournament.playerFundedPool!.second}c'),
+                const SizedBox(width: 12),
+                _StatItem(
+                    icon: Icons.looks_3_outlined,
+                    label: '3rd: ${tournament.playerFundedPool!.third}c'),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Every match also pays normal game rewards (coins + XP).',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+            ),
+          ],
         ],
       ),
     );

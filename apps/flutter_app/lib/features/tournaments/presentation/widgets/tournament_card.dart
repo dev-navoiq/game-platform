@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/colors.dart';
@@ -5,7 +7,7 @@ import '../../../../shared/theme/glass_tokens.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../data/tournament_models.dart';
 
-class TournamentCard extends StatelessWidget {
+class TournamentCard extends StatefulWidget {
   final Tournament tournament;
   final VoidCallback? onTap;
 
@@ -23,9 +25,41 @@ class TournamentCard extends StatelessWidget {
   });
 
   @override
+  State<TournamentCard> createState() => _TournamentCardState();
+}
+
+class _TournamentCardState extends State<TournamentCard> {
+  Tournament get tournament => widget.tournament;
+  String? get outcomeText => widget.outcomeText;
+  Color? get outcomeColor => widget.outcomeColor;
+
+  /// Countdown re-render (#259): realtime only rebuilds cards when DATA
+  /// changes, so "in 8m" used to freeze until an event arrived. Tick every
+  /// 30s while a start is pending; upcoming-within-the-hour ticks read as
+  /// live to the user without meaningful cost.
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    if (tournament.status == TournamentStatus.registration ||
+        tournament.status == TournamentStatus.starting) {
+      _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: GlassContainer(
         borderRadius: GlassTokens.radiusMedium,
         padding: const EdgeInsets.all(16),
@@ -122,7 +156,7 @@ class TournamentCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // Participants and time
+            // Participants, live countdown, and status texture (#259)
             Row(
               children: [
                 Icon(Icons.people_outline,
@@ -130,9 +164,13 @@ class TournamentCard extends StatelessWidget {
                 const SizedBox(width: 4),
                 Text(
                   '${tournament.currentParticipants}/${tournament.maxParticipants}',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
+                  style: TextStyle(
+                    color: tournament.isFull &&
+                            tournament.status == TournamentStatus.registration
+                        ? AppColors.accent
+                        : AppColors.textMuted,
                     fontSize: 13,
+                    fontWeight: tournament.isFull ? FontWeight.w700 : null,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -145,8 +183,41 @@ class TournamentCard extends StatelessWidget {
                     fontSize: 13,
                   ),
                 ),
+                const Spacer(),
+                if (_statusText != null)
+                  _InfoChip(
+                    icon: Icons.info_outline,
+                    label: _statusText!,
+                    color: AppColors.accent,
+                  ),
               ],
             ),
+
+            // Player-funded pool projection — grows live as entries land.
+            if (tournament.playerFundedPool != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.savings_outlined,
+                      color: AppColors.accent, size: 15),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Pool ${tournament.playerFundedPool!.pool} coins · '
+                      '🥇${tournament.playerFundedPool!.first} '
+                      '🥈${tournament.playerFundedPool!.second} '
+                      '🥉${tournament.playerFundedPool!.third}',
+                      style: const TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
 
             const SizedBox(height: 10),
 
@@ -197,13 +268,29 @@ class TournamentCard extends StatelessWidget {
     );
   }
 
+  /// Status texture beyond the LIVE badge: what's happening RIGHT NOW for
+  /// an upcoming event ("Full — starts 21:00", "Check-in open").
+  String? get _statusText {
+    if (tournament.status != TournamentStatus.registration) return null;
+    if (tournament.isCheckInOpen) return 'Check-in open';
+    if (tournament.isFull) {
+      final local = tournament.startTime.toLocal();
+      final hh = local.hour.toString().padLeft(2, '0');
+      final mm = local.minute.toString().padLeft(2, '0');
+      return 'Full — starts $hh:$mm';
+    }
+    return null;
+  }
+
   String _formatStartTime(DateTime time) {
     final now = DateTime.now();
     final diff = time.difference(now);
 
     if (diff.isNegative) return 'Started';
     if (diff.inDays > 0) return 'in ${diff.inDays}d';
-    if (diff.inHours > 0) return 'in ${diff.inHours}h';
+    if (diff.inHours > 0) {
+      return 'in ${diff.inHours}h ${diff.inMinutes % 60}m';
+    }
     if (diff.inMinutes > 0) return 'in ${diff.inMinutes}m';
     return 'Starting soon';
   }
