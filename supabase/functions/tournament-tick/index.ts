@@ -156,16 +156,19 @@ serve(async (req) => {
           .from('tournament_participants')
           .select('user_id')
           .eq('tournament_id', s.id);
+        // No registrants yet → don't burn the once-flag; keep checking each
+        // tick so people who register inside the T-15 window still get the
+        // push (short-lead instances qualified while empty and went silent —
+        // observed on staging 2026-08-12).
+        if ((parts ?? []).length === 0) continue;
         await admin.from('tournaments')
           .update({ settings: { ...settings, start_reminder_notified: true } })
           .eq('id', s.id);
-        if ((parts ?? []).length > 0) {
-          await sendPush(admin, (parts ?? []).map((p) => p.user_id as string), 'tournament_updates', {
-            title: s.name ?? 'Tournament',
-            body: 'Starting in 15 minutes — get ready!',
-            data: { route: `/tournament/${s.id}` },
-          });
-        }
+        await sendPush(admin, (parts ?? []).map((p) => p.user_id as string), 'tournament_updates', {
+          title: s.name ?? 'Tournament',
+          body: 'Starting in 15 minutes — get ready!',
+          data: { route: `/tournament/${s.id}` },
+        });
       } catch (e) {
         console.error(`tick: start reminder failed for ${s.id}:`, e);
       }
