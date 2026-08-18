@@ -232,3 +232,54 @@ export async function sendPush(
 
   return result;
 }
+
+/**
+ * Diagnostic sender (#263): sends to EVERY token of one user, bypassing
+ * pref/quiet-hour filtering, and returns the raw FCM outcome per token so
+ * silent failures (SENDER_ID_MISMATCH, APNs config errors…) become visible.
+ * Admin-gated caller only (admin-push-test).
+ */
+export async function sendPushDiagnostic(
+  admin: SupabaseClient,
+  userId: string,
+  content: PushContent,
+): Promise<Array<Record<string, unknown>>> {
+  const saRaw = Deno.env.get('FCM_SERVICE_ACCOUNT');
+  if (!saRaw) return [{ error: 'FCM_SERVICE_ACCOUNT not set' }];
+  const sa: ServiceAccount = JSON.parse(saRaw);
+
+  const { data: tokens } = await admin
+    .from('device_push_tokens')
+    .select('token, platform, updated_at')
+    .eq('user_id', userId);
+  if (!tokens || tokens.length === 0) return [{ error: 'no device tokens' }];
+
+  const accessToken = await getAccessToken(sa);
+  const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
+
+  const results: Array<Record<string, unknown>> = [];
+  for (const row of tokens) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          token: row.token,
+          notification: { title: content.title, body: content.body },
+          data: content.data ?? {},
+          android: { notification: { channel_id: 'gathr_default' } },
+          apns: { payload: { aps: { sound: 'default' } } },
+        },
+      }),
+    });
+    const body = await res.text();
+    results.push({
+      token_prefix: (row.token as string).slice(0, 12),
+      platform: row.platform,
+      token_age: row.updated_at,
+      fcm_status: res.status,
+      fcm_response: body.slice(0, 400),
+    });
+  }
+  return results;
+}
