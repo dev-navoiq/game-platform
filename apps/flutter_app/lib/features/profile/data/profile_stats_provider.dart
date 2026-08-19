@@ -28,15 +28,26 @@ final profileStatsProvider =
   }
   final rows = await supabase
       .from('recent_games')
-      .select('result, coins_earned')
+      .select('result')
       .eq('user_id', userId);
   var games = 0;
   var wins = 0;
-  var coins = 0;
   for (final r in rows) {
     games++;
     if (r['result'] == 'win') wins++;
-    coins += (r['coins_earned'] as num?)?.toInt() ?? 0;
+  }
+  // "Coins earned" comes from the ledger, not per-game receipts: the ledger
+  // includes tournament prizes and pre-receipt-era games, and excludes
+  // top-ups that never went through the economy.
+  final credits = await supabase
+      .from('currency_transactions')
+      .select('amount')
+      .eq('user_id', userId)
+      .eq('currency', 'coins')
+      .gt('amount', 0);
+  var coins = 0;
+  for (final c in credits) {
+    coins += (c['amount'] as num).toInt();
   }
   return ProfileStats(games: games, wins: wins, coinsEarned: coins);
 });
