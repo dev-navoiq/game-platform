@@ -33,7 +33,7 @@ class TournamentDetailScreen extends ConsumerStatefulWidget {
 
 class _TournamentDetailScreenState
     extends ConsumerState<TournamentDetailScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   bool _isRegistering = false;
   Timer? _refreshTimer;
@@ -46,15 +46,17 @@ class _TournamentDetailScreenState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this);
     // Other players register/withdraw and the tournament can go live while
     // this screen is open — poll so the participant list and status stay
     // current for everyone, not just the acting user.
+    // The roster/teams/bracket streams poll for themselves now (repository
+    // watchdog, #280) — invalidating them here would tear down and recreate
+    // their realtime channels every tick for nothing.
     _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted || _isRegistering) return;
       ref.invalidate(tournamentDetailProvider(widget.tournamentId));
-      ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
-      ref.invalidate(tournamentTeamsProvider(widget.tournamentId));
       ref.invalidate(myParticipationProvider(widget.tournamentId));
     });
   }
@@ -91,8 +93,25 @@ class _TournamentDetailScreenState
     }
   }
 
+  /// Coming back from a lock or app switch: the realtime socket may have died
+  /// while suspended and the streams' own watchdogs take up to 15s to notice.
+  /// A player returning to a match that started while their phone slept
+  /// shouldn't wait even that long — refetch everything and re-run the
+  /// auto-enter check immediately (#280).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    ref.invalidate(tournamentDetailProvider(widget.tournamentId));
+    ref.invalidate(tournamentParticipantsProvider(widget.tournamentId));
+    ref.invalidate(tournamentTeamsProvider(widget.tournamentId));
+    ref.invalidate(myParticipationProvider(widget.tournamentId));
+    ref.invalidate(tournamentBracketStreamProvider(widget.tournamentId));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoEnterMatch());
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();

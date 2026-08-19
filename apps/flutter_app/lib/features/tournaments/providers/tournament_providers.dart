@@ -32,8 +32,17 @@ final _tournamentsChangesProvider = StreamProvider<int>((ref) {
     )
     ..subscribe();
 
+  // Watchdog bump: if the socket dies silently (iOS lock/suspend — #280) the
+  // channel never fires again and every watcher of this signal freezes. A
+  // slow unconditional bump keeps list/detail refetching regardless of
+  // channel health; the reads it triggers are the same cheap REST queries.
+  final backstop = Timer.periodic(const Duration(seconds: 20), (_) {
+    if (!controller.isClosed) controller.add(++version);
+  });
+
   ref.onDispose(() {
     debounce?.cancel();
+    backstop.cancel();
     supabase.removeChannel(channel);
     controller.close();
   });

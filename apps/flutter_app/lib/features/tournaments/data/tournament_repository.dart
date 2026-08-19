@@ -153,6 +153,7 @@ class TournamentRepository {
     final controller = StreamController<T>();
     var fetching = false;
     var dirty = false;
+    Timer? backstop;
 
     // Coalesce bursts: one refetch in flight at a time, and events landing
     // mid-fetch trigger exactly one follow-up so the last emit is fresh.
@@ -193,10 +194,22 @@ class TournamentRepository {
 
     controller
       ..onListen = () {
-        channel.subscribe();
+        // Refetch on every (re)join, not just the first: rows changed while
+        // the socket was down are unrecoverable from the channel itself, so
+        // the rejoin moment is exactly when a catch-up read is needed (#280).
+        channel.subscribe((status, [_]) {
+          if (status == RealtimeSubscribeStatus.subscribed) refetch();
+        });
         refetch();
+        // Watchdog poll: an iOS lock/suspend can kill the socket with no
+        // error or status callback — the channel just goes quiet. Same class
+        // of bug the game screen fixed in PR #182; without this, the detail
+        // screen sat stale through a match start (#280).
+        backstop =
+            Timer.periodic(const Duration(seconds: 15), (_) => refetch());
       }
       ..onCancel = () async {
+        backstop?.cancel();
         await _supabase.removeChannel(channel);
       };
     return controller.stream;
@@ -337,12 +350,18 @@ class TournamentRepository {
     return response.map((r) => TournamentMatch.fromJson(r)).toList();
   }
 
+  // Auto-enter and the match banner hang off this stream, so it gets the
+  // self-healing channel + watchdog treatment — a raw `.stream()` dies
+  // silently with the socket and a waiting player misses their own match
+  // start (#280). Refetching via getBracket also brings the profiles join
+  // the raw stream could never express.
   Stream<List<TournamentMatch>> watchBracket(String tournamentId) {
-    return _supabase
-        .from('tournament_matches')
-        .stream(primaryKey: ['id'])
-        .eq('tournament_id', tournamentId)
-        .map((data) => data.map((r) => TournamentMatch.fromJson(r)).toList());
+    return _refetchOnChange(
+      channelName: 'tournament_matches:$tournamentId',
+      tables: ['tournament_matches'],
+      tournamentId: tournamentId,
+      fetch: () => getBracket(tournamentId),
+    );
   }
 
   // ── Chat ───────────────────────────────────────────────────────────────────
@@ -379,14 +398,14 @@ class TournamentRepository {
     });
   }
 
+  // Same silent-death exposure as watchBracket (#280).
   Stream<List<TournamentChatMessage>> watchChat(String tournamentId) {
-    return _supabase
-        .from('tournament_chat')
-        .stream(primaryKey: ['id'])
-        .eq('tournament_id', tournamentId)
-        .order('created_at', ascending: true)
-        .map((data) =>
-            data.map((r) => TournamentChatMessage.fromJson(r)).toList());
+    return _refetchOnChange(
+      channelName: 'tournament_chat:$tournamentId',
+      tables: ['tournament_chat'],
+      tournamentId: tournamentId,
+      fetch: () => getChatMessages(tournamentId),
+    );
   }
 
 }
