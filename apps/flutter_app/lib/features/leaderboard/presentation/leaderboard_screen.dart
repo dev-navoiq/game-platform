@@ -256,7 +256,7 @@ class _PodiumCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Text(
-                  entry.username,
+                  isMe ? '${entry.username} (you)' : entry.username,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
