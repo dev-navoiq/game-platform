@@ -175,9 +175,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const Spacer(),
                   GestureDetector(
-                    // Shop is hidden for launch — Upgrade points at the
-                    // subscription screen, its natural target anyway.
-                    onTap: () => context.push(AppRoutes.subscription),
+                    onTap: () => context.push(AppRoutes.shop),
                     child: Text(
                       'Upgrade',
                       style: TextStyle(

@@ -348,11 +348,10 @@ class _MainBottomNav extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
 
-    // Shop tab hidden for launch (#274 owner decision) — nothing is
-    // purchasable until the gems/IAP epic (#287) ships post-launch.
     int currentIndex = 0;
-    if (location.startsWith('/leaderboard')) currentIndex = 1;
-    if (location.startsWith('/profile')) currentIndex = 2;
+    if (location.startsWith('/shop')) currentIndex = 1;
+    if (location.startsWith('/leaderboard')) currentIndex = 2;
+    if (location.startsWith('/profile')) currentIndex = 3;
 
     return GlassNavBar(
       currentIndex: currentIndex,
@@ -361,8 +360,10 @@ class _MainBottomNav extends ConsumerWidget {
           case 0:
             context.go(AppRoutes.home);
           case 1:
-            context.go(AppRoutes.leaderboard);
+            context.go(AppRoutes.shop);
           case 2:
+            context.go(AppRoutes.leaderboard);
+          case 3:
             context.go(AppRoutes.profile);
         }
       },
@@ -371,6 +372,11 @@ class _MainBottomNav extends ConsumerWidget {
           icon: Icons.home_outlined,
           activeIcon: Icons.home,
           label: 'Home',
+        ),
+        GlassNavBarItem(
+          icon: Icons.store_outlined,
+          activeIcon: Icons.store,
+          label: 'Shop',
         ),
         GlassNavBarItem(
           icon: Icons.leaderboard_outlined,
