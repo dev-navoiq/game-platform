@@ -283,29 +283,9 @@ class _GameHistoryCard extends StatelessWidget {
               ),
             ),
 
-          // Replay button
-          if (game.roomId != null) ...[
-            const SizedBox(height: 8),
-            GestureDetector(
-              onTap: () =>
-                  context.push(AppRoutes.replayPath(game.roomId!)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.replay, size: 16, color: AppColors.accent),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Watch Replay',
-                    style: TextStyle(
-                      color: AppColors.accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          // Watch Replay removed for launch (#274): the replay loader's
+          // game_history table was never written, so the link failed 100%
+          // of the time. Returns with story #291.
         ],
       ),
     );
