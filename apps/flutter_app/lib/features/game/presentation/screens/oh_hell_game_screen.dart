@@ -1092,9 +1092,10 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
                   ? () => _startNextRound(ref)
                   : () => context
                       .go(AppRoutes.tournamentPath(tournamentId)),
-              onLeave: tournamentId == null
-                  ? () => Navigator.of(context).pop()
-                  : () => context.go(AppRoutes.home),
+              // Always the dashboard: popping back to the finished room's
+              // screen was a dead end (owner call, 2026-08-19) — rematches
+              // live on the podium's Play Again, not the stale room.
+              onLeave: () => context.go(AppRoutes.home),
             );
           }),
       ],
