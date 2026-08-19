@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -91,6 +92,18 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           // App version & update status
           _UpdateStatusTile(),
+
+          // Danger zone — account deletion (App Store 5.1.1(v), #270).
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.delete_forever_outlined,
+                color: Colors.red),
+            title: const Text('Delete account',
+                style: TextStyle(color: Colors.red)),
+            subtitle:
+                const Text('Permanently erase your account and data'),
+            onTap: () => _confirmDeleteAccount(context, ref),
+          ),
           // Developer section (debug builds only)
           if (kDebugMode) ...[
             const Divider(),
@@ -116,6 +129,81 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Two-step destructive confirmation: explain the loss, require typing
+  /// DELETE, then call the delete-account edge fn and sign out (#270).
+  void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: const Text('Delete account?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This permanently erases your account: coins, gems, game '
+                'history, friends, and progress. It cannot be undone.\n\n'
+                'App Store / Play subscriptions must be cancelled separately '
+                'in your store account.\n\n'
+                'Type DELETE to confirm:',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  hintText: 'DELETE',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: controller.text.trim() == 'DELETE'
+                  ? () async {
+                      Navigator.of(dialogContext).pop();
+                      await _deleteAccount(context, ref);
+                    }
+                  : null,
+              child: const Text('Delete forever'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    final supabase = ref.read(supabaseProvider);
+    try {
+      await supabase.functions.invoke('delete-account', body: {});
+      // Server already destroyed the auth user; clear local session state.
+      await supabase.auth.signOut();
+      if (context.mounted) context.go(AppRoutes.login);
+    } on FunctionException catch (e) {
+      final details = e.details;
+      final msg = (details is Map ? details['error'] : null) ??
+          'Deletion failed — try again.';
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$msg')));
+      }
+    } catch (_) {
+      // Auth session may already be invalid post-delete; treat as success.
+      await supabase.auth.signOut();
+      if (context.mounted) context.go(AppRoutes.login);
+    }
   }
 
   void _showLanguagePicker(BuildContext context, WidgetRef ref) {
