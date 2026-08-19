@@ -340,11 +340,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$label: $error'),
+        content: Text('$label: ${_friendlyAuthMessage(error)}'),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 6),
       ),
     );
+  }
+
+  /// Raw AuthApiException dumps read as developer noise ("AuthApiException:
+  /// invalid_credentials, statusCode: 400"). Players get plain words; the
+  /// full exception still goes to debugPrint above.
+  String _friendlyAuthMessage(Object error) {
+    if (error is AuthException) {
+      switch (error.code) {
+        case 'invalid_credentials':
+          return 'Email or password is incorrect, or this account no longer exists.';
+        case 'email_not_confirmed':
+          return 'Please confirm your email first — check your inbox.';
+        case 'user_banned':
+          return 'This account has been suspended.';
+        case 'over_request_rate_limit':
+          return 'Too many attempts — please wait a minute and try again.';
+      }
+      return error.message;
+    }
+    return 'Something went wrong. Please check your connection and try again.';
   }
 
   Widget _orDivider(String label) {
