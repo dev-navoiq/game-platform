@@ -250,6 +250,25 @@ class _GameHistoryCard extends StatelessWidget {
                     ? Colors.green
                     : Colors.red,
               ),
+              // Reward receipt — only games that actually paid carry it
+              // (pre-2026-08-04 rows have no receipt; showing +0 there
+              // would misread as "this game paid nothing").
+              if ((game.coinsEarned ?? 0) > 0) ...[
+                const SizedBox(width: 14),
+                _StatChip(
+                  Icons.monetization_on,
+                  '+${game.coinsEarned}',
+                  color: AppColors.accent,
+                ),
+              ],
+              if ((game.xpEarned ?? 0) > 0) ...[
+                const SizedBox(width: 14),
+                _StatChip(
+                  Icons.bolt,
+                  '+${game.xpEarned} XP',
+                  color: Colors.lightBlueAccent,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
