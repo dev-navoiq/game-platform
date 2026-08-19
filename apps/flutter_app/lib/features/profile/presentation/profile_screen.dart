@@ -3,19 +3,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/di/monetization_providers.dart';
+import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/theme/colors.dart';
 import '../../../shared/widgets/currency_display.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_card.dart';
-import '../../../shared/widgets/under_construction_banner.dart';
+import '../data/profile_stats_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider).valueOrNull;
+    final stats = ref.watch(profileStatsProvider).valueOrNull;
+    final name = profile?.displayName ?? profile?.username ?? 'Player';
+    final level = profile?.level ?? 1;
+    final xp = profile?.xp ?? 0;
+    final xpNext = profile?.xpToNextLevel ?? 500;
     return FeltBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -37,10 +44,6 @@ class ProfileScreen extends ConsumerWidget {
             bottom: 100,
           ),
           children: [
-            const UnderConstructionBanner(
-              message:
-                  'Profile is under construction — name, level, XP and stats below are placeholders.',
-            ),
             // Avatar + Name card
             GlassCard(
               padding: const EdgeInsets.all(20),
@@ -58,16 +61,21 @@ class ProfileScreen extends ConsumerWidget {
                         width: 3,
                       ),
                     ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 40,
-                      color: AppColors.accent,
+                    child: Center(
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.accent,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Guest Player',
-                    style: TextStyle(
+                  Text(
+                    name,
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textDark,
@@ -82,9 +90,9 @@ class ProfileScreen extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(12),
                       color: AppColors.accent.withOpacity(0.15),
                     ),
-                    child: const Text(
-                      'Level 1',
-                      style: TextStyle(
+                    child: Text(
+                      'Level $level',
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: AppColors.accent,
@@ -99,15 +107,15 @@ class ProfileScreen extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '0 / 100 XP',
-                            style: TextStyle(
+                            '$xp / $xpNext XP',
+                            style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.textMuted,
                             ),
                           ),
                           Text(
-                            'Next: Level 2',
-                            style: TextStyle(
+                            'Next: Level ${level + 1}',
+                            style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.textMuted,
                             ),
@@ -117,13 +125,15 @@ class ProfileScreen extends ConsumerWidget {
                       const SizedBox(height: 6),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: const SizedBox(
+                        child: SizedBox(
                           height: 6,
                           child: LinearProgressIndicator(
-                            value: 0,
-                            backgroundColor: Color(0x26000000),
+                            value: xpNext > 0
+                                ? (xp / xpNext).clamp(0.0, 1.0)
+                                : 0,
+                            backgroundColor: const Color(0x26000000),
                             valueColor:
-                                AlwaysStoppedAnimation(AppColors.accent),
+                                const AlwaysStoppedAnimation(AppColors.accent),
                           ),
                         ),
                       ),
@@ -188,10 +198,10 @@ class ProfileScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _StatRow('Games Played', '0'),
-                  _StatRow('Win Rate', '0%'),
-                  _StatRow('Best Streak', '0'),
-                  _StatRow('Total Coins Earned', '0'),
+                  _StatRow('Games Played', '${stats?.games ?? 0}'),
+                  _StatRow('Win Rate', '${stats?.winRatePercent ?? 0}%'),
+                  _StatRow(
+                      'Total Coins Earned', '${stats?.coinsEarned ?? 0}'),
                 ],
               ),
             ),
