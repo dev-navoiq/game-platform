@@ -38,12 +38,14 @@ final profileStatsProvider =
   }
   // "Coins earned" comes from the ledger, not per-game receipts: the ledger
   // includes tournament prizes and pre-receipt-era games, and excludes
-  // top-ups that never went through the economy.
+  // top-ups that never went through the economy. Refunds are returned entry
+  // fees, not earnings — counting them inflated the stat (owner-caught).
   final credits = await supabase
       .from('currency_transactions')
       .select('amount')
       .eq('user_id', userId)
       .eq('currency', 'coins')
+      .neq('reason', 'tournament_refund')
       .gt('amount', 0);
   var coins = 0;
   for (final c in credits) {

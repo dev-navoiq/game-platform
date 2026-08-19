@@ -16,6 +16,10 @@ class RecentGame {
   final List<String> opponentNames;
   final Map<String, dynamic>? gameSummary;
 
+  /// Reward receipt (rows since 2026-08-04 carry these; older rows null).
+  final int? coinsEarned;
+  final int? xpEarned;
+
   const RecentGame({
     required this.id,
     required this.gameType,
@@ -28,6 +32,8 @@ class RecentGame {
     this.eloChange,
     required this.opponentNames,
     this.gameSummary,
+    this.coinsEarned,
+    this.xpEarned,
   });
 
   factory RecentGame.fromJson(Map<String, dynamic> json) {
@@ -44,6 +50,8 @@ class RecentGame {
       opponentNames:
           List<String>.from(json['opponent_names'] as List? ?? []),
       gameSummary: json['game_summary'] as Map<String, dynamic>?,
+      coinsEarned: json['coins_earned'] as int?,
+      xpEarned: json['xp_earned'] as int?,
     );
   }
 
