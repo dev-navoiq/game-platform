@@ -28,6 +28,24 @@ serve(async (req) => {
 
     const targetPlayers = body.player_count || limits.min;
 
+    // ── #285 launch gate (mirrors create-room) ────────────────────────────
+    // Matchmaking creates rooms by direct insert, so it must enforce the
+    // gate itself or quick match becomes a side door into sealed games.
+    if (body.game_type !== 'oh_hell') {
+      const { data: flag } = await admin
+        .from('feature_flags')
+        .select('enabled, is_active')
+        .eq('flag_key', `game_live_${body.game_type}`)
+        .maybeSingle();
+      if (!flag || !flag.enabled || !flag.is_active) {
+        return errorResponse(
+          'This game has not launched yet — coming soon!',
+          403,
+          'GAME_NOT_LIVE',
+        );
+      }
+    }
+
     // ── Get user's rating ─────────────────────────────────────────────────
     const { data: leaderboard } = await supabase
       .from('leaderboards')
@@ -50,13 +68,19 @@ serve(async (req) => {
     const ratingRange = hasPriority ? 100 : 200;
 
     // ── Search for matching rooms ─────────────────────────────────────────
+    // Freshness window (#215): months-old husks with absent hosts qualified
+    // before and matchmaking seated players into rooms that would never
+    // start. A waiting room that hasn't filled in 10 minutes is dead to the
+    // matchmaker (it stays joinable by code/browse).
+    const freshCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { data: candidates } = await admin
       .from('game_rooms')
-      .select('id, created_by, current_players, max_players, code')
+      .select('id, created_by, current_players, max_players, code, created_at, config')
       .eq('game_type', body.game_type)
       .eq('status', 'waiting')
       .eq('is_private', false)
-      .lt('current_players', targetPlayers);
+      .lt('current_players', targetPlayers)
+      .gte('created_at', freshCutoff);
 
     // ── Filter by rating proximity ────────────────────────────────────────
     const matchingRooms: typeof candidates = [];
@@ -77,10 +101,26 @@ serve(async (req) => {
     }
 
     if (matchingRooms.length > 0) {
-      // Priority users get the best match; free users get random
-      const room = hasPriority
-        ? matchingRooms[0]
-        : matchingRooms[Math.floor(Math.random() * matchingRooms.length)];
+      // Converge, don't scatter (#215): everyone prefers the fullest room,
+      // then matchmaking-created rooms, then the newest — so simultaneous
+      // seekers pile into ONE room and games actually start. Randomness only
+      // breaks exact ties (keeps load spread when several equal rooms exist).
+      const score = (r: {
+        current_players: number;
+        created_at?: string;
+        config?: Record<string, unknown> | null;
+      }) =>
+        `${String(r.current_players).padStart(3, '0')}|${
+          (r.config as { matchmaking?: boolean } | null)?.matchmaking ? 1 : 0
+        }`;
+      matchingRooms.sort(
+        (a, b) =>
+          score(b).localeCompare(score(a)) ||
+          (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+      );
+      const topScore = score(matchingRooms[0]);
+      const tiePool = matchingRooms.filter((r) => score(r) === topScore);
+      const room = tiePool[Math.floor(Math.random() * tiePool.length)];
 
       // Find next available seat
       const { data: players } = await admin
@@ -142,7 +182,12 @@ serve(async (req) => {
         created_by: user.id,
         max_players: targetPlayers,
         is_private: false,
-        config: { matchmaking: true },
+        // Quick match means a QUICK game (owner call, #216): Oh Hell rooms
+        // cap the opening deal at 5 cards → 9 rounds, same as the create
+        // sheet's short option, instead of the full 25-round ladder.
+        config: body.game_type === 'oh_hell'
+          ? { matchmaking: true, oh_hell: { max_cards: 5 } }
+          : { matchmaking: true },
       })
       .select()
       .single();
