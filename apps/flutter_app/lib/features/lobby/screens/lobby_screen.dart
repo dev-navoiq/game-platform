@@ -420,9 +420,12 @@ class _CreateRoomOptionsSheetState extends State<_CreateRoomOptionsSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              // Two choices only (owner call): voice isn't a launch feature,
+              // so Full-vs-ChatOnly is a distinction players can't perceive.
+              // 'Chat' maps to server mode 'full' (everything permitted —
+              // ready for voice when it ships); Focus stays focus.
               for (final (mode, label, hint) in const [
-                ('full', 'Full', 'chat + voice'),
-                ('chat_only', 'Chat Only', 'no voice'),
+                ('full', 'Chat', 'table talk on'),
                 ('focus', 'Focus', 'no chatter'),
               ])
                 _GameLengthChoice(
