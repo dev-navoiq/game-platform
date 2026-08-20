@@ -277,23 +277,14 @@ class NotificationService {
     try {
       final token = await _getTokenWaitingForApns();
       if (token == null) return;
-      final platform = Platform.isIOS ? 'ios' : 'android';
-      await client.from('device_push_tokens').upsert({
-        'user_id': userId,
-        'token': token,
-        'platform': platform,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }, onConflict: 'user_id,token');
-      // A reinstall/update mints a fresh FCM token while old ones can stay
-      // FCM-valid for weeks, so the same phone got every push N times
-      // (#293). One token per user+platform — the newest wins. Revisit if
-      // multi-device-per-platform (iPhone+iPad) ever matters.
-      await client
-          .from('device_push_tokens')
-          .delete()
-          .eq('user_id', userId)
-          .eq('platform', platform)
-          .neq('token', token);
+      // Server-side claim (#293/#296): a token identifies a physical device,
+      // and the device belongs to whoever is logged in NOW. The RPC steals
+      // the token from any previous account (RLS blocks doing that directly)
+      // and drops this user's stale same-platform tokens from reinstalls.
+      await client.rpc('register_push_token', params: {
+        'p_token': token,
+        'p_platform': Platform.isIOS ? 'ios' : 'android',
+      });
     } catch (e) {
       debugPrint('Push token registration failed: $e');
     }

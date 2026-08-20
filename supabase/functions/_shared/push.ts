@@ -181,11 +181,18 @@ export async function sendPush(
   });
   if (recipients.length === 0) return result;
 
-  const { data: tokens } = await admin
+  const { data: rawTokens } = await admin
     .from('device_push_tokens')
     .select('user_id, token')
     .in('user_id', recipients);
-  if (!tokens || tokens.length === 0) return result;
+  if (!rawTokens || rawTokens.length === 0) return result;
+  // One send per physical device (#296): if several recipients' rows point
+  // at the same token (multi-account device, pre-migration residue), the
+  // phone must still get exactly one banner.
+  const seen = new Set<string>();
+  const tokens = rawTokens.filter((r: { token: string }) =>
+    seen.has(r.token) ? false : (seen.add(r.token), true)
+  );
 
   const accessToken = await getAccessToken(sa);
   const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
