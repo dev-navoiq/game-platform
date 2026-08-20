@@ -239,7 +239,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       AppRoutes.roomPath(AppRoutes.pendingRoomId),
       extra: RoomCreateRequest(
         gameType: widget.gameType,
-        socialMode: 'full',
+        socialMode: opts.socialMode,
         maxPlayers: opts.maxPlayers,
         config: opts.config,
       ),
@@ -250,20 +250,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<RoomCreateOptions?> _showCreateOptionsSheet(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final hasPlayerChoice = GamePlayerLimits.isVariable(widget.gameType);
-    final hasLengthChoice = widget.gameType == 'oh_hell';
 
-    if (!hasPlayerChoice && !hasLengthChoice) {
-      // Nothing to ask — still offer the auto-start toggle? No: keep the
-      // fast path fast. Fixed games start via the host button.
-      return Future.value(RoomCreateOptions(
-        maxPlayers: GamePlayerLimits.maxFor(widget.gameType),
-        config: null,
-      ));
-    }
-
+    // Every game now has at least the social-mode choice (#220), so the
+    // old fixed-game fast path (which hardcoded 'full') is gone.
     return GlassBottomSheet.show<RoomCreateOptions>(
       context: context,
-      title: hasPlayerChoice ? l10n.howManyPlayers : l10n.gameLength,
+      title: hasPlayerChoice ? l10n.howManyPlayers : l10n.createRoom,
       child: _CreateRoomOptionsSheet(gameType: widget.gameType),
     );
   }
@@ -275,7 +267,16 @@ class RoomCreateOptions {
   final int maxPlayers;
   final Map<String, dynamic>? config;
 
-  const RoomCreateOptions({required this.maxPlayers, this.config});
+  /// Room social mode (#220): full / chat_only / focus (silent behind its
+  /// feature flag). Was hardcoded to 'full' — Focus/Chat-only rooms were
+  /// unreachable despite full server enforcement.
+  final String socialMode;
+
+  const RoomCreateOptions({
+    required this.maxPlayers,
+    this.config,
+    this.socialMode = 'full',
+  });
 }
 
 enum _GameLengthPreset { quick, oneWay, classic }
@@ -300,6 +301,7 @@ class _CreateRoomOptionsSheetState extends State<_CreateRoomOptionsSheet> {
       : GamePlayerLimits.minFor(widget.gameType);
   _GameLengthPreset _length = _GameLengthPreset.classic;
   bool _autoStart = false;
+  String _socialMode = 'full';
 
   bool get _hasPlayerChoice => GamePlayerLimits.isVariable(widget.gameType);
   bool get _hasLengthChoice => widget.gameType == 'oh_hell';
@@ -402,6 +404,36 @@ class _CreateRoomOptionsSheetState extends State<_CreateRoomOptionsSheet> {
             ),
             const SizedBox(height: 16),
           ],
+          // Social mode (#220): raw English labels for now — Hindi rides #276.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Table talk',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              for (final (mode, label, hint) in const [
+                ('full', 'Full', 'chat + voice'),
+                ('chat_only', 'Chat Only', 'no voice'),
+                ('focus', 'Focus', 'no chatter'),
+              ])
+                _GameLengthChoice(
+                  label: label,
+                  rounds: hint,
+                  selected: mode == _socialMode,
+                  onTap: () => setState(() => _socialMode = mode),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -424,6 +456,7 @@ class _CreateRoomOptionsSheetState extends State<_CreateRoomOptionsSheet> {
               RoomCreateOptions(
                 maxPlayers: _players,
                 config: _buildConfig(),
+                socialMode: _socialMode,
               ),
             ),
           ),
