@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/di/live_games_provider.dart';
 import '../../../core/routing/routes.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../l10n/generated/app_localizations.dart';
 import '../../../shared/widgets/felt_background.dart';
@@ -111,6 +113,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ),
           child: Column(
             children: [
+              // Quick Match (#216): one tap → matchmaking seats you in a
+              // fresh public room or creates one (server hygiene: #215).
+              GlassButton(
+                label: _matching ? 'Finding a table…' : 'Quick Match',
+                onPressed: _onQuickMatch,
+                size: GlassButtonSize.large,
+                width: double.infinity,
+                icon: const Icon(Icons.flash_on,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 12),
+
               // Join by Code button — opens the join screen
               GlassButton(
                 label: l10n.joinByCode,
@@ -164,6 +178,46 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ),
       ),
     );
+  }
+
+  bool _matching = false;
+
+  Future<void> _onQuickMatch() async {
+    if (_navigating || _matching) return;
+    setState(() => _matching = true);
+    try {
+      final res = await ref
+          .read(supabaseServiceProvider)
+          .findMatch(gameType: widget.gameType);
+      final roomId = res['room_id'] as String?;
+      if (roomId == null) {
+        throw StateError('matchmaking returned no room');
+      }
+      if (!mounted) return;
+      _navigating = true;
+      await context.push(AppRoutes.roomPath(roomId));
+      if (mounted) _navigating = false;
+    } on FunctionException catch (e) {
+      final details = e.details;
+      final msg = details is Map && details['error'] is String
+          ? details['error'] as String
+          : 'Matchmaking failed — please try again.';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Matchmaking failed — please try again.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _matching = false);
+    }
   }
 
   Future<void> _onCreateRoom() async {
