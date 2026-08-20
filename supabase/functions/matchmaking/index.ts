@@ -182,7 +182,12 @@ serve(async (req) => {
         created_by: user.id,
         max_players: targetPlayers,
         is_private: false,
-        config: { matchmaking: true },
+        // Quick match means a QUICK game (owner call, #216): Oh Hell rooms
+        // cap the opening deal at 5 cards → 9 rounds, same as the create
+        // sheet's short option, instead of the full 25-round ladder.
+        config: body.game_type === 'oh_hell'
+          ? { matchmaking: true, oh_hell: { max_cards: 5 } }
+          : { matchmaking: true },
       })
       .select()
       .single();
