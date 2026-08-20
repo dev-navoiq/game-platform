@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/di/live_games_provider.dart';
 import '../../../core/di/monetization_providers.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/routing/routes.dart';
@@ -404,11 +405,11 @@ class _DailyChallengesSection extends StatelessWidget {
 }
 
 /// 2-column grid of game tiles with per-game art + idle animations.
-class _GameGrid extends StatelessWidget {
+class _GameGrid extends ConsumerWidget {
   const _GameGrid();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final tiles = <(String type, String title, String subtitle)>[
       (
@@ -479,12 +480,24 @@ class _GameGrid extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final (type, title, subtitle) = tiles[index];
+            // #285 launch gate: sealed games render locked and never
+            // navigate — the lobby route has its own guard as backstop.
+            final live = ref.watch(isGameLiveProvider(type));
             return GameTileCard.fromType(
               gameType: type,
               title: title,
               subtitle: subtitle,
               animationIndex: index,
-              onTap: () => context.push(AppRoutes.lobbyPath(type)),
+              comingSoon: !live,
+              onTap: live
+                  ? () => context.push(AppRoutes.lobbyPath(type))
+                  : () => ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(SnackBar(
+                      content:
+                          Text('$title is coming soon — stay tuned!'),
+                      behavior: SnackBarBehavior.floating,
+                    )),
             );
           },
         ),

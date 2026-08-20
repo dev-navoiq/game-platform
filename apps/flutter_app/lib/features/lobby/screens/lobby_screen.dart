@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/di/live_games_provider.dart';
 import '../../../core/routing/routes.dart';
 import '../../../core/theme/colors.dart';
 import '../../../l10n/generated/app_localizations.dart';
@@ -57,6 +58,46 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // #285 launch-gate backstop: a sealed game's lobby can still be reached
+    // by deep link or stale navigation — show Coming soon instead of the
+    // create/join surface. (The server rejects create-room too.)
+    if (!ref.watch(isGameLiveProvider(widget.gameType))) {
+      return FeltBackground(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+          appBar: GlassAppBar(title: _displayName(l10n)),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock_clock,
+                      size: 56, color: AppColors.textFeltMuted),
+                  const SizedBox(height: 16),
+                  Text(
+                    '${_displayName(l10n)} is coming soon!',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textOnFelt,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'We\'re polishing this game for launch. Stay tuned!',
+                    style: TextStyle(color: AppColors.textFeltMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return FeltBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,

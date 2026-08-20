@@ -20,6 +20,10 @@ class GameTileCard extends StatelessWidget {
   final String? gameType;
   final int animationIndex;
 
+  /// #285 launch gate: renders a "Coming soon" ribbon and dims the art.
+  /// The caller still owns onTap (typically a coming-soon snackbar).
+  final bool comingSoon;
+
   const GameTileCard({
     super.key,
     required this.title,
@@ -30,6 +34,7 @@ class GameTileCard extends StatelessWidget {
     required this.onTap,
     this.gameType,
     this.animationIndex = 0,
+    this.comingSoon = false,
   });
 
   factory GameTileCard.fromType({
@@ -40,6 +45,7 @@ class GameTileCard extends StatelessWidget {
     String? subtitle,
     int? onlinePlayers,
     int animationIndex = 0,
+    bool comingSoon = false,
   }) {
     final visual = GameVisuals.of(gameType);
     return GameTileCard(
@@ -52,6 +58,7 @@ class GameTileCard extends StatelessWidget {
       onlinePlayers: onlinePlayers,
       onTap: onTap,
       animationIndex: animationIndex,
+      comingSoon: comingSoon,
     );
   }
 
@@ -173,7 +180,45 @@ class GameTileCard extends StatelessWidget {
       ),
     );
 
-    return tile
+    final gated = !comingSoon
+        ? tile
+        : Stack(
+            fit: StackFit.passthrough,
+            children: [
+              Opacity(opacity: 0.55, child: tile),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.textDark.withValues(alpha: 0.82),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_clock,
+                          size: 11, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text(
+                        'COMING SOON',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+
+    return gated
         .animate()
         .fadeIn(
           duration: 380.ms,
