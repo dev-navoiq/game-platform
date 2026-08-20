@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +57,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _isAddingBot = false;
   String? _roomCode;
   void Function()? _disposeMembershipSub;
+
+  /// Quick-match auto-start (#216): matchmade rooms count down from room
+  /// creation; at zero the host backfills medium bots and starts. A quick-
+  /// match tap must reliably become a game — nobody should stare at a
+  /// half-empty table wondering what an "Add Bot" button is.
+  static const _quickMatchWaitSeconds = 30;
+  bool _isMatchmade = false;
+  DateTime? _matchDeadline;
+  Timer? _matchTimer;
+  int _matchRemaining = 0;
+  bool _autoStartFired = false;
 
   /// Minimum number of seats that must be filled before the host can start.
   /// Default 2 for unknown / 2-player games (chess, sequence). Card games
@@ -133,6 +146,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   @override
   void dispose() {
+    _matchTimer?.cancel();
     _disposeMembershipSub?.call();
     super.dispose();
   }
@@ -146,6 +160,74 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       roomId: _roomId,
       onChanged: _loadSnapshot,
     );
+    unawaited(_initQuickMatchCountdown());
+  }
+
+  /// Detect a matchmaking-created room and arm the shared countdown. The
+  /// deadline derives from the room's server-side created_at, so every
+  /// member (including late joiners) sees the same clock.
+  Future<void> _initQuickMatchCountdown() async {
+    try {
+      final row = await ref
+          .read(supabaseServiceProvider)
+          .client
+          .from('game_rooms')
+          .select('config, created_at, status')
+          .eq('id', _roomId)
+          .single();
+      final config = row['config'] as Map<String, dynamic>?;
+      if (config?['matchmaking'] != true) return;
+      if (row['status'] != 'waiting') return;
+      if (!mounted) return;
+      setState(() {
+        _isMatchmade = true;
+        _matchDeadline = DateTime.parse(row['created_at'] as String)
+            .add(const Duration(seconds: _quickMatchWaitSeconds));
+      });
+      _matchTimer = Timer.periodic(
+          const Duration(seconds: 1), (_) => _tickQuickMatch());
+      _tickQuickMatch();
+    } catch (e) {
+      debugPrint('[RoomScreen] quick-match countdown init failed: $e');
+    }
+  }
+
+  void _tickQuickMatch() {
+    final deadline = _matchDeadline;
+    if (deadline == null || !mounted) return;
+    final remaining = deadline.difference(DateTime.now()).inSeconds;
+    setState(() => _matchRemaining = remaining.clamp(0, 9999));
+    final full = _members.length >= _maxPlayers;
+    if ((remaining <= 0 || full) && !_autoStartFired) {
+      _autoStartFired = true;
+      _matchTimer?.cancel();
+      // Only the host acts; everyone else follows the status flip to
+      // 'playing' via the membership subscription.
+      if (_isLocalHost && !_creating && !_navigatedToGame) {
+        unawaited(_autoFillAndStart());
+      }
+    }
+  }
+
+  Future<void> _autoFillAndStart() async {
+    final supabase = ref.read(supabaseServiceProvider);
+    try {
+      final need = _maxPlayers - _members.length;
+      for (var i = 0; i < need; i++) {
+        await supabase.addBot(roomId: _roomId, difficulty: 'medium');
+      }
+      await _startGame();
+    } catch (e) {
+      debugPrint('[RoomScreen] quick-match auto-start failed: $e');
+      // Leave the room usable — the host still has manual Add Bot / Start.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Auto-start hit a snag — use Add Bot / Start Game to begin.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
   }
 
   /// Background create-room for the optimistic create flow. On success, binds
@@ -513,6 +595,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
           child: Column(
             children: [
+              // Quick-match countdown (#216): shared clock to auto-start.
+              if (_isMatchmade && !_navigatedToGame) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: AppColors.accent.withOpacity(0.18),
+                    border: Border.all(
+                        color: AppColors.accent.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.flash_on,
+                          size: 16, color: AppColors.accent),
+                      const SizedBox(width: 6),
+                      Text(
+                        _autoStartFired
+                            ? 'Filling seats and starting…'
+                            : 'Game starts in ${_matchRemaining}s — waiting for players…',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textOnFelt,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
               // Room code display + Copy/Share actions
               Container(
                 padding:
