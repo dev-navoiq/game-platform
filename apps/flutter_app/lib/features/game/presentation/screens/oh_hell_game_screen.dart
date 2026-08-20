@@ -7,6 +7,7 @@ import 'package:game_core/game_core.dart';
 import 'package:game_oh_hell/game_oh_hell.dart';
 
 import '../../../../core/routing/routes.dart';
+import '../../../../core/theme/colors.dart';
 import '../../../../core/utils/player_avatar.dart';
 import '../../../../shared/animations/celebrations/loser_sad_animation.dart';
 import '../../../../shared/animations/celebrations/winner_jump_animation.dart';
@@ -21,10 +22,13 @@ import '../../services/ready_broadcast_controller.dart';
 import '../../services/round_advance_guard.dart';
 import '../widgets/bid_action_chip.dart';
 import '../widgets/bid_pill.dart';
+import 'package:social_core/social_core.dart';
+
 import '../widgets/bidding_modal.dart';
 import '../widgets/game_toast.dart';
 import '../widgets/card_hand.dart';
 import '../widgets/emoji_bar.dart';
+import '../widgets/game_chat.dart';
 import '../widgets/game_actions.dart';
 import '../widgets/game_hud.dart';
 import '../widgets/oh_hell_round_end_overlay.dart';
@@ -154,6 +158,10 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
   /// yay/smoke celebrations get a moment on screen before the modal covers
   /// them.
   bool _gameOverDialogVisible = false;
+
+  /// In-game text chat panel visibility (#220 — GameChat existed but was
+  /// never mounted anywhere; chat-only rooms had no way to type).
+  bool _chatOpen = false;
   Timer? _gameOverDialogTimer;
   static const Duration _gameOverDialogDelay = Duration(milliseconds: 2600);
 
@@ -1052,6 +1060,38 @@ class _OhHellGameScreenState extends ConsumerState<OhHellGameScreen> {
 
         // Local-player avatar is now rendered inline in the Column above
         // the CardHand (see _buildLocalPlayerNode).
+
+        // In-game text chat (#220): toggle button + slide-in panel. Only in
+        // modes where ChatRules allows typed chat (full / chat_only).
+        if (ChatRules.isChatAllowed(state.socialMode)) ...[
+          Positioned(
+            right: 12,
+            bottom: 200,
+            child: FloatingActionButton.small(
+              heroTag: 'game-chat-toggle',
+              backgroundColor:
+                  _chatOpen ? AppColors.textMuted : AppColors.accent,
+              onPressed: () => setState(() => _chatOpen = !_chatOpen),
+              child: Icon(
+                _chatOpen ? Icons.close : Icons.chat_bubble_outline,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          if (_chatOpen)
+            Positioned(
+              right: 12,
+              bottom: 250,
+              width: 290,
+              height: 330,
+              child: GameChat(
+                socialMode: state.socialMode,
+                roomId: roomId,
+                isSpectator: isSpectator,
+              ),
+            ),
+        ],
 
         // Podium dialog — crown for the topper, medals for 2nd/3rd,
         // sulking rows for the rest. Delayed ~2.6s so the seat-level

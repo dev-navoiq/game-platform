@@ -8,6 +8,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../shared/widgets/glass_container.dart';
 import '../../../social/providers/social_providers.dart';
+import '../../providers/game_session_providers.dart';
 
 /// In-game chat panel that respects social mode.
 ///
@@ -153,13 +154,20 @@ class _GameChatState extends ConsumerState<GameChat> {
   }
 
   Widget _buildMessage(ChatMessage msg) {
+    // The repository leaves senderName as the raw user id ("will be
+    // resolved by UI layer") — resolve it against the live seat map, which
+    // knows every member's display name (owner-caught: chat showed UUIDs).
+    final member = ref.read(roomMembersProvider)[msg.userId];
+    final isMe = msg.userId ==
+        ref.read(supabaseProvider).auth.currentUser?.id;
+    final name = isMe ? 'You' : (member?.displayName ?? 'Player');
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            msg.senderName,
+            name,
             style: GoogleFonts.inter(
               fontSize: 10,
               fontWeight: FontWeight.w700,
