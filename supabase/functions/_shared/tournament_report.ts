@@ -826,7 +826,27 @@ export async function completeTournament(
   const netGems = Math.floor(grossGems * (1 - rake));
 
   // Prize pool, clamped so payouts never exceed the net pool.
-  const prizes = (t.prize_pool as { place: number; coins?: number; gems?: number }[]) ?? [];
+  let prizes = (t.prize_pool as { place: number; coins?: number; gems?: number }[]) ?? [];
+
+  // #298: console-created templates carry prize_pool [] (no editor), which
+  // silently paid NOTHING while entries were collected — the first completed
+  // paid daily ate its 360-coin pot. Empty config + a player-funded pool now
+  // falls back to a default split of the NET pool by field size; explicit
+  // configs keep exact configured behavior.
+  if (prizes.length === 0 && (netCoins > 0 || netGems > 0)) {
+    const n = ranked.length;
+    const split = n <= 2 ? [1] : n <= 4 ? [0.7, 0.3] : [0.5, 0.3, 0.2];
+    prizes = split.map((frac, i) => ({
+      place: i + 1,
+      coins: Math.floor(netCoins * frac),
+      gems: Math.floor(netGems * frac),
+    }));
+    // Flooring leftovers go to the champion, so the whole net pool pays out.
+    const paidCoins = prizes.reduce((s, p) => s + (p.coins ?? 0), 0);
+    const paidGems = prizes.reduce((s, p) => s + (p.gems ?? 0), 0);
+    prizes[0].coins = (prizes[0].coins ?? 0) + (netCoins - paidCoins);
+    prizes[0].gems = (prizes[0].gems ?? 0) + (netGems - paidGems);
+  }
   const demandCoins = prizes.reduce((s, p) => s + (p.coins ?? 0), 0);
   const demandGems = prizes.reduce((s, p) => s + (p.gems ?? 0), 0);
   const coinScale = demandCoins > netCoins && demandCoins > 0 ? netCoins / demandCoins : 1;
