@@ -345,7 +345,10 @@ export async function startTournamentMatch(
   } else {
     seatOrder = [match.player1_id as string, match.player2_id as string];
   }
-  const socialMode = tournament.room_social_mode ?? 'focus';
+  // Chat on by default in tournament matches (owner call, #220) — the old
+  // 'focus' default meant tournament players could never talk. Templates
+  // can still force a mode via room_social_mode.
+  const socialMode = tournament.room_social_mode ?? 'full';
 
   // Create the room BARE (server-owned; skips create-room's private-room
   // limits). current_players starts at 0 — the room_players trigger counts
