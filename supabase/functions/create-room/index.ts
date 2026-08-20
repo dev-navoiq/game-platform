@@ -36,6 +36,26 @@ serve(async (req) => {
       return errorResponse(validationError, 400);
     }
 
+    // ── #285 launch gate ──────────────────────────────────────────────────
+    // Oh Hell is the always-live floor; any other game needs its
+    // game_live_<type> feature flag enabled. Fail-closed: no flag row →
+    // sealed. Staging seeds all flags on; production seeds none until a
+    // game ships, so old clients / deep links can't open sealed games.
+    if (body.game_type !== 'oh_hell') {
+      const { data: flag } = await admin
+        .from('feature_flags')
+        .select('enabled, is_active')
+        .eq('flag_key', `game_live_${body.game_type}`)
+        .maybeSingle();
+      if (!flag || !flag.enabled || !flag.is_active) {
+        return errorResponse(
+          'This game has not launched yet — coming soon!',
+          403,
+          'GAME_NOT_LIVE',
+        );
+      }
+    }
+
     // ── Private room limit check ──────────────────────────────────────────
     if (body.is_private) {
       const canCreate = await checkPrivateRoomLimit(supabase, user.id);
