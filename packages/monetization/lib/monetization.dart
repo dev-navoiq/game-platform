@@ -19,3 +19,4 @@ export 'src/services/game_end_interstitial_cadence.dart';
 export 'src/services/challenge_service.dart';
 export 'src/services/season_service.dart';
 export 'src/services/skin_service.dart';
+export 'src/services/web_payment_service.dart';

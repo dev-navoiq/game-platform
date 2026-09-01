@@ -17,6 +17,8 @@ dependencies:
   # avoids the newer native-SDK (AGP/compileSdk/iOS-min) requirements of 6+.
   google_mobile_ads: ^5.3.1
   meta: ^1.11.0
+  # Web payments via Stripe
+  supabase_flutter: ^2.5.6
 
 dev_dependencies:
   mocktail: ^1.0.3

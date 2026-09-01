@@ -19,6 +19,15 @@ import '../services/shared_prefs_game_end_ad_store.dart';
 import '../services/subscription_service.dart';
 import 'providers.dart';
 
+// ── Web Payment Service ─────────────────────────────────────────────────────
+
+/// Web payment service for Stripe checkout (web platform only).
+/// Returns null on native platforms where RevenueCat is used instead.
+final webPaymentServiceProvider = Provider<WebPaymentService?>((ref) {
+  if (!kIsWeb) return null;
+  return WebPaymentService(ref.watch(supabaseProvider));
+});
+
 // ── Repository providers ────────────────────────────────────────────────────
 
 final currencyRepositoryProvider = Provider<CurrencyRepository>((ref) {

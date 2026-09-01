@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:monetization/monetization.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/assets/asset_registry.dart';
 import '../../../core/di/monetization_providers.dart';
@@ -12,7 +15,7 @@ import '../../../shared/widgets/currency_display.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/skins/skin_selector.dart';
-import '../../../shared/widgets/under_construction_banner.dart';
+import '../providers/shop_providers.dart';
 import 'widgets/gem_pack_card.dart';
 
 class ShopScreen extends ConsumerStatefulWidget {
@@ -59,15 +62,6 @@ class _ShopScreenState extends ConsumerState<ShopScreen>
           children: [
             SizedBox(
                 height: MediaQuery.of(context).padding.top + 56 + 8),
-
-            // WIP banner — purchases are not wired to RevenueCat yet.
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: UnderConstructionBanner(
-                message:
-                    'Shop is under construction — purchases are not wired up yet. Browse only.',
-              ),
-            ),
 
             // Subscription upsell banner
             Padding(
@@ -172,9 +166,14 @@ class _ShopScreenState extends ConsumerState<ShopScreen>
   }
 }
 
-class _GemPacksTab extends StatelessWidget {
+class _GemPacksTab extends ConsumerWidget {
+  const _GemPacksTab();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Use GemPack.all from the monetization package for consistency
+    final packs = GemPack.all;
+
     return GridView.count(
       crossAxisCount: 2,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -182,43 +181,89 @@ class _GemPacksTab extends StatelessWidget {
       crossAxisSpacing: 12,
       childAspectRatio: 0.75,
       children: [
-        GemPackCard(
-          name: 'Starter',
-          gems: 100,
-          priceUsd: 0.99,
-          onBuy: () {},
-        ),
-        GemPackCard(
-          name: 'Popular',
-          gems: 500,
-          bonusGems: 125,
-          priceUsd: 3.99,
-          isPopular: true,
-          onBuy: () {},
-        ),
-        GemPackCard(
-          name: 'Value',
-          gems: 1200,
-          bonusGems: 600,
-          priceUsd: 7.99,
-          onBuy: () {},
-        ),
-        GemPackCard(
-          name: 'Premium',
-          gems: 3000,
-          bonusGems: 2250,
-          priceUsd: 19.99,
-          onBuy: () {},
-        ),
-        GemPackCard(
-          name: 'Ultimate',
-          gems: 7500,
-          bonusGems: 7500,
-          priceUsd: 49.99,
-          onBuy: () {},
-        ),
+        for (final pack in packs)
+          GemPackCard(
+            name: pack.name,
+            gems: pack.gems,
+            bonusGems: pack.gems * pack.bonusPercent ~/ 100,
+            priceUsd: pack.priceUsd,
+            isPopular: pack.id == 'gem_popular',
+            onBuy: () => _handlePurchase(context, ref, pack.id),
+          ),
       ],
     );
+  }
+
+  Future<void> _handlePurchase(
+    BuildContext context,
+    WidgetRef ref,
+    String productKey,
+  ) async {
+    // Web uses Stripe checkout
+    if (kIsWeb) {
+      await _handleWebPurchase(context, ref, productKey);
+    } else {
+      // Native platforms use RevenueCat (not yet implemented)
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Native purchases coming soon!'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleWebPurchase(
+    BuildContext context,
+    WidgetRef ref,
+    String productKey,
+  ) async {
+    final paymentService = ref.read(webPaymentServiceProvider);
+    if (paymentService == null) return;
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // Build success/cancel URLs
+      final currentUrl = Uri.base.toString().split('?').first;
+      final successUrl = '$currentUrl?payment_success=true&session_id={CHECKOUT_SESSION_ID}';
+      final cancelUrl = '$currentUrl?payment_cancelled=true';
+
+      // Create checkout session
+      final session = await paymentService.createCheckoutSession(
+        productKey: productKey,
+        successUrl: successUrl,
+        cancelUrl: cancelUrl,
+      );
+
+      // Dismiss loading
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Redirect to Stripe Checkout
+      final uri = Uri.parse(session.url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } else {
+        throw WebPaymentException('Could not open payment page');
+      }
+    } catch (e) {
+      // Dismiss loading
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Purchase failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -228,30 +273,85 @@ class _CardSkinsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedId = ref.watch(cardSkinThemeProvider).id;
+    final ownedSkinsAsync = ref.watch(ownedSkinsProvider);
 
-    // For now, classic (free) is always owned.
-    // In production, owned set comes from SkinService / user_skins table.
-    final ownedIds = <String>{'classic'};
+    return ownedSkinsAsync.when(
+      data: (ownedIds) => SkinSelector(
+        type: SkinSelectorType.card,
+        selectedSkinId: selectedId,
+        ownedSkinIds: ownedIds,
+        onSelect: (id) {
+          ref.read(selectedCardSkinProvider.notifier).state = id;
+        },
+        onBuy: (id) => _handlePurchase(context, ref, id),
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Center(child: Text('Error: $error')),
+    );
+  }
 
-    return SkinSelector(
-      type: SkinSelectorType.card,
-      selectedSkinId: selectedId,
-      ownedSkinIds: ownedIds,
-      onSelect: (id) {
-        ref.read(selectedCardSkinProvider.notifier).state = id;
-      },
-      onBuy: (id) {
-        // TODO: wire to SkinService.purchaseSkin when backend is ready
-        final skin = AssetRegistry.instance.getCardSkin(id);
+  Future<void> _handlePurchase(
+    BuildContext context,
+    WidgetRef ref,
+    String assetKey,
+  ) async {
+    final skin = AssetRegistry.instance.getCardSkin(assetKey);
+    final repository = ref.read(shopRepositoryProvider);
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // Call backend
+      final result = await repository.purchaseShopItem(assetKey: assetKey);
+
+      // Dismiss loading
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Refresh owned skins and currency balance
+      ref.invalidate(ownedSkinsProvider);
+      ref.invalidate(currencyBalanceProvider);
+
+      // Show success
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Purchase ${skin.displayName}: ${skin.priceCoins > 0 ? "${skin.priceCoins} coins" : "${skin.priceGems} gems"}',
+              '✅ Purchased ${skin.displayName} for ${result.amountPaid} ${result.currency}',
             ),
+            backgroundColor: Colors.green,
           ),
         );
-      },
-    );
+      }
+    } catch (e) {
+      // Dismiss loading
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_getErrorMessage(e)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _getErrorMessage(dynamic error) {
+    final errorStr = error.toString().toLowerCase();
+    if (errorStr.contains('insufficient')) {
+      return '❌ Insufficient funds';
+    } else if (errorStr.contains('already own')) {
+      return '⚠️ You already own this skin';
+    } else {
+      return '❌ Purchase failed: ${error.toString()}';
+    }
   }
 }
 
@@ -261,27 +361,84 @@ class _RoomThemesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedId = ref.watch(roomSkinThemeProvider).id;
+    final ownedSkinsAsync = ref.watch(ownedSkinsProvider);
 
-    // Classic (free) is always owned.
-    final ownedIds = <String>{'classic'};
+    return ownedSkinsAsync.when(
+      data: (ownedIds) => SkinSelector(
+        type: SkinSelectorType.room,
+        selectedSkinId: selectedId,
+        ownedSkinIds: ownedIds,
+        onSelect: (id) {
+          ref.read(selectedRoomSkinProvider.notifier).state = id;
+        },
+        onBuy: (id) => _handlePurchase(context, ref, id),
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Center(child: Text('Error: $error')),
+    );
+  }
 
-    return SkinSelector(
-      type: SkinSelectorType.room,
-      selectedSkinId: selectedId,
-      ownedSkinIds: ownedIds,
-      onSelect: (id) {
-        ref.read(selectedRoomSkinProvider.notifier).state = id;
-      },
-      onBuy: (id) {
-        final skin = AssetRegistry.instance.getRoomSkin(id);
+  Future<void> _handlePurchase(
+    BuildContext context,
+    WidgetRef ref,
+    String assetKey,
+  ) async {
+    final skin = AssetRegistry.instance.getRoomSkin(assetKey);
+    final repository = ref.read(shopRepositoryProvider);
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // Call backend
+      final result = await repository.purchaseShopItem(assetKey: assetKey);
+
+      // Dismiss loading
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Refresh owned skins and currency balance
+      ref.invalidate(ownedSkinsProvider);
+      ref.invalidate(currencyBalanceProvider);
+
+      // Show success
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Purchase ${skin.displayName}: ${skin.priceCoins > 0 ? "${skin.priceCoins} coins" : "${skin.priceGems} gems"}',
+              '✅ Purchased ${skin.displayName} for ${result.amountPaid} ${result.currency}',
             ),
+            backgroundColor: Colors.green,
           ),
         );
-      },
-    );
+      }
+    } catch (e) {
+      // Dismiss loading
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_getErrorMessage(e)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _getErrorMessage(dynamic error) {
+    final errorStr = error.toString().toLowerCase();
+    if (errorStr.contains('insufficient')) {
+      return '❌ Insufficient funds';
+    } else if (errorStr.contains('already own')) {
+      return '⚠️ You already own this skin';
+    } else {
+      return '❌ Purchase failed: ${error.toString()}';
+    }
   }
 }

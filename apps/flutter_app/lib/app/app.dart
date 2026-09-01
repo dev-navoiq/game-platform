@@ -9,6 +9,7 @@ import '../core/di/providers.dart';
 import '../core/routing/app_router.dart';
 import '../core/theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
+import 'web_payment_handler.dart' if (dart.library.io) 'web_payment_handler_stub.dart';
 
 class GamePlatformApp extends ConsumerStatefulWidget {
   const GamePlatformApp({super.key});
@@ -31,7 +32,21 @@ class _GamePlatformAppState extends ConsumerState<GamePlatformApp>
     // resume (#177). Follow the user's own profiles row and refetch on change.
     ref.listenManual(currentUserProvider, (_, __) => _syncProfileSubscription());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncProfileSubscription();
+      if (mounted) {
+        _syncProfileSubscription();
+        _handleStripeReturnIfNeeded();
+      }
+    });
+  }
+
+  /// Check for Stripe payment return parameters and verify the purchase.
+  void _handleStripeReturnIfNeeded() {
+    if (!hasStripeReturnParams()) return;
+    // Delay slightly to ensure the scaffold is available for snackbars
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        handleStripeReturn(ref, context);
+      }
     });
   }
 

@@ -84,10 +84,13 @@ dependencies:
   # on Android Gradle Plugin 8+ that prevents release builds.
   # Re-add once upstream ships a fix.
 
+  # Web payments
+  url_launcher: ^6.3.1
+
   # Utils
   uuid: ^4.3.3
-  # flutter_localizations (Flutter 3.41.9) pins intl 0.20.2 exactly.
-  intl: ^0.20.2
+  # flutter_localizations pins intl; use 'any' to avoid conflicts.
+  intl: any
   collection: ^1.18.0
   # Pinned to 12.x: share_plus 13.x requires Dart >=3.10 but project is on
   # Flutter 3.32 (Dart 3.8). See memory: share-plus-13-sdk-drift.md.
