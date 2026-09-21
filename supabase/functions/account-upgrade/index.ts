@@ -37,6 +37,30 @@ serve(async (req) => {
       .update({ account_type: 'registered' })
       .eq('id', user.id);
 
+    // ── Shed the guest_ placeholder name (#57, owner-caught) ──────────────
+    // Fresh signups derive a username from the email; the upgrade path kept
+    // the guest_xxxxxx placeholder, so upgraded players still looked like
+    // guests. Derive from the linked email, suffix on collision.
+    const { data: prof } = await admin
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .single();
+    const email = authUser?.user?.email;
+    if (prof?.username?.startsWith('guest_') && email) {
+      const base = email.split('@')[0]
+        .toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || 'player';
+      let candidate = base;
+      for (let i = 0; i < 5; i++) {
+        const { error: renameErr } = await admin
+          .from('profiles')
+          .update({ username: candidate })
+          .eq('id', user.id);
+        if (!renameErr) break;
+        candidate = `${base}${Math.floor(Math.random() * 9000) + 1000}`;
+      }
+    }
+
     // ── Grant welcome gems once ────────────────────────────────────────────
     // Explicit pre-check: creditCurrency bumps the balance before writing the
     // ledger row and doesn't surface a unique-index violation, so we must gate
