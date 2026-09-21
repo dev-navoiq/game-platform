@@ -37,6 +37,37 @@ serve(async (req) => {
       .update({ account_type: 'registered' })
       .eq('id', user.id);
 
+    // ── Shed the guest_ placeholder name (#57, owner-caught) ──────────────
+    // Fresh signups derive a username from the email; the upgrade path kept
+    // the guest_xxxxxx placeholder, so upgraded players still looked like
+    // guests. Derive from the linked email, suffix on collision.
+    const { data: prof } = await admin
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .single();
+    const email = authUser?.user?.email;
+    const metaName = ((authUser?.user?.user_metadata?.full_name ??
+      authUser?.user?.user_metadata?.name ?? '') as string)
+      .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (prof?.username?.startsWith('guest_') && (email || metaName)) {
+      // Prefer the provider-supplied name; never derive from an Apple
+      // private-relay address (random noise). Mirrors handle_new_user.
+      const fromEmail = email && !email.endsWith('@privaterelay.appleid.com')
+        ? email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')
+        : '';
+      const base = (metaName || fromEmail || 'player').slice(0, 20);
+      let candidate = base;
+      for (let i = 0; i < 5; i++) {
+        const { error: renameErr } = await admin
+          .from('profiles')
+          .update({ username: candidate })
+          .eq('id', user.id);
+        if (!renameErr) break;
+        candidate = `${base}${Math.floor(Math.random() * 9000) + 1000}`;
+      }
+    }
+
     // ── Grant welcome gems once ────────────────────────────────────────────
     // Explicit pre-check: creditCurrency bumps the balance before writing the
     // ledger row and doesn't surface a unique-index violation, so we must gate
