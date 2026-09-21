@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -104,11 +105,15 @@ class AuthService {
   /// the `gathr://login-callback/` deep link and surfaces on
   /// [authStateChanges] (signedIn / userUpdated).
   Future<void> signInWithProvider(OAuthProvider provider) async {
+    // gathr:// is for mobile only — a web browser can't "return" to a custom
+    // scheme after the provider redirect. On web, Uri.base.origin brings the
+    // flow back to the running app (must be in the Supabase allow list).
+    final redirect = kIsWeb ? Uri.base.origin : oauthRedirectUri;
     if (isGuest) {
       _oauthUpgradePending = true;
-      await _client.auth.linkIdentity(provider, redirectTo: oauthRedirectUri);
+      await _client.auth.linkIdentity(provider, redirectTo: redirect);
     } else {
-      await _client.auth.signInWithOAuth(provider, redirectTo: oauthRedirectUri);
+      await _client.auth.signInWithOAuth(provider, redirectTo: redirect);
     }
   }
 
