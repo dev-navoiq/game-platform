@@ -47,9 +47,16 @@ serve(async (req) => {
       .eq('id', user.id)
       .single();
     const email = authUser?.user?.email;
-    if (prof?.username?.startsWith('guest_') && email) {
-      const base = email.split('@')[0]
-        .toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || 'player';
+    const metaName = ((authUser?.user?.user_metadata?.full_name ??
+      authUser?.user?.user_metadata?.name ?? '') as string)
+      .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (prof?.username?.startsWith('guest_') && (email || metaName)) {
+      // Prefer the provider-supplied name; never derive from an Apple
+      // private-relay address (random noise). Mirrors handle_new_user.
+      const fromEmail = email && !email.endsWith('@privaterelay.appleid.com')
+        ? email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')
+        : '';
+      const base = (metaName || fromEmail || 'player').slice(0, 20);
       let candidate = base;
       for (let i = 0; i < 5; i++) {
         const { error: renameErr } = await admin
