@@ -224,7 +224,11 @@
       "Bash(echo \"exit: $?\")",
       "Bash(git add *)",
       "Bash(git restore *)",
-      "Bash(grep -inE \"sk_test_[A-Za-z0-9]{10,}|sk_live_\" scripts/create-stripe-products.sh)"
+      "Bash(grep -inE \"sk_test_[A-Za-z0-9]{10,}|sk_live_\" scripts/create-stripe-products.sh)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(rm docs/POST-TO-ISSUE-52.md apps/flutter_app/test/widget_test.dart)",
+      "Bash(fvm --cwd apps/flutter_app flutter analyze --no-pub apps/flutter_app/test/widget/oh_hell_game_test.dart)"
     ]
   }
 }
