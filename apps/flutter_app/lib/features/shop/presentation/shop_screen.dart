@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:monetization/monetization.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/assets/asset_registry.dart';
 import '../../../core/di/monetization_providers.dart';
@@ -16,6 +15,7 @@ import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/skins/skin_selector.dart';
 import '../providers/shop_providers.dart';
+import 'web_checkout.dart';
 import 'widgets/gem_pack_card.dart';
 
 class ShopScreen extends ConsumerStatefulWidget {
@@ -199,71 +199,51 @@ class _GemPacksTab extends ConsumerWidget {
     WidgetRef ref,
     String productKey,
   ) async {
-    // Web uses Stripe checkout
+    // Web → Stripe Checkout; iOS/Android → App Store / Play Store via RevenueCat.
     if (kIsWeb) {
-      await _handleWebPurchase(context, ref, productKey);
+      await startStripeCheckout(context, ref, productKey);
     } else {
-      // Native platforms use RevenueCat (not yet implemented)
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Native purchases coming soon!'),
-        ),
-      );
+      await _handleNativePurchase(context, ref, productKey);
     }
   }
 
-  Future<void> _handleWebPurchase(
+  Future<void> _handleNativePurchase(
     BuildContext context,
     WidgetRef ref,
     String productKey,
   ) async {
-    final paymentService = ref.read(webPaymentServiceProvider);
-    if (paymentService == null) return;
+    final service = ref.read(nativePurchaseServiceProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    if (service == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('In-app purchases are not available on this platform.')),
+      );
+      return;
+    }
 
-    // Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    try {
-      // Build success/cancel URLs
-      final currentUrl = Uri.base.toString().split('?').first;
-      final successUrl = '$currentUrl?payment_success=true&session_id={CHECKOUT_SESSION_ID}';
-      final cancelUrl = '$currentUrl?payment_cancelled=true';
+    final outcome = await service.purchase(productKey);
 
-      // Create checkout session
-      final session = await paymentService.createCheckoutSession(
-        productKey: productKey,
-        successUrl: successUrl,
-        cancelUrl: cancelUrl,
-      );
+    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    // Wallet is credited server-side; refetch the profile row.
+    ref.invalidate(userProfileProvider);
 
-      // Dismiss loading
-      if (context.mounted) Navigator.of(context).pop();
-
-      // Redirect to Stripe Checkout
-      final uri = Uri.parse(session.url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.platformDefault);
-      } else {
-        throw WebPaymentException('Could not open payment page');
-      }
-    } catch (e) {
-      // Dismiss loading
-      if (context.mounted) Navigator.of(context).pop();
-
-      // Show error
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Purchase failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+    if (outcome.isCancelled) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome.isSuccess
+              ? '✅ Gems added to your wallet'
+              : '❌ ${outcome.message ?? 'Purchase failed'}',
+        ),
+        backgroundColor: outcome.isSuccess ? Colors.green : Colors.red,
+      ),
+    );
   }
 }
 

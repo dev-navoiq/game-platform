@@ -1,19 +1,29 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/di/monetization_providers.dart';
+import '../../../core/di/providers.dart';
+import '../../../core/models/subscription_tier.dart';
+import '../../../core/services/native_purchase_service.dart';
 import '../../../core/theme/colors.dart';
-import '../../../shared/theme/glass_tokens.dart';
 import '../../../shared/widgets/felt_background.dart';
 import '../../../shared/widgets/glass_app_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/under_construction_banner.dart';
+import 'web_checkout.dart';
 
 class SubscriptionScreen extends ConsumerWidget {
   const SubscriptionScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final currentTier = ref.watch(currentTierProvider);
+    final nativeService = ref.watch(nativePurchaseServiceProvider);
+    // Web subscribes via Stripe; native needs a configured RevenueCat build.
+    final purchasesAvailable = kIsWeb || (nativeService?.isEnabled ?? false);
+
     return FeltBackground(
       showAmbientGlow: true,
       child: Scaffold(
@@ -28,10 +38,11 @@ class SubscriptionScreen extends ConsumerWidget {
             bottom: 40,
           ),
           children: [
-            const UnderConstructionBanner(
-              message:
-                  'Subscriptions are under construction — the Subscribe and Restore buttons below do not yet contact RevenueCat.',
-            ),
+            if (!purchasesAvailable)
+              const UnderConstructionBanner(
+                message:
+                    'Subscriptions are not enabled in this build — the store is not configured yet.',
+              ),
             Text(
               'Unlock the full experience',
               style: TextStyle(
@@ -48,7 +59,7 @@ class SubscriptionScreen extends ConsumerWidget {
               tierName: 'Free',
               price: '\$0',
               period: 'forever',
-              isCurrentTier: true,
+              isCurrentTier: currentTier == SubscriptionTier.free,
               features: const [
                 'Play all 7 games',
                 'Basic matchmaking',
@@ -66,6 +77,7 @@ class SubscriptionScreen extends ConsumerWidget {
               price: '\$3.99',
               period: '/month',
               isRecommended: true,
+              isCurrentTier: currentTier == SubscriptionTier.pro,
               accentColor: AppColors.accent,
               features: const [
                 'No ads',
@@ -75,9 +87,9 @@ class SubscriptionScreen extends ConsumerWidget {
                 'Exclusive card skins',
                 'Priority matchmaking',
               ],
-              onSubscribe: () {
-                // TODO: RevenueCat purchase
-              },
+              onSubscribe: currentTier == SubscriptionTier.pro
+                  ? null
+                  : () => _subscribe(context, ref, SubscriptionTier.pro),
             ),
             const SizedBox(height: 12),
 
@@ -86,6 +98,7 @@ class SubscriptionScreen extends ConsumerWidget {
               tierName: 'Max',
               price: '\$7.99',
               period: '/month',
+              isCurrentTier: currentTier == SubscriptionTier.max,
               accentColor: AppColors.primaryLight,
               features: const [
                 'Everything in Pro',
@@ -96,25 +109,89 @@ class SubscriptionScreen extends ConsumerWidget {
                 'Tournament priority entry',
                 'Custom room themes',
               ],
-              onSubscribe: () {
-                // TODO: RevenueCat purchase
-              },
+              onSubscribe: currentTier == SubscriptionTier.max
+                  ? null
+                  : () => _subscribe(context, ref, SubscriptionTier.max),
             ),
             const SizedBox(height: 24),
 
-            // Restore purchases
-            Center(
-              child: GlassButton(
-                label: 'Restore Purchases',
-                onPressed: () {
-                  // TODO: RevenuCat restore
-                },
-                variant: GlassButtonVariant.ghost,
-                color: AppColors.textOnFelt,
+            // Restore purchases (store accounts only — Stripe has no equivalent)
+            if (!kIsWeb)
+              Center(
+                child: GlassButton(
+                  label: 'Restore Purchases',
+                  onPressed: () => _restore(context, ref),
+                  variant: GlassButtonVariant.ghost,
+                  color: AppColors.textOnFelt,
+                ),
               ),
-            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _subscribe(
+    BuildContext context,
+    WidgetRef ref,
+    SubscriptionTier tier,
+  ) async {
+    final productKey = NativePurchaseService.subscriptionProductKey(tier.name);
+    if (kIsWeb) {
+      await startStripeCheckout(context, ref, productKey);
+      return;
+    }
+    await _runNative(
+      context,
+      ref,
+      (service) => service.purchase(productKey),
+      successMessage: '🎉 Welcome to ${tier.name[0].toUpperCase()}${tier.name.substring(1)}!',
+    );
+  }
+
+  Future<void> _restore(BuildContext context, WidgetRef ref) async {
+    await _runNative(
+      context,
+      ref,
+      (service) => service.restore(),
+      successMessage: '✅ Purchases restored',
+    );
+  }
+
+  Future<void> _runNative(
+    BuildContext context,
+    WidgetRef ref,
+    Future<NativePurchaseOutcome> Function(NativePurchaseService) action, {
+    required String successMessage,
+  }) async {
+    final service = ref.read(nativePurchaseServiceProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    if (service == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('In-app purchases are not available on this platform.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final outcome = await action(service);
+
+    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    // Tier + monthly grant are applied server-side; refetch the profile row.
+    ref.invalidate(userProfileProvider);
+
+    if (outcome.isCancelled) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome.isSuccess ? successMessage : '❌ ${outcome.message ?? 'Something went wrong'}',
+        ),
+        backgroundColor: outcome.isSuccess ? Colors.green : Colors.red,
       ),
     );
   }

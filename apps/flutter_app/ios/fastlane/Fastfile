@@ -9,9 +9,9 @@
 
 default_platform(:ios)
 
-APP_STORE_CONNECT_KEY_ID    = "GZT6923N3L"
+APP_STORE_CONNECT_KEY_ID    = "8MDL92J6J5"
 APP_STORE_CONNECT_ISSUER_ID = "f29c17c7-d3cc-4177-8ea5-fb36283b5f56"
-APP_STORE_CONNECT_KEY_PATH  = File.expand_path("~/.appstoreonnect/AuthKey_GZT6923N3L.p8")
+APP_STORE_CONNECT_KEY_PATH  = File.expand_path("~/.appstoreonnect/AuthKey_8MDL92J6J5.p8")
 
 platform :ios do
   before_all do

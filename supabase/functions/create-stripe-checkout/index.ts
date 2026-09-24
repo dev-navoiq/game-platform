@@ -64,6 +64,8 @@ serve(async (req) => {
         product_key: productKey,
         user_id: user.id,
       },
+      // Disable managed payments (tax code not required)
+      managed_payments: { enabled: false },
       // Allow promo codes for subscriptions
       ...(mode === 'subscription' && { allow_promotion_codes: true }),
     });

@@ -15,6 +15,8 @@ import '../services/ad_mode.dart';
 import '../services/house_ads/house_ad_rotation.dart';
 import '../services/mock_ad_platform.dart';
 import '../services/mock_revenue_cat.dart';
+import '../services/native_purchase_service.dart';
+import '../services/real_revenue_cat.dart';
 import '../services/shared_prefs_game_end_ad_store.dart';
 import '../services/subscription_service.dart';
 import 'providers.dart';
@@ -52,10 +54,28 @@ final adRepositoryProvider = Provider<AdRepository>((ref) {
 
 // ── Mock / platform providers ───────────────────────────────────────────────
 
-/// RevenueCat wrapper — uses [MockRevenueCat] during local dev.
-/// Override with a real implementation for production.
+bool get _isMobileDevice => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+
+/// RevenueCat wrapper — the real store SDK on iOS/Android when a RevenueCat
+/// key was passed at build time (see [EnvConfig.revenueCatApiKey]);
+/// [MockRevenueCat] on web, under `flutter test`, and in unconfigured builds.
 final revenueCatProvider = Provider<RevenueCatWrapper>((ref) {
+  if (_isMobileDevice && !_isFlutterTest && EnvConfig.isRevenueCatConfigured) {
+    return RealRevenueCat(apiKey: EnvConfig.revenueCatApiKey);
+  }
   return MockRevenueCat();
+});
+
+/// iOS/Android purchase flow (store purchase → server verification). Null on
+/// web and desktop, where the shop uses Stripe / nothing respectively.
+final nativePurchaseServiceProvider = Provider<NativePurchaseService?>((ref) {
+  if (!_isMobileDevice) return null;
+  return NativePurchaseService(
+    supabase: ref.watch(supabaseProvider),
+    revenueCat: ref.watch(revenueCatProvider),
+    platform: Platform.isIOS ? 'ios' : 'android',
+    isEnabled: EnvConfig.isRevenueCatConfigured && !_isFlutterTest,
+  );
 });
 
 bool get _isFlutterTest =>

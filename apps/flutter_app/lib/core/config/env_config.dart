@@ -8,7 +8,6 @@ class EnvConfig {
   static late String _supabaseUrl;
   static late String _supabaseAnonKey;
   static late String _livekitUrl;
-  static late String _revenueCatApiKey;
   static late String _sentryDsn;
   static late String _posthogApiKey;
 
@@ -16,8 +15,24 @@ class EnvConfig {
   static String get supabaseUrl => _supabaseUrl;
   static String get supabaseAnonKey => _supabaseAnonKey;
   static String get livekitUrl => _livekitUrl;
-  static String get revenueCatApiKey => _revenueCatApiKey;
   static String get sentryDsn => _sentryDsn;
+
+  // ── RevenueCat (iOS / Android in-app purchases) ────────────────────────────
+  // Public SDK keys (`appl_…` / `goog_…`) — public-by-design like the Supabase
+  // anon key, but RevenueCat projects differ per environment so they're passed
+  // at build time:
+  //   --dart-define=REVENUECAT_IOS_KEY=appl_xxx
+  //   --dart-define=REVENUECAT_ANDROID_KEY=goog_xxx
+  // When absent the app falls back to MockRevenueCat and native purchases
+  // fail fast with a "not configured" message.
+  static const String _revenueCatIosKey =
+      String.fromEnvironment('REVENUECAT_IOS_KEY');
+  static const String _revenueCatAndroidKey =
+      String.fromEnvironment('REVENUECAT_ANDROID_KEY');
+
+  static String get revenueCatApiKey =>
+      _isIosLike ? _revenueCatIosKey : _revenueCatAndroidKey;
+  static bool get isRevenueCatConfigured => revenueCatApiKey.isNotEmpty;
   static String get posthogApiKey => _posthogApiKey;
 
   // Feature flags
@@ -46,7 +61,6 @@ class EnvConfig {
           'LIVEKIT_URL',
           defaultValue: 'ws://ambars-macbook-air.local:7880',
         );
-        _revenueCatApiKey = 'your-dev-rc-key';
         _sentryDsn = '';
         _posthogApiKey = '';
         break;
@@ -58,7 +72,6 @@ class EnvConfig {
         _supabaseAnonKey =
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvcXRicW1oeG1lbWl4YXVtbGp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjY5OTQsImV4cCI6MjA5NDgwMjk5NH0.o2G4DioZk-QLLGziGi8CzPR15yx0Gnium_ZDpm1WO0A';
         _livekitUrl = 'wss://your-staging.livekit.cloud';
-        _revenueCatApiKey = 'your-staging-rc-key';
         _sentryDsn = 'your-staging-sentry-dsn';
         _posthogApiKey = 'your-staging-posthog-key';
         break;
@@ -68,7 +81,6 @@ class EnvConfig {
         _supabaseAnonKey =
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9idGd5c2ZjeWVuYmZvdXZmaXhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjcyNjEsImV4cCI6MjA5NDgwMzI2MX0.ruuz5-i1oZAnFCiMEC-lW3LL8I9b3DbTWRuGiqqNATY';
         _livekitUrl = 'wss://your-prod.livekit.cloud';
-        _revenueCatApiKey = 'your-prod-rc-key';
         _sentryDsn = 'your-prod-sentry-dsn';
         _posthogApiKey = 'your-prod-posthog-key';
         break;

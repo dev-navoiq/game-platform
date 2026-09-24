@@ -76,3 +76,18 @@ backend = "postgres"
 # of a user JWT.
 [functions.notify-dispatch]
 verify_jwt = false
+
+# Payment functions. Webhooks (stripe-webhook, verify-subscription) carry the
+# provider's own secret, not a Supabase JWT. The client-called verify/checkout
+# functions authenticate the user in code via requireAuth() — the gateway
+# check is off because the new ES256 publishable-key JWTs fail it.
+[functions.stripe-webhook]
+verify_jwt = false
+[functions.verify-subscription]
+verify_jwt = false
+[functions.create-stripe-checkout]
+verify_jwt = false
+[functions.verify-web-purchase]
+verify_jwt = false
+[functions.verify-native-purchase]
+verify_jwt = false

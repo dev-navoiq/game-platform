@@ -29,6 +29,7 @@ export async function fulfillPurchase(
     pricePaidUsd?: number;
     currencyCode?: string;
     originalTransactionId?: string; // For subscription renewals
+    expiresAt?: string; // Store-reported subscription expiry (ISO); preferred over now+1mo
   },
 ): Promise<{ success: boolean; receiptId: string; alreadyFulfilled: boolean }> {
   // 1. Fetch product from catalog
@@ -196,8 +197,10 @@ async function fulfillSubscription(
   },
   receiptId: string,
   params: {
+    transactionId: string;
     originalTransactionId?: string;
     platform: 'ios' | 'android' | 'web';
+    expiresAt?: string;
   },
 ): Promise<void> {
   if (!product.subscription_tier) {
@@ -222,9 +225,15 @@ async function fulfillSubscription(
     .single();
 
   let expiresAt: Date;
-  const isRenewal = !!params.originalTransactionId;
+  // Apple/Google set original_transaction_id == transaction_id on the FIRST
+  // purchase, so "has an original id" alone does not mean renewal.
+  const isRenewal = !!params.originalTransactionId &&
+    params.originalTransactionId !== params.transactionId;
 
-  if (isRenewal && profile?.subscription_expires_at) {
+  if (params.expiresAt) {
+    // Trust the store's expiry when we have it (RevenueCat / webhooks).
+    expiresAt = new Date(params.expiresAt);
+  } else if (isRenewal && profile?.subscription_expires_at) {
     // Renewal: extend from current expiration (even if expired)
     expiresAt = new Date(profile.subscription_expires_at);
     expiresAt.setMonth(expiresAt.getMonth() + 1);
@@ -290,6 +299,26 @@ async function fulfillSubscription(
     coinsGranted: monthlyGrants.coins,
     gemsGranted: monthlyGrants.gems,
   });
+}
+
+/**
+ * Resolve a store product id (App Store / Play Store) to our product_key.
+ * Google base-plan suffixes (`product:basePlan`) are stripped by the caller.
+ */
+export async function findProductKeyByStoreId(
+  admin: SupabaseClient,
+  storeProductId: string,
+  platform: 'ios' | 'android',
+): Promise<string | null> {
+  const column = platform === 'ios' ? 'ios_product_id' : 'android_product_id';
+  const { data, error } = await admin
+    .from('products')
+    .select('product_key')
+    .eq(column, storeProductId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error) throw new Error(`Product lookup by store id failed: ${error.message}`);
+  return data?.product_key ?? null;
 }
 
 /**

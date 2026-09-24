@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/di/locale_provider.dart';
+import '../core/di/monetization_providers.dart';
 import '../core/di/providers.dart';
 import '../core/routing/app_router.dart';
 import '../core/theme/app_theme.dart';
@@ -22,6 +24,7 @@ class _GamePlatformAppState extends ConsumerState<GamePlatformApp>
     with WidgetsBindingObserver {
   StreamSubscription<List<Map<String, dynamic>>>? _profileSub;
   String? _profileSubUserId;
+  String? _revenueCatUserId;
 
   @override
   void initState() {
@@ -30,13 +33,38 @@ class _GamePlatformAppState extends ConsumerState<GamePlatformApp>
     // Money can move server-side with no user action (prizes, auto-cancel
     // refunds) — without a live signal the wallet showed stale numbers until
     // resume (#177). Follow the user's own profiles row and refetch on change.
-    ref.listenManual(currentUserProvider, (_, __) => _syncProfileSubscription());
+    ref.listenManual(currentUserProvider, (_, __) {
+      _syncProfileSubscription();
+      _syncRevenueCatIdentity();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncProfileSubscription();
+        _syncRevenueCatIdentity();
         _handleStripeReturnIfNeeded();
       }
     });
+  }
+
+  /// Keep the RevenueCat app-user id equal to the Supabase user id so store
+  /// purchases and webhooks are attributed to the right profile row.
+  void _syncRevenueCatIdentity() {
+    if (kIsWeb) return;
+    final uid = ref.read(currentUserProvider)?.id;
+    if (uid == _revenueCatUserId) return;
+    _revenueCatUserId = uid;
+    final revenueCat = ref.read(revenueCatProvider);
+    unawaited(() async {
+      try {
+        if (uid == null) {
+          await revenueCat.logOut();
+        } else {
+          await revenueCat.logIn(uid);
+        }
+      } catch (e) {
+        debugPrint('RevenueCat identity sync failed (non-fatal): $e');
+      }
+    }());
   }
 
   /// Check for Stripe payment return parameters and verify the purchase.
