@@ -228,7 +228,9 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(rm docs/POST-TO-ISSUE-52.md apps/flutter_app/test/widget_test.dart)",
-      "Bash(fvm --cwd apps/flutter_app flutter analyze --no-pub apps/flutter_app/test/widget/oh_hell_game_test.dart)"
+      "Bash(fvm --cwd apps/flutter_app flutter analyze --no-pub apps/flutter_app/test/widget/oh_hell_game_test.dart)",
+      "Bash(git config *)",
+      "Bash(python3 -c \"print\\('proj5cacbed3, appb7084f326e, entle2a57217b8 \\(pro\\), entlb73e84fae0 \\(max\\)'\\)\")"
     ]
   }
 }
