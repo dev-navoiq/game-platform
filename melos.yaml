@@ -1,5 +1,5 @@
 name: game_platform
-repository: https://github.com/yourusername/game-platform
+repository: https://github.com/dev-navoiq/game-platform
 
 packages:
   - apps/*
